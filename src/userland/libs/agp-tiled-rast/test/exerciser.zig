@@ -11,6 +11,7 @@ const Bitmap = agp.Bitmap;
 const BuildFn = *const fn (agp.Encoder, *const CaseDef) anyerror!void;
 
 const output_dir_path = "zig-out/agp-tiled-rast-exerciser";
+const suite_frame_delay_cs: u16 = 75;
 const initial_color: Color = .from_u8(0x11);
 const panel_fill_color: Color = .from_gray(6);
 const separator_color: Color = .from_gray(28);
@@ -80,12 +81,31 @@ const CaseResult = struct {
     }
 };
 
+const CaseRunStats = struct {
+    name: []const u8,
+    executed: bool,
+    bad_pixels: usize = 0,
+    total_pixels: usize = 0,
+};
+
 const SuiteRunStats = struct {
     name: []const u8,
     artifact_path: []const u8,
     executed_cases: usize = 0,
     failed_cases: usize = 0,
     skipped_cases: usize = 0,
+    bad_pixels: usize = 0,
+    total_pixels: usize = 0,
+    case_stats: std.ArrayListUnmanaged(CaseRunStats) = .{},
+
+    fn deinit(self: *SuiteRunStats, allocator: std.mem.Allocator) void {
+        allocator.free(self.artifact_path);
+        for (self.case_stats.items) |case_stat| {
+            allocator.free(case_stat.name);
+        }
+        self.case_stats.deinit(allocator);
+        self.* = undefined;
+    }
 };
 
 const RunSummary = struct {
@@ -94,6 +114,8 @@ const RunSummary = struct {
     executed_cases: usize = 0,
     failed_cases: usize = 0,
     skipped_cases: usize = 0,
+    bad_pixels: usize = 0,
+    total_pixels: usize = 0,
 };
 
 const NullResolver = struct {
@@ -176,11 +198,29 @@ const bitmap_blits_cases = [_]CaseDef{
     .{ .name = "tile-crossing", .canvas = .{ .width = 127, .height = 95 }, .build_fn = build_bitmap_tile_crossing },
 };
 
+const command_focused_cases = [_]CaseDef{
+    .{ .name = "clear-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_clear_only },
+    .{ .name = "set-clip-rect-focused", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_set_clip_rect_focused },
+    .{ .name = "set-pixel-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_set_pixel_only },
+    .{ .name = "draw-line-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_draw_line_only },
+    .{ .name = "draw-rect-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_draw_rect_only },
+    .{ .name = "fill-rect-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_fill_rect_only },
+    .{ .name = "blit-bitmap-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_blit_bitmap_only },
+    .{ .name = "blit-partial-bitmap-only", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_command_blit_partial_bitmap_only },
+    .{ .name = "draw-text-only", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .text = true }, .build_fn = build_command_draw_text_only },
+    .{ .name = "blit-framebuffer-only", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_command_blit_framebuffer_only },
+    .{ .name = "blit-partial-framebuffer-only", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_command_blit_partial_framebuffer_only },
+};
+
 const mixed_curated_cases = [_]CaseDef{
     .{ .name = "clip-geometry-bitmap", .canvas = .{ .width = 127, .height = 95 }, .build_fn = build_mixed_clip_geometry_bitmap },
     .{ .name = "many-tiles", .canvas = .{ .width = 193, .height = 129 }, .build_fn = build_mixed_many_tiles },
     .{ .name = "overdraw-ordering", .canvas = .{ .width = 127, .height = 95 }, .build_fn = build_mixed_overdraw_ordering },
     .{ .name = "negative-and-partial", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_mixed_negative_partial },
+};
+
+const overdraw_profile_cases = [_]CaseDef{
+    .{ .name = "large-overdraw-elimination-profile", .canvas = .{ .width = 512, .height = 320 }, .build_fn = build_overdraw_elimination_profile },
 };
 
 const draw_text_cases = [_]CaseDef{
@@ -199,13 +239,15 @@ const static_suites = [_]SuiteDef{
     .{ .name = "geometry-core", .cases = geometry_core_cases[0..] },
     .{ .name = "clip-interactions", .cases = clip_interactions_cases[0..] },
     .{ .name = "bitmap-blits", .cases = bitmap_blits_cases[0..] },
+    .{ .name = "command-focused", .cases = command_focused_cases[0..] },
     .{ .name = "mixed-curated", .cases = mixed_curated_cases[0..] },
+    .{ .name = "overdraw-profile", .cases = overdraw_profile_cases[0..] },
     .{ .name = "draw-text", .capabilities = .{ .text = true }, .cases = draw_text_cases[0..] },
     .{ .name = "blit-framebuffer", .capabilities = .{ .framebuffers = true }, .cases = framebuffer_blit_cases[0..] },
     .{ .name = "blit-partial-framebuffer", .capabilities = .{ .framebuffers = true }, .cases = framebuffer_partial_cases[0..] },
 };
 
-pub fn main() !void {
+pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -213,39 +255,55 @@ pub fn main() !void {
     try std.fs.cwd().makePath(output_dir_path);
 
     var summary: RunSummary = .{};
+    var suite_reports: std.ArrayListUnmanaged(SuiteRunStats) = .{};
+    defer {
+        for (suite_reports.items) |*suite_report| {
+            suite_report.deinit(allocator);
+        }
+        suite_reports.deinit(allocator);
+    }
 
     for (static_suites) |suite| {
         const stats = try run_static_suite(allocator, &suite);
         accumulateSummary(&summary, stats);
+        try suite_reports.append(allocator, stats);
     }
 
     const random_stats = try run_seeded_random_suite(allocator);
     accumulateSummary(&summary, random_stats);
+    try suite_reports.append(allocator, random_stats);
+
+    printReport(summary, suite_reports.items);
 
     std.debug.print(
-        "agp exerciser: suites={} skipped_suites={} cases={} skipped_cases={} failures={}\n",
+        "agp exerciser: suites={} skipped_suites={} cases={} skipped_cases={} failures={} bad_pixels={} wrong={d:.2}%\n",
         .{
             summary.executed_suites,
             summary.skipped_suites,
             summary.executed_cases,
             summary.skipped_cases,
             summary.failed_cases,
+            summary.bad_pixels,
+            percentValue(summary.bad_pixels, summary.total_pixels),
         },
     );
 
     if (summary.failed_cases != 0) {
-        return error.CaseMismatch;
+        return 1;
     }
+    return 0;
 }
 
 fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !SuiteRunStats {
     if (!suiteSupported(suite.capabilities)) {
         std.debug.print("skip suite {s}: unsupported capabilities\n", .{suite.name});
-        return .{
+        var stats: SuiteRunStats = .{
             .name = suite.name,
-            .artifact_path = "",
+            .artifact_path = try allocator.dupe(u8, ""),
             .skipped_cases = suite.cases.len,
         };
+        try appendSkippedCases(allocator, &stats, suite.cases);
+        return stats;
     }
 
     var max_canvas = CanvasSize{ .width = 0, .height = 0 };
@@ -259,11 +317,13 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
 
     if (executable_cases == 0) {
         std.debug.print("skip suite {s}: no executable cases\n", .{suite.name});
-        return .{
+        var stats: SuiteRunStats = .{
             .name = suite.name,
-            .artifact_path = "",
+            .artifact_path = try allocator.dupe(u8, ""),
             .skipped_cases = suite.cases.len,
         };
+        try appendSkippedCases(allocator, &stats, suite.cases);
+        return stats;
     }
 
     var suite_path_buffer: [256]u8 = undefined;
@@ -281,12 +341,14 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
         &file_writer.interface,
         compositeWidth(max_canvas.width),
         max_canvas.height,
-        0,
+        suite_frame_delay_cs,
     );
     defer suite_gif.end() catch {};
 
     var failure_file: ?std.fs.File = null;
     var failure_gif: ?gif.GIF_Encoder = null;
+    var failure_buffer: [8192]u8 = undefined;
+    var failure_file_writer: std.fs.File.Writer = undefined;
     defer {
         if (failure_gif) |*enc| enc.end() catch {};
         if (failure_file) |*file| file.close();
@@ -294,12 +356,13 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
 
     var stats = SuiteRunStats{
         .name = suite.name,
-        .artifact_path = "",
+        .artifact_path = try allocator.dupe(u8, suite_path),
     };
 
     for (suite.cases) |case| {
         if (!suiteSupported(case.capabilities)) {
             stats.skipped_cases += 1;
+            try appendCaseStat(allocator, &stats, case.name, false, 0, 0);
             std.debug.print("skip case {s}/{s}: unsupported capabilities\n", .{ suite.name, case.name });
             continue;
         }
@@ -316,6 +379,17 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
         defer allocator.free(composite);
 
         try suite_gif.add_frame(composite);
+        const total_pixels = @as(usize, result.width) * @as(usize, result.height);
+        stats.bad_pixels += result.comparison.mismatch_count;
+        stats.total_pixels += total_pixels;
+        try appendCaseStat(
+            allocator,
+            &stats,
+            case.name,
+            true,
+            result.comparison.mismatch_count,
+            total_pixels,
+        );
 
         if (!result.comparison.matched()) {
             stats.failed_cases += 1;
@@ -332,16 +406,14 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
             );
 
             if (failure_gif == null) {
-                var tmp_buffer: [8192]u8 = undefined;
-
                 failure_file = try std.fs.cwd().createFile(failures_path, .{ .truncate = true });
-                var failure_file_writer = failure_file.?.writer(&tmp_buffer);
+                failure_file_writer = failure_file.?.writer(&failure_buffer);
 
                 failure_gif = try gif.GIF_Encoder.start(
                     &failure_file_writer.interface,
                     compositeWidth(max_canvas.width),
                     max_canvas.height,
-                    0,
+                    suite_frame_delay_cs,
                 );
             }
             try failure_gif.?.add_frame(composite);
@@ -387,7 +459,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
         &suite_file_writer.interface,
         compositeWidth(max_canvas.width),
         max_canvas.height,
-        0,
+        suite_frame_delay_cs,
     );
     defer suite_gif.end() catch {};
 
@@ -402,7 +474,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
 
     var stats = SuiteRunStats{
         .name = suite_name,
-        .artifact_path = "",
+        .artifact_path = try allocator.dupe(u8, suite_path),
     };
 
     for (seeds) |seed| {
@@ -433,6 +505,17 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
             defer allocator.free(composite);
 
             try suite_gif.add_frame(composite);
+            const total_pixels = @as(usize, result.width) * @as(usize, result.height);
+            stats.bad_pixels += result.comparison.mismatch_count;
+            stats.total_pixels += total_pixels;
+            try appendCaseStat(
+                allocator,
+                &stats,
+                case.name,
+                true,
+                result.comparison.mismatch_count,
+                total_pixels,
+            );
 
             if (!result.comparison.matched()) {
                 stats.failed_cases += 1;
@@ -455,7 +538,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
                         &failure_file_writer.interface,
                         compositeWidth(max_canvas.width),
                         max_canvas.height,
-                        0,
+                        suite_frame_delay_cs,
                     );
                 }
                 try failure_gif.?.add_frame(composite);
@@ -675,6 +758,182 @@ fn accumulateSummary(summary: *RunSummary, stats: SuiteRunStats) void {
     summary.executed_cases += stats.executed_cases;
     summary.failed_cases += stats.failed_cases;
     summary.skipped_cases += stats.skipped_cases;
+    summary.bad_pixels += stats.bad_pixels;
+    summary.total_pixels += stats.total_pixels;
+}
+
+fn appendSkippedCases(allocator: std.mem.Allocator, stats: *SuiteRunStats, cases: []const CaseDef) !void {
+    for (cases) |case| {
+        try appendCaseStat(allocator, stats, case.name, false, 0, 0);
+    }
+}
+
+fn appendCaseStat(
+    allocator: std.mem.Allocator,
+    stats: *SuiteRunStats,
+    name: []const u8,
+    executed: bool,
+    bad_pixels: usize,
+    total_pixels: usize,
+) !void {
+    try stats.case_stats.append(allocator, .{
+        .name = try allocator.dupe(u8, name),
+        .executed = executed,
+        .bad_pixels = bad_pixels,
+        .total_pixels = total_pixels,
+    });
+}
+
+fn percentValue(bad_pixels: usize, total_pixels: usize) f64 {
+    if (total_pixels == 0)
+        return 0.0;
+    return @as(f64, @floatFromInt(bad_pixels)) * 100.0 / @as(f64, @floatFromInt(total_pixels));
+}
+
+fn printSpaces(count: usize) void {
+    for (0..count) |_| {
+        std.debug.print(" ", .{});
+    }
+}
+
+fn printDashes(count: usize) void {
+    for (0..count) |_| {
+        std.debug.print("-", .{});
+    }
+}
+
+fn printCell(text: []const u8, width: usize, right_align: bool) void {
+    const padding = width - text.len;
+    if (right_align) {
+        printSpaces(padding);
+        std.debug.print("{s}", .{text});
+    } else {
+        std.debug.print("{s}", .{text});
+        printSpaces(padding);
+    }
+}
+
+fn printTableBorder(widths: []const usize) void {
+    std.debug.print("+", .{});
+    for (widths) |width| {
+        printDashes(width + 2);
+        std.debug.print("+", .{});
+    }
+    std.debug.print("\n", .{});
+}
+
+fn printTableRow(texts: []const []const u8, widths: []const usize, right_align: []const bool) void {
+    std.debug.print("|", .{});
+    for (texts, widths, right_align) |text, width, align_right| {
+        std.debug.print(" ", .{});
+        printCell(text, width, align_right);
+        std.debug.print(" |", .{});
+    }
+    std.debug.print("\n", .{});
+}
+
+fn formatUsize(buf: []u8, value: usize) []const u8 {
+    return std.fmt.bufPrint(buf, "{}", .{value}) catch unreachable;
+}
+
+fn formatPercent(buf: []u8, bad_pixels: usize, total_pixels: usize) []const u8 {
+    return std.fmt.bufPrint(buf, "{d:.2}%", .{percentValue(bad_pixels, total_pixels)}) catch unreachable;
+}
+
+fn printReport(summary: RunSummary, suites: []const SuiteRunStats) void {
+    const suite_widths = [_]usize{ 24, 8, 4, 4, 4, 10, 7 };
+    const suite_align_right = [_]bool{ false, false, true, true, true, true, true };
+    const case_widths = [_]usize{ 40, 8, 10, 7 };
+    const case_align_right = [_]bool{ false, false, true, true };
+
+    std.debug.print("\nSuite Summary\n", .{});
+    printTableBorder(&suite_widths);
+    printTableRow(
+        &.{ "suite", "status", "exec", "skip", "fail", "bad px", "wrong %" },
+        &suite_widths,
+        &suite_align_right,
+    );
+    printTableBorder(&suite_widths);
+    for (suites) |suite| {
+        const status = if (suite.executed_cases == 0) "skipped" else if (suite.failed_cases == 0) "ok" else "mismatch";
+        var exec_buf: [32]u8 = undefined;
+        var skip_buf: [32]u8 = undefined;
+        var fail_buf: [32]u8 = undefined;
+        var bad_buf: [32]u8 = undefined;
+        var pct_buf: [32]u8 = undefined;
+        printTableRow(
+            &.{
+                suite.name,
+                status,
+                formatUsize(&exec_buf, suite.executed_cases),
+                formatUsize(&skip_buf, suite.skipped_cases),
+                formatUsize(&fail_buf, suite.failed_cases),
+                formatUsize(&bad_buf, suite.bad_pixels),
+                formatPercent(&pct_buf, suite.bad_pixels, suite.total_pixels),
+            },
+            &suite_widths,
+            &suite_align_right,
+        );
+    }
+    printTableBorder(&suite_widths);
+
+    var total_exec_buf: [32]u8 = undefined;
+    var total_skip_buf: [32]u8 = undefined;
+    var total_fail_buf: [32]u8 = undefined;
+    var total_bad_buf: [32]u8 = undefined;
+    var total_pct_buf: [32]u8 = undefined;
+    printTableRow(
+        &.{
+            "TOTAL",
+            if (summary.failed_cases == 0) "ok" else "mismatch",
+            formatUsize(&total_exec_buf, summary.executed_cases),
+            formatUsize(&total_skip_buf, summary.skipped_cases),
+            formatUsize(&total_fail_buf, summary.failed_cases),
+            formatUsize(&total_bad_buf, summary.bad_pixels),
+            formatPercent(&total_pct_buf, summary.bad_pixels, summary.total_pixels),
+        },
+        &suite_widths,
+        &suite_align_right,
+    );
+    printTableBorder(&suite_widths);
+
+    for (suites) |suite| {
+        std.debug.print("\nSuite: {s}\n", .{suite.name});
+        if (suite.executed_cases > 0) {
+            std.debug.print("Artifact: {s}\n", .{suite.artifact_path});
+        }
+        printTableBorder(&case_widths);
+        printTableRow(
+            &.{ "case", "status", "bad px", "wrong %" },
+            &case_widths,
+            &case_align_right,
+        );
+        printTableBorder(&case_widths);
+        for (suite.case_stats.items) |case_stat| {
+            const status = if (!case_stat.executed) "skipped" else if (case_stat.bad_pixels == 0) "ok" else "mismatch";
+            if (!case_stat.executed) {
+                printTableRow(
+                    &.{ case_stat.name, status, "-", "-" },
+                    &case_widths,
+                    &case_align_right,
+                );
+            } else {
+                var case_bad_buf: [32]u8 = undefined;
+                var case_pct_buf: [32]u8 = undefined;
+                printTableRow(
+                    &.{
+                        case_stat.name,
+                        status,
+                        formatUsize(&case_bad_buf, case_stat.bad_pixels),
+                        formatPercent(&case_pct_buf, case_stat.bad_pixels, case_stat.total_pixels),
+                    },
+                    &case_widths,
+                    &case_align_right,
+                );
+            }
+        }
+        printTableBorder(&case_widths);
+    }
 }
 
 fn biased_coord(rng: std.Random, dim: u16) i16 {
@@ -983,6 +1242,100 @@ fn build_bitmap_tile_crossing(enc: agp.Encoder, case: *const CaseDef) !void {
     try enc.blit_partial_bitmap(30, 62, 12, 7, 0, 0, &transparent_fixture);
 }
 
+fn build_command_clear_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(24));
+}
+
+fn build_command_set_clip_rect_focused(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(5));
+    try enc.set_clip_rect(18, 12, 44, 28);
+    try enc.fill_rect(0, 0, 96, 72, .yellow);
+    try enc.set_clip_rect(32, 24, 24, 16);
+    try enc.fill_rect(0, 0, 96, 72, .blue);
+    try enc.set_clip_rect(0, 0, 96, 72);
+}
+
+fn build_command_set_pixel_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.set_pixel(0, 0, .white);
+    try enc.set_pixel(95, 0, .red);
+    try enc.set_pixel(0, 71, .green);
+    try enc.set_pixel(95, 71, .blue);
+    try enc.set_pixel(63, 31, .yellow);
+    try enc.set_pixel(64, 32, .cyan);
+    try enc.set_pixel(-1, 10, .purple);
+    try enc.set_pixel(96, 10, .magenta);
+}
+
+fn build_command_draw_line_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.draw_line(0, 0, 95, 71, .white);
+    try enc.draw_line(95, 0, 0, 71, .red);
+    try enc.draw_line(0, 35, 95, 35, .green);
+    try enc.draw_line(48, 0, 48, 71, .blue);
+    try enc.draw_line(-8, 60, 40, 10, .yellow);
+}
+
+fn build_command_draw_rect_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.draw_rect(0, 0, 1, 1, .white);
+    try enc.draw_rect(2, 2, 20, 12, .red);
+    try enc.draw_rect(31, 7, 33, 25, .green);
+    try enc.draw_rect(62, 18, 34, 21, .blue);
+    try enc.draw_rect(-4, 48, 18, 14, .yellow);
+}
+
+fn build_command_fill_rect_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.fill_rect(0, 0, 1, 1, .white);
+    try enc.fill_rect(4, 4, 18, 10, .red);
+    try enc.fill_rect(28, 10, 36, 16, .green);
+    try enc.fill_rect(60, 26, 36, 20, .blue);
+    try enc.fill_rect(-6, 52, 20, 18, .yellow);
+}
+
+fn build_command_blit_bitmap_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(7));
+    try enc.blit_bitmap(0, 0, &opaque_fixture);
+    try enc.blit_bitmap(31, 12, &opaque_fixture);
+    try enc.blit_bitmap(63, 31, &strided_fixture);
+    try enc.blit_bitmap(92, 68, &transparent_fixture);
+}
+
+fn build_command_blit_partial_bitmap_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(9));
+    try enc.blit_partial_bitmap(0, 0, 8, 8, 0, 0, &opaque_fixture);
+    try enc.blit_partial_bitmap(22, 14, 16, 10, 1, 1, &strided_fixture);
+    try enc.blit_partial_bitmap(62, 30, 18, 18, 0, 0, &transparent_fixture);
+    try enc.blit_partial_bitmap(88, 64, 16, 16, 0, 0, &opaque_fixture);
+}
+
+fn build_command_draw_text_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.draw_text(8, 20, @ptrFromInt(1), .white, "cmd");
+}
+
+fn build_command_blit_framebuffer_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.blit_framebuffer(12, 10, @ptrFromInt(1));
+}
+
+fn build_command_blit_partial_framebuffer_only(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.blit_partial_framebuffer(12, 10, 20, 16, 2, 1, @ptrFromInt(1));
+}
+
 fn build_mixed_clip_geometry_bitmap(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
     try enc.clear(.from_gray(2));
@@ -1002,13 +1355,27 @@ fn build_mixed_many_tiles(enc: agp.Encoder, case: *const CaseDef) !void {
     while (y < 129) : (y += 31) {
         var x: i16 = 0;
         while (x < 193) : (x += 47) {
-            try enc.fill_rect(x - 3, y - 2, 20, 14, Color.from_rgb(@intCast(x + 32), @intCast(y + 48), @intCast(x + y + 12)));
+            try enc.fill_rect(
+                x - 3,
+                y - 2,
+                20,
+                14,
+                Color.from_rgb(
+                    wrap_u8_from_i16(x + 32),
+                    wrap_u8_from_i16(y + 48),
+                    wrap_u8_from_i16(x + y + 12),
+                ),
+            );
             try enc.draw_rect(x, y, 65, 33, .white);
             try enc.blit_bitmap(x + 12, y + 7, &opaque_fixture);
         }
     }
     try enc.draw_line(0, 0, 192, 128, .yellow);
     try enc.draw_line(192, 0, 0, 128, .cyan);
+}
+
+fn wrap_u8_from_i16(value: i16) u8 {
+    return @truncate(@as(u16, @bitCast(value)));
 }
 
 fn build_mixed_overdraw_ordering(enc: agp.Encoder, case: *const CaseDef) !void {
@@ -1032,6 +1399,146 @@ fn build_mixed_negative_partial(enc: agp.Encoder, case: *const CaseDef) !void {
     try enc.blit_partial_bitmap(40, -3, 18, 14, 0, 1, &strided_fixture);
     try enc.set_clip_rect(0, 0, 96, 72);
     try enc.draw_rect(3, 3, 89, 61, .white);
+}
+
+fn build_overdraw_elimination_profile(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+
+    const tile: i16 = agp_tiled_rast.tile_size;
+    const image_w: i16 = 8 * tile;
+    const image_h: i16 = 5 * tile;
+
+    try enc.clear(.black);
+
+    // Large clears that exercise full-image, partial-image, and off-image clip handling.
+    try enc.set_clip_rect(-tile, -tile, @intCast(image_w + 2 * tile), @intCast(image_h + 2 * tile));
+    try enc.clear(.from_gray(8));
+
+    try enc.set_clip_rect(tile, tile, @intCast(image_w - 2 * tile), @intCast(image_h - 2 * tile));
+    try enc.clear(.from_gray(16));
+
+    try enc.set_clip_rect(-tile, tile, @intCast(2 * tile), @intCast(2 * tile));
+    try enc.clear(.red);
+
+    try enc.set_clip_rect(7 * tile, 4 * tile, @intCast(2 * tile), @intCast(2 * tile));
+    try enc.clear(.blue);
+
+    try enc.set_clip_rect(2 * tile, -tile, @intCast(4 * tile), @intCast(2 * tile));
+    try enc.clear(.green);
+
+    try enc.set_clip_rect(0, 0, @intCast(image_w), @intCast(image_h));
+
+    // Wide opaque rectangles covering large image regions with heavy overlap.
+    var row: i16 = -tile;
+    while (row <= image_h) : (row += tile / 2) {
+        var col: i16 = -tile - tile / 2;
+        while (col <= image_w) : (col += tile - 12) {
+            try enc.fill_rect(
+                col,
+                row,
+                @intCast(2 * tile + 24),
+                @intCast(tile + 20),
+                profiling_color(col, row, 1),
+            );
+            col += tile / 3;
+        }
+    }
+
+    // Frame-like rectangles that cross tile boundaries and leave islands of visibility.
+    var band_y: i16 = -tile / 2;
+    while (band_y < image_h + tile / 2) : (band_y += tile - 9) {
+        var band_x: i16 = -tile;
+        while (band_x < image_w + tile) : (band_x += tile - 7) {
+            try enc.draw_rect(
+                band_x,
+                band_y,
+                @intCast(2 * tile + 5),
+                @intCast(tile + 11),
+                profiling_color(band_x, band_y, 2),
+            );
+        }
+    }
+
+    // Partially and fully out-of-image rectangles on all sides.
+    try enc.fill_rect(-2 * tile, 2 * tile, @intCast(tile + 12), @intCast(2 * tile), .yellow);
+    try enc.fill_rect(image_w - tile / 2, tile / 2, @intCast(2 * tile), @intCast(2 * tile), .cyan);
+    try enc.fill_rect(tile, -2 * tile, @intCast(3 * tile), @intCast(tile + 12), .purple);
+    try enc.fill_rect(3 * tile, image_h - tile / 3, @intCast(3 * tile), @intCast(2 * tile), .magenta);
+    try enc.fill_rect(image_w + tile / 2, image_h + tile / 2, @intCast(tile), @intCast(tile), .white);
+
+    // Opaque image placements at and beyond tile edges.
+    const opaque_points = [_][2]i16{
+        .{ -tile, -tile },
+        .{ -1, -1 },
+        .{ tile - 1, tile - 1 },
+        .{ tile, tile },
+        .{ 3 * tile - 2, 2 * tile - 1 },
+        .{ 7 * tile - 3, 4 * tile - 2 },
+        .{ image_w - 2, image_h - 2 },
+        .{ image_w + 1, image_h / 2 },
+    };
+    for (opaque_points) |point| {
+        try enc.blit_bitmap(point[0], point[1], &opaque_fixture);
+    }
+
+    // Transparent image placements targeting corners, seams, and off-image tiles.
+    const transparent_points = [_][2]i16{
+        .{ -tile, tile - 1 },
+        .{ tile - 1, -tile },
+        .{ 2 * tile - 1, 0 },
+        .{ 4 * tile - 2, 2 * tile - 1 },
+        .{ 6 * tile - 1, 3 * tile - 2 },
+        .{ image_w - tile / 2, image_h - tile / 2 },
+        .{ image_w + tile / 2, -tile / 2 },
+        .{ -tile / 2, image_h + tile / 2 },
+    };
+    for (transparent_points) |point| {
+        try enc.blit_bitmap(point[0], point[1], &transparent_fixture);
+    }
+
+    // Partial bitmap blits with oversized targets and clipped source regions.
+    const partial_specs = [_]struct {
+        dst_x: i16,
+        dst_y: i16,
+        width: u16,
+        height: u16,
+        src_x: i16,
+        src_y: i16,
+        bitmap: *const Bitmap,
+    }{
+        .{ .dst_x = -tile, .dst_y = 0, .width = @intCast(tile + 20), .height = @intCast(tile), .src_x = 0, .src_y = 0, .bitmap = &transparent_fixture },
+        .{ .dst_x = tile - 2, .dst_y = tile - 2, .width = @intCast(tile + 8), .height = @intCast(tile + 8), .src_x = 1, .src_y = 1, .bitmap = &strided_fixture },
+        .{ .dst_x = 4 * tile - 4, .dst_y = 2 * tile - 6, .width = @intCast(2 * tile), .height = @intCast(tile + 16), .src_x = 0, .src_y = 0, .bitmap = &opaque_fixture },
+        .{ .dst_x = image_w - tile / 2, .dst_y = image_h - tile / 2, .width = @intCast(2 * tile), .height = @intCast(2 * tile), .src_x = 0, .src_y = 0, .bitmap = &transparent_fixture },
+        .{ .dst_x = image_w + 3, .dst_y = tile, .width = @intCast(tile), .height = @intCast(tile), .src_x = 0, .src_y = 0, .bitmap = &opaque_fixture },
+        .{ .dst_x = tile, .dst_y = image_h + 5, .width = @intCast(tile), .height = @intCast(tile), .src_x = 0, .src_y = 0, .bitmap = &strided_fixture },
+    };
+    for (partial_specs) |spec| {
+        try enc.blit_partial_bitmap(
+            spec.dst_x,
+            spec.dst_y,
+            spec.width,
+            spec.height,
+            spec.src_x,
+            spec.src_y,
+            spec.bitmap,
+        );
+    }
+
+    // Final clears under selective clips to create obvious candidate overdraw-elimination wins.
+    try enc.set_clip_rect(tile / 2, tile / 2, @intCast(2 * tile), @intCast(2 * tile));
+    try enc.clear(.from_gray(28));
+    try enc.set_clip_rect(5 * tile, 2 * tile, @intCast(2 * tile), @intCast(2 * tile));
+    try enc.clear(.from_gray(36));
+    try enc.set_clip_rect(0, 0, @intCast(image_w), @intCast(image_h));
+}
+
+fn profiling_color(x: i16, y: i16, phase: i16) Color {
+    return Color.from_rgb(
+        wrap_u8_from_i16(x * 3 + phase * 17 + 29),
+        wrap_u8_from_i16(y * 5 + phase * 23 + 41),
+        wrap_u8_from_i16(x + y * 2 + phase * 31 + 7),
+    );
 }
 
 fn build_draw_text_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {

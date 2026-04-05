@@ -68,6 +68,7 @@ pub const GIF_Encoder = struct {
 
     pub fn add_frame(gif: *GIF_Encoder, frame: []const agp.Color) !void {
         std.debug.assert(frame.len == (@as(u32, gif.width) * gif.height));
+        comptime std.debug.assert(@sizeOf(agp.Color) == 1);
         const w = gif.writer;
 
         try w.writeByte(0x21);
@@ -169,9 +170,13 @@ fn lzwStoreLiterals(
     const clear_code: u16 = @as(u16, 1) << @intCast(min_code_size);
     const eoi_code: u16 = clear_code + 1;
     const code_bits: u8 = min_code_size + 1;
+    const max_literals_before_clear: usize = 250;
 
     try packer.emitCode(clear_code, code_bits);
-    for (data) |b| {
+    for (data, 0..) |b, i| {
+        if (i != 0 and (i % max_literals_before_clear) == 0) {
+            try packer.emitCode(clear_code, code_bits);
+        }
         try packer.emitCode(b, code_bits);
     }
     try packer.emitCode(eoi_code, code_bits);

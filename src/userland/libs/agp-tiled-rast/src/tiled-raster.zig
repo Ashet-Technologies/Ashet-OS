@@ -290,6 +290,15 @@ const TileArea = struct {
     bottom: usize, // exclude
 
     fn from_rectangle(rect: Rectangle) TileArea {
+        if (rect.width == 0 or rect.height == 0) {
+            return .{
+                .left = 0,
+                .right = 0,
+                .top = 0,
+                .bottom = 0,
+            };
+        }
+
         const left = @max(rect.x, 0);
         const top = @max(rect.y, 0);
 
