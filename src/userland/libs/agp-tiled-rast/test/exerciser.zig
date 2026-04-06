@@ -148,11 +148,18 @@ const ResourceCatalog = struct {
 
     const mono_6_font_instance = loadFont(@embedFile("mono-6.font"), .{});
     const mono_8_font_instance = loadFont(@embedFile("mono-8.font"), .{});
-    const sans_font_instance = loadFont(@embedFile("sans.font"), .{ .size = 12 });
+    const sans_8_font_instance = loadFont(@embedFile("sans.font"), .{ .size = 8 });
+    const sans_12_font_instance = loadFont(@embedFile("sans.font"), .{ .size = 12 });
+    const sans_16_font_instance = loadFont(@embedFile("sans.font"), .{ .size = 16 });
+    const sans_24_font_instance = loadFont(@embedFile("sans.font"), .{ .size = 24 });
 
     const mono_6_font: agp.Font = @ptrCast(@constCast(&mono_6_font_instance));
     const mono_8_font: agp.Font = @ptrCast(@constCast(&mono_8_font_instance));
-    const sans_font: agp.Font = @ptrCast(@constCast(&sans_font_instance));
+    const sans_8_font: agp.Font = @ptrCast(@constCast(&sans_8_font_instance));
+    const sans_12_font: agp.Font = @ptrCast(@constCast(&sans_12_font_instance));
+    const sans_16_font: agp.Font = @ptrCast(@constCast(&sans_16_font_instance));
+    const sans_24_font: agp.Font = @ptrCast(@constCast(&sans_24_font_instance));
+    const sans_font: agp.Font = sans_12_font;
 
     const framebuffer_primary_pixels: [64 * 29]Color align(64) = makeGradientBitmapPixels(37, 29, 64, false);
     const framebuffer_secondary_pixels: [128 * 33]Color align(64) = makeGradientBitmapPixels(71, 33, 128, false);
@@ -182,21 +189,30 @@ const ResourceCatalog = struct {
     fn resolveFontReference(_: *anyopaque, handle: agp.Font) ?*const agp_swrast.fonts.FontInstance {
         if (handle == mono_6_font) return &mono_6_font_instance;
         if (handle == mono_8_font) return &mono_8_font_instance;
-        if (handle == sans_font) return &sans_font_instance;
+        if (handle == sans_8_font) return &sans_8_font_instance;
+        if (handle == sans_12_font) return &sans_12_font_instance;
+        if (handle == sans_16_font) return &sans_16_font_instance;
+        if (handle == sans_24_font) return &sans_24_font_instance;
         return null;
     }
 
     fn resolveFontCandidate(_: *anyopaque, handle: agp.Font) ?*const agp_tiled_rast.FontInstance {
         if (handle == mono_6_font) return @ptrCast(&mono_6_font_instance);
         if (handle == mono_8_font) return @ptrCast(&mono_8_font_instance);
-        if (handle == sans_font) return @ptrCast(&sans_font_instance);
+        if (handle == sans_8_font) return @ptrCast(&sans_8_font_instance);
+        if (handle == sans_12_font) return @ptrCast(&sans_12_font_instance);
+        if (handle == sans_16_font) return @ptrCast(&sans_16_font_instance);
+        if (handle == sans_24_font) return @ptrCast(&sans_24_font_instance);
         return null;
     }
 
     fn lookupFontInstance(handle: agp.Font) ?*const agp_swrast.fonts.FontInstance {
         if (handle == mono_6_font) return &mono_6_font_instance;
         if (handle == mono_8_font) return &mono_8_font_instance;
-        if (handle == sans_font) return &sans_font_instance;
+        if (handle == sans_8_font) return &sans_8_font_instance;
+        if (handle == sans_12_font) return &sans_12_font_instance;
+        if (handle == sans_16_font) return &sans_16_font_instance;
+        if (handle == sans_24_font) return &sans_24_font_instance;
         return null;
     }
 
@@ -393,6 +409,13 @@ const overdraw_profile_cases = [_]CaseDef{
 
 const draw_text_cases = [_]CaseDef{
     .{ .name = "draw-text-placeholder", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_placeholder },
+    .{ .name = "clip-bitmap-fonts", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_clip_bitmap_fonts },
+    .{ .name = "clip-vector-font", .canvas = .{ .width = 127, .height = 95 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_clip_vector_font },
+    .{ .name = "clip-zero-and-outside", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_clip_zero_and_outside },
+    .{ .name = "clip-nested-and-reset", .canvas = .{ .width = 127, .height = 95 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_clip_nested_and_reset },
+    .{ .name = "tile-boundaries-mono6", .canvas = .{ .width = 193, .height = 129 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_tile_boundaries_mono6 },
+    .{ .name = "tile-boundaries-mono8", .canvas = .{ .width = 193, .height = 129 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_tile_boundaries_mono8 },
+    .{ .name = "tile-boundaries-vector-sizes", .canvas = .{ .width = 193, .height = 193 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_tile_boundaries_vector_sizes },
 };
 
 const framebuffer_blit_cases = [_]CaseDef{
@@ -2066,6 +2089,183 @@ fn build_draw_text_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {
     try enc.draw_text(4, 30, ResourceCatalog.mono_8_font, .yellow, "bigger bitmap");
     try enc.set_clip_rect(0, 36, 96, 32);
     try enc.draw_text(4, 54, ResourceCatalog.sans_font, .cyan, "vector font");
+}
+
+fn build_draw_text_clip_bitmap_fonts(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(3));
+    try enc.fill_rect(0, 0, 96, 72, .from_gray(7));
+
+    try enc.set_clip_rect(6, 8, 34, 10);
+    try enc.draw_text(4, 14, ResourceCatalog.mono_6_font, .white, "clip mono6");
+
+    try enc.set_clip_rect(42, 10, 28, 14);
+    try enc.draw_text(34, 18, ResourceCatalog.mono_8_font, .yellow, "mono8 edge");
+
+    try enc.set_clip_rect(68, 22, 20, 18);
+    try enc.draw_text(62, 30, ResourceCatalog.mono_8_font, .cyan, "tail");
+
+    try enc.set_clip_rect(0, 44, 22, 10);
+    try enc.draw_text(-6, 50, ResourceCatalog.mono_6_font, .red, "left");
+
+    try enc.set_clip_rect(0, 0, 96, 72);
+    try enc.draw_rect(5, 7, 35, 11, .red);
+    try enc.draw_rect(41, 9, 29, 15, .green);
+    try enc.draw_rect(67, 21, 21, 19, .blue);
+    try enc.draw_rect(0, 43, 22, 11, .magenta);
+}
+
+fn build_draw_text_clip_vector_font(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.fill_rect(0, 0, 127, 95, .from_gray(5));
+
+    try enc.set_clip_rect(12, 12, 44, 22);
+    try enc.draw_text(6, 28, ResourceCatalog.sans_font, .white, "vector");
+
+    try enc.set_clip_rect(52, 18, 34, 26);
+    try enc.draw_text(38, 36, ResourceCatalog.sans_font, .yellow, "slice");
+
+    try enc.set_clip_rect(86, 30, 28, 34);
+    try enc.draw_text(76, 52, ResourceCatalog.sans_font, .cyan, "edge");
+
+    try enc.set_clip_rect(0, 56, 40, 24);
+    try enc.draw_text(-8, 74, ResourceCatalog.sans_font, .green, "left");
+
+    try enc.set_clip_rect(0, 0, 127, 95);
+    try enc.draw_rect(11, 11, 45, 23, .red);
+    try enc.draw_rect(51, 17, 35, 27, .green);
+    try enc.draw_rect(85, 29, 29, 35, .blue);
+    try enc.draw_rect(0, 55, 40, 25, .magenta);
+}
+
+fn build_draw_text_clip_zero_and_outside(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(4));
+    try enc.fill_rect(0, 0, 96, 72, .from_gray(8));
+
+    try enc.set_clip_rect(12, 12, 0, 18);
+    try enc.draw_text(4, 24, ResourceCatalog.mono_8_font, .white, "zero");
+
+    try enc.set_clip_rect(-20, -16, 8, 8);
+    try enc.draw_text(2, 16, ResourceCatalog.mono_6_font, .yellow, "off");
+
+    try enc.set_clip_rect(92, 64, 12, 12);
+    try enc.draw_text(80, 70, ResourceCatalog.mono_6_font, .cyan, "corner");
+
+    try enc.set_clip_rect(0, 28, 18, 12);
+    try enc.draw_text(-10, 34, ResourceCatalog.mono_8_font, .red, "neg");
+
+    try enc.set_clip_rect(74, 0, 22, 16);
+    try enc.draw_text(88, 12, ResourceCatalog.mono_6_font, .green, "right");
+
+    try enc.set_clip_rect(0, 0, 96, 72);
+    try enc.draw_rect(91, 63, 5, 9, .white);
+    try enc.draw_rect(0, 27, 18, 13, .magenta);
+    try enc.draw_rect(73, 0, 23, 16, .blue);
+}
+
+fn build_draw_text_clip_nested_and_reset(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(2));
+    try enc.fill_rect(0, 0, 127, 95, .from_gray(6));
+
+    try enc.set_clip_rect(10, 10, 96, 62);
+    try enc.draw_text(6, 22, ResourceCatalog.mono_8_font, .white, "outer clip");
+
+    try enc.set_clip_rect(22, 22, 44, 18);
+    try enc.draw_text(12, 34, ResourceCatalog.mono_6_font, .yellow, "inner slice");
+
+    try enc.set_clip_rect(70, 18, 28, 42);
+    try enc.draw_text(60, 44, ResourceCatalog.sans_font, .cyan, "tall");
+
+    try enc.set_clip_rect(36, 48, 20, 10);
+    try enc.draw_text(28, 56, ResourceCatalog.mono_8_font, .green, "thin");
+
+    try enc.set_clip_rect(0, 0, 127, 95);
+    try enc.draw_text(4, 82, ResourceCatalog.mono_6_font, .red, "reset full clip");
+
+    try enc.draw_rect(9, 9, 97, 63, .red);
+    try enc.draw_rect(21, 21, 45, 19, .green);
+    try enc.draw_rect(69, 17, 29, 43, .blue);
+    try enc.draw_rect(35, 47, 21, 11, .magenta);
+}
+
+fn draw_text_tile_guides(enc: agp.Encoder, width: u16, height: u16) !void {
+    const tile: i16 = agp_tiled_rast.tile_size;
+    const dark_a: Color = .from_gray(4);
+    const dark_b: Color = .from_gray(8);
+
+    try enc.clear(dark_a);
+
+    var tile_y: i16 = 0;
+    while (tile_y < height) : (tile_y += tile) {
+        var tile_x: i16 = 0;
+        while (tile_x < width) : (tile_x += tile) {
+            const tile_ix = @divFloor(tile_x, tile);
+            const tile_iy = @divFloor(tile_y, tile);
+            try enc.fill_rect(
+                tile_x,
+                tile_y,
+                @intCast(@min(tile, @as(i16, @intCast(height)) - tile_y)),
+                @intCast(@min(tile, @as(i16, @intCast(width)) - tile_x)),
+                if (@mod(tile_ix + tile_iy, 2) == 0) dark_a else dark_b,
+            );
+        }
+    }
+}
+
+fn build_draw_text_tile_boundaries_mono6(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try draw_text_tile_guides(enc, 193, 129);
+
+    try enc.draw_text(58, 14, ResourceCatalog.mono_6_font, .white, "x63");
+    try enc.draw_text(64, 14, ResourceCatalog.mono_6_font, .yellow, "x64");
+    try enc.draw_text(122, 14, ResourceCatalog.mono_6_font, .cyan, "x127");
+    try enc.draw_text(128, 14, ResourceCatalog.mono_6_font, .green, "x128");
+
+    try enc.draw_text(6, 60, ResourceCatalog.mono_6_font, .red, "y63");
+    try enc.draw_text(70, 60, ResourceCatalog.mono_6_font, .magenta, "cross y63");
+    try enc.draw_text(6, 64, ResourceCatalog.mono_6_font, .blue, "y64");
+    try enc.draw_text(70, 64, ResourceCatalog.mono_6_font, .purple, "cross y64");
+
+    try enc.draw_text(-4, 126, ResourceCatalog.mono_6_font, .white, "neg x");
+    try enc.draw_text(124, 126, ResourceCatalog.mono_6_font, .yellow, "tail");
+}
+
+fn build_draw_text_tile_boundaries_mono8(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try draw_text_tile_guides(enc, 193, 129);
+
+    try enc.draw_text(54, 18, ResourceCatalog.mono_8_font, .white, "mono8@63");
+    try enc.draw_text(64, 18, ResourceCatalog.mono_8_font, .yellow, "mono8@64");
+    try enc.draw_text(118, 18, ResourceCatalog.mono_8_font, .cyan, "mono8@127");
+    try enc.draw_text(128, 18, ResourceCatalog.mono_8_font, .green, "mono8@128");
+
+    try enc.draw_text(8, 58, ResourceCatalog.mono_8_font, .red, "row63");
+    try enc.draw_text(72, 58, ResourceCatalog.mono_8_font, .magenta, "cross-63");
+    try enc.draw_text(8, 64, ResourceCatalog.mono_8_font, .blue, "row64");
+    try enc.draw_text(72, 64, ResourceCatalog.mono_8_font, .purple, "cross-64");
+
+    try enc.draw_text(-6, 120, ResourceCatalog.mono_8_font, .white, "left spill");
+    try enc.draw_text(126, 120, ResourceCatalog.mono_8_font, .yellow, "right spill");
+}
+
+fn build_draw_text_tile_boundaries_vector_sizes(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try draw_text_tile_guides(enc, 193, 193);
+
+    try enc.draw_text(56, 18, ResourceCatalog.sans_8_font, .white, "v8 x63");
+    try enc.draw_text(122, 18, ResourceCatalog.sans_8_font, .yellow, "v8 x127");
+
+    try enc.draw_text(44, 60, ResourceCatalog.sans_12_font, .cyan, "v12 at 64");
+    try enc.draw_text(116, 60, ResourceCatalog.sans_12_font, .green, "v12 at 128");
+
+    try enc.draw_text(18, 92, ResourceCatalog.sans_16_font, .red, "v16 row64");
+    try enc.draw_text(90, 92, ResourceCatalog.sans_16_font, .magenta, "v16 cross");
+
+    try enc.draw_text(-8, 148, ResourceCatalog.sans_24_font, .blue, "v24 left");
+    try enc.draw_text(94, 148, ResourceCatalog.sans_24_font, .purple, "v24 seam 128");
 }
 
 fn build_framebuffer_blit_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {

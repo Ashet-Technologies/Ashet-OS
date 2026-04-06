@@ -1,6 +1,7 @@
 const std = @import("std");
 const agp = @import("agp");
 const ashet = @import("ashet-abi");
+const turtlefont = @import("turtlefont");
 const agp_swrast = @import("agp-swrast");
 
 const Color = ashet.Color;
@@ -181,6 +182,7 @@ pub const Rasterizer = struct {
         InvalidStream,
         UnknownFramebuffer,
         UnknownFont,
+        InvalidUtf8,
     };
 
     /// Executes the given command sequence.
@@ -216,8 +218,10 @@ pub const Rasterizer = struct {
         // check the stream validity with it:
         rast.sweep_and_mark() catch |err| switch (err) {
             error.EndOfStream, error.InvalidCommand => return error.InvalidStream,
-            error.UnknownFramebuffer => return error.UnknownFramebuffer,
-            error.UnknownFont => return error.UnknownFont,
+            error.UnknownFramebuffer,
+            error.UnknownFont,
+            error.InvalidUtf8,
+            => |e| return e,
         };
 
         rast.render_all_tiles();
@@ -266,6 +270,8 @@ pub const Rasterizer = struct {
                     const font = rast.resolver.resolve_font(draw.font);
                     if (font == null)
                         return error.UnknownFont;
+
+                    _ = try std.unicode.Utf8View.init(draw.text);
                 },
 
                 else => {},
@@ -329,17 +335,38 @@ pub const Rasterizer = struct {
     fn cmd_area_of_effect(rast: *Rasterizer, cmd: *const Command) Rectangle {
         return switch (cmd.*) {
             .draw_text => |draw| blk: {
-                // TODO: Implement correct text layouting engine:
-
                 const font = rast.resolver.resolve_font(draw.font) orelse unreachable;
-                const line_height: u16 = font.line_height();
-                const width: u16 = font.measure_width(draw.text);
+
+                const line_height: i16 = font.line_height();
+
+                var top: i16 = std.math.maxInt(i16);
+                var bottom: i16 = std.math.minInt(i16);
+
+                var width: u16 = 0;
+
+                var iter: LineIterator = .init(font, draw.y, draw.text);
+                while (iter.next()) |line| {
+                    // ignore empty lines:
+                    if (line.text.len == 0)
+                        continue;
+
+                    const line_width: u16 = font.measure_width(line.text);
+
+                    top = @min(top, line.y);
+                    bottom = @max(bottom, line.y +| line_height);
+                    width = @max(width, line_width);
+                }
+
+                if (top > bottom) {
+                    // empty, we've never rendered a line of text:
+                    return .{ .x = draw.x, .y = draw.y, .width = 0, .height = 0 };
+                }
 
                 break :blk .{
                     .x = draw.x,
-                    .y = draw.y - @as(i16, @intCast(line_height)),
+                    .y = top,
                     .width = width,
-                    .height = line_height * 2,
+                    .height = if (width > 0) @intCast(bottom - top) else 0,
                 };
             },
             .blit_framebuffer => |blit| blk: {
@@ -629,13 +656,6 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn exec_draw_text(rast: *Rasterizer, cmd: agp.Command.DrawText, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = target_rect;
-        _ = base;
-    }
-
     fn exec_blit_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitBitmap, base: Point, target_rect: Rectangle) void {
         rast.exec_blit_partial_bitmap(.{
             .x = cmd.x,
@@ -778,6 +798,166 @@ pub const Rasterizer = struct {
             }
         }
     }
+
+    fn exec_draw_text(rast: *Rasterizer, draw: agp.Command.DrawText, base: Point, target_rect: Rectangle) void {
+        const font = rast.resolver.resolve_font(draw.font) orelse unreachable;
+
+        const line_height: u15 = font.line_height();
+
+        var iter: LineIterator = .init(font, draw.y, draw.text);
+        while (iter.next()) |line| {
+            if (line.text.len == 0)
+                continue;
+
+            const width: u15 = font.measure_width(line.text);
+
+            const line_rect: Rectangle = .{
+                .x = draw.x,
+                .y = line.y,
+                .width = width,
+                .height = line_height,
+            };
+
+            // Early-discard all lines that aren't affected
+            if (!line_rect.intersects(target_rect))
+                continue;
+
+            const op: DrawLineOp = .{
+                .x = draw.x,
+                .y = line.y,
+                .width = width,
+                .text = line.text,
+                .color = draw.color,
+            };
+
+            switch (font.*) {
+                .vector => |*vector_font| rast.exec_draw_vector_line(base, target_rect, vector_font, op),
+                .bitmap => |*bitmap_font| rast.exec_draw_bitmap_line(base, target_rect, bitmap_font, op),
+            }
+        }
+    }
+
+    const DrawLineOp = struct {
+        x: i16,
+        y: i16,
+        width: u15,
+        text: []const u8,
+        color: Color,
+    };
+
+    fn exec_draw_bitmap_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, bitmap_font: *const BitmapFont, op: DrawLineOp) void {
+        var utf8_view = std.unicode.Utf8View.init(op.text) catch unreachable; // was invalidated already
+        var codepoints = utf8_view.iterator();
+
+        const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
+
+        _ = rast;
+        _ = base;
+        _ = target_rect;
+        _ = &codepoints;
+        _ = fallback_glyph;
+
+        // while (codepoints.nextCodepoint()) |char| {
+        //     if (sw.dx >= sw.limit) {
+        //         break;
+        //     }
+        //     const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
+
+        //     if (sw.dx + glyph.advance >= 0) {
+        //         const row_stride = (glyph.width + 7) / 8;
+
+        //         const px: i16 = @intCast(sw.dx + glyph.offset_x);
+        //         const py: i16 = @intCast(sw.dy + glyph.offset_y);
+
+        //         var gy: u15 = 0;
+        //         while (gy < glyph.height) : (gy += 1) {
+        //             var row_ptr = glyph.bits.ptr + row_stride * gy;
+
+        //             {
+        //                 var gx: u15 = 0;
+        //                 var mask: u8 = 1;
+        //                 var bits: u8 = row_ptr[0];
+        //                 while (gx < glyph.width) : (gx += 1) {
+        //                     if (sw.dx + gx >= sw.limit) {
+        //                         break;
+        //                     }
+
+        //                     if ((bits & mask) != 0) {
+        //                         sw.rast.set_pixel(.new(px + gx, py + gy), sw.color);
+        //                     }
+
+        //                     mask <<= 1;
+        //                     if (mask == 0) {
+        //                         row_ptr += 1;
+        //                         mask = 1;
+        //                         bits = row_ptr[0];
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     sw.dx += glyph.advance;
+        // }
+    }
+
+    fn exec_draw_vector_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, vector_font: *const VectorFont, op: DrawLineOp) void {
+        const TurtleCtx = struct {
+            tile: *Tile,
+            target: Rectangle,
+
+            fn set_pixel(ctx: @This(), x: i16, y: i16, color: Color) void {
+                if (!ctx.target.contains(.new(x, y)))
+                    return;
+                ctx.tile[@intCast(y)][@intCast(x)] = color;
+            }
+        };
+
+        const VectorRasterizer = turtlefont.Rasterizer(TurtleCtx, Color, TurtleCtx.set_pixel);
+
+        var utf8_view = std.unicode.Utf8View.init(op.text) catch unreachable; // was validated before
+        var codepoints = utf8_view.iterator();
+
+        const fallback_glyph = vector_font.getGlyph('�') orelse vector_font.getGlyph('?');
+
+        const vrast = VectorRasterizer.init(.{
+            .tile = &rast.current_tile,
+            .target = .{
+                .x = target_rect.x - base.x,
+                .y = target_rect.y - base.y,
+                .width = target_rect.width,
+                .height = target_rect.height,
+            },
+        });
+
+        const vec_options = vector_font.getTurtleOptions();
+
+        var dx: i16 = op.x -| base.x;
+
+        while (codepoints.nextCodepoint()) |char| {
+            // Stop when we're leaving the tile
+            if (dx >= tile_size)
+                break;
+
+            const glyph: VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
+
+            const advance = vec_options.scaleX(glyph.advance);
+
+            if (dx + advance >= 0) {
+                // we can actually see the glyph:
+                vrast.renderGlyph(
+                    vec_options,
+                    dx,
+                    op.y +| vector_font.size -| base.y,
+                    op.color,
+                    vector_font.turtle_font.getCode(glyph),
+                );
+            }
+
+            dx += advance;
+            dx += @intFromBool(vector_font.bold);
+        }
+    }
 };
 
 /// Returns if the rectangle will actually be processed by `cmd`.
@@ -845,6 +1025,47 @@ fn get_tile_extend(last: bool, dimension: u16) u16 {
         return tile_size;
     return size;
 }
+
+const LineIterator = struct {
+    font: *const FontInstance,
+    text: []const u8,
+    offset: usize = 0,
+    y: i16,
+
+    pub fn init(font: *const FontInstance, y: i16, text: []const u8) LineIterator {
+        return .{
+            .font = font,
+            .text = text,
+            .y = y,
+        };
+    }
+
+    pub fn next(iter: *LineIterator) ?TextLine {
+        if (iter.offset >= iter.text.len) {
+            std.debug.assert(iter.offset == iter.text.len);
+            return null;
+        }
+
+        const end_of_line = std.mem.indexOfScalarPos(u8, iter.text, iter.offset, '\n') orelse iter.text.len;
+
+        const line: TextLine = .{
+            .font = iter.font,
+            // we can always pre-trim the line here, as we don't want to render trailing
+            // white-space characters that potentially include a new tile into the rendering.
+            .text = std.mem.trimEnd(u8, iter.text[iter.offset..end_of_line], "\r\t "),
+            .y = iter.y,
+        };
+        iter.offset = end_of_line;
+        iter.y += iter.font.line_height();
+        return line;
+    }
+};
+
+pub const TextLine = struct {
+    font: *const FontInstance,
+    y: i16,
+    text: []const u8,
+};
 
 // Assert invariants:
 
