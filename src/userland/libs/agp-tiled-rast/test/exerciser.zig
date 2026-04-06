@@ -679,6 +679,10 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
         }
     }
 
+    if (stats.failed_cases == 0) {
+        try deleteFileIfPresent(failures_path);
+    }
+
     return stats;
 }
 
@@ -815,7 +819,18 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
         }
     }
 
+    if (stats.failed_cases == 0) {
+        try deleteFileIfPresent(failures_path);
+    }
+
     return stats;
+}
+
+fn deleteFileIfPresent(path: []const u8) !void {
+    std.fs.cwd().deleteFile(path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
 }
 
 fn run_case(allocator: std.mem.Allocator, case: *const CaseDef) !CaseResult {
