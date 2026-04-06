@@ -6,3 +6,7 @@ zig-out/
 rootfs-pxe/ashet-os
 .venv/
 kernel.log
+
+
+.tmp/
+.codex
