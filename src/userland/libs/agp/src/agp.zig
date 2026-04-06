@@ -922,8 +922,12 @@ pub const Command = union(CommandByte) {
         framebuffer: Framebuffer,
 
         pub fn get_area_of_effect(cmd: BlitPartialFramebuffer) ashet.Rectangle {
-            _ = cmd;
-            @panic("Not possible in the state of things. This must be fixed.");
+            return .{
+                .x = cmd.x,
+                .y = cmd.y,
+                .width = cmd.width,
+                .height = cmd.height,
+            };
         }
     };
 };

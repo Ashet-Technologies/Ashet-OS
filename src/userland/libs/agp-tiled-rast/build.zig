@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ashet-abi", .module = abi_mod },
             .{ .name = "agp", .module = agp_mod },
             .{ .name = "turtlefont", .module = turtlefont_mod },
+            .{ .name = "agp-swrast", .module = agp_swrast_mod }, // TODO: Delete this and factor common parts into a common code
         },
     });
 

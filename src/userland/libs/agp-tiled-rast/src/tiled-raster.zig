@@ -1,6 +1,7 @@
 const std = @import("std");
 const agp = @import("agp");
 const ashet = @import("ashet-abi");
+const agp_swrast = @import("agp-swrast");
 
 const Color = ashet.Color;
 const Point = ashet.Point;
@@ -8,6 +9,7 @@ const Size = ashet.Size;
 const Rectangle = ashet.Rectangle;
 const Bitmap = agp.Bitmap;
 const Command = agp.Command;
+const Font = agp.Font;
 
 // ------------------------------------------------------------------
 // Global rasterizer parameters:
@@ -85,33 +87,17 @@ pub const TileStateCache = extern struct {
     }
 };
 
+// Instance of a single drawable font file.
+pub const FontInstance = agp_swrast.fonts.FontInstance;
+
+// Instance of a vector graphics font.
+pub const VectorFont = agp_swrast.fonts.VectorFont;
+
+// Instance of a bitmap font.
+pub const BitmapFont = agp_swrast.fonts.BitmapFont;
+
 /// A read-only pixel source used for blit operations.
-pub const Image = struct {
-    pixels: [*]const Color,
-    width: u16,
-    height: u16,
-    stride: u32,
-    transparency_key: ?Color = null,
-
-    pub fn from_bitmap(bmp: *const Bitmap) Image {
-        return .{
-            .pixels = bmp.pixels,
-            .width = bmp.width,
-            .height = bmp.height,
-            .stride = @intCast(bmp.stride),
-            .transparency_key = if (bmp.has_transparency) bmp.transparency_key else null,
-        };
-    }
-
-    pub fn row(self: Image, y: u16) [*]const Color {
-        return self.pixels + @as(usize, y) * self.stride;
-    }
-
-    pub fn slice(self: Image, x: u16, y: u16, len: u16) []const Color {
-        const base = @as(usize, y) * self.stride + x;
-        return self.pixels[base..][0..len];
-    }
-};
+pub const Image = agp_swrast.Image;
 
 /// A writable pixel destination for rendering.
 ///
@@ -144,6 +130,31 @@ pub const RenderTarget = struct {
     }
 };
 
+/// The resolver provides an abstraction over different host systems that
+/// have different implementations for framebuffer objects and font instancing.
+pub const Resolver = struct {
+    pub const VTable = struct {
+        resolve_font_fn: *const fn (*anyopaque, Font) ?*const FontInstance,
+        resolve_framebuffer_fn: *const fn (*anyopaque, agp.Framebuffer) ?Image,
+    };
+
+    ctx: *anyopaque,
+    vtable: *const VTable,
+
+    /// Resolves a font handle into a font instance.
+    pub fn resolve_font(resolver: Resolver, handle: Font) ?*const FontInstance {
+        return resolver.vtable.resolve_font_fn(resolver.ctx, handle);
+    }
+
+    /// Resolves a framebuffer into an image.
+    ///
+    /// TODO: Change Image to RenderTarget or another type that gives us the sweet
+    ///       64 byte alignment guarantee for super fast fused-store blitting.
+    pub fn resolve_framebuffer(resolver: Resolver, handle: agp.Framebuffer) ?Image {
+        return resolver.vtable.resolve_framebuffer_fn(resolver.ctx, handle);
+    }
+};
+
 /// Tiled rasterizer storing the full state of the rasterization progress.
 pub const Rasterizer = struct {
     tile_states: TileStateCache = .init,
@@ -162,12 +173,20 @@ pub const Rasterizer = struct {
 
     screen_rect: Rectangle = undefined,
 
-    pub const ExecuteError = error{ ImageTooLarge, StreamTooLong, InvalidStream };
+    resolver: Resolver = undefined,
+
+    pub const ExecuteError = error{
+        ImageTooLarge,
+        StreamTooLong,
+        InvalidStream,
+        UnknownFramebuffer,
+        UnknownFont,
+    };
 
     /// Executes the given command sequence.
     ///
     /// In case of an error, the execution might have performed a partial rendering already.
-    pub fn execute(rast: *Rasterizer, target: RenderTarget, sequence: []const u8) ExecuteError!void {
+    pub fn execute(rast: *Rasterizer, target: RenderTarget, resolver: Resolver, sequence: []const u8) ExecuteError!void {
         std.debug.assert(std.mem.isAligned(target.stride, tile_size));
         std.debug.assert(target.width <= target.stride);
 
@@ -176,6 +195,8 @@ pub const Rasterizer = struct {
 
         if (sequence.len > max_commandbuffer_size)
             return error.StreamTooLong;
+
+        rast.resolver = resolver;
 
         // Copy the command sequence into our own buffers so we both
         // own it, and can guarantee it's stored in a fast RAM area.
@@ -195,6 +216,8 @@ pub const Rasterizer = struct {
         // check the stream validity with it:
         rast.sweep_and_mark() catch |err| switch (err) {
             error.EndOfStream, error.InvalidCommand => return error.InvalidStream,
+            error.UnknownFramebuffer => return error.UnknownFramebuffer,
+            error.UnknownFont => return error.UnknownFont,
         };
 
         rast.render_all_tiles();
@@ -228,7 +251,29 @@ pub const Rasterizer = struct {
             const end_of_cmd: u16 = @intCast(decoder.cursor);
             defer start_of_cmd = end_of_cmd;
 
-            const cmd_area = cmd.get_area_of_effect();
+            switch (cmd) {
+                .blit_framebuffer => |blit| {
+                    const fb = rast.resolver.resolve_framebuffer(blit.framebuffer);
+                    if (fb == null)
+                        return error.UnknownFramebuffer;
+                },
+
+                .blit_partial_framebuffer => |blit| {
+                    const fb = rast.resolver.resolve_framebuffer(blit.framebuffer);
+                    if (fb == null)
+                        return error.UnknownFramebuffer;
+                },
+
+                .draw_text => |draw| {
+                    const font = rast.resolver.resolve_font(draw.font);
+                    if (font == null)
+                        return error.UnknownFont;
+                },
+
+                else => {},
+            }
+
+            const cmd_area = rast.cmd_area_of_effect(&cmd);
 
             const potential_tile_area: TileArea = .from_rectangle(
                 // Overlap effect area and image area so we don't activate tiles
@@ -286,6 +331,35 @@ pub const Rasterizer = struct {
         }
 
         rast.screen_rect = output_rect;
+    }
+
+    fn cmd_area_of_effect(rast: *Rasterizer, cmd: *const Command) Rectangle {
+        return switch (cmd.*) {
+            .draw_text => |draw| blk: {
+                // TODO: Implement correct text layouting engine:
+
+                const font = rast.resolver.resolve_font(draw.font) orelse unreachable;
+                const line_height: u16 = font.line_height();
+                const width: u16 = font.measure_width(draw.text);
+
+                break :blk .{
+                    .x = draw.x,
+                    .y = draw.y - @as(i16, @intCast(line_height)),
+                    .width = width,
+                    .height = line_height * 2,
+                };
+            },
+            .blit_framebuffer => |blit| blk: {
+                const image = rast.resolver.resolve_framebuffer(blit.framebuffer) orelse unreachable;
+                break :blk .{
+                    .x = blit.x,
+                    .y = blit.y,
+                    .width = image.width,
+                    .height = image.height,
+                };
+            },
+            inline else => |item| item.get_area_of_effect(),
+        };
     }
 
     fn render_all_tiles(rast: *Rasterizer) void {
@@ -591,11 +665,18 @@ pub const Rasterizer = struct {
     }
 
     fn exec_blit_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitFramebuffer, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = base;
-        _ = target_rect;
-        @panic("TODO: Implement framebuffer resolution");
+        // Get the framebuffer handle. We resolved that already earlier, so we know it exists:
+        const image = rast.resolver.resolve_framebuffer(cmd.framebuffer) orelse unreachable;
+
+        rast.exec_blit_partial_image(base, target_rect, .{
+            .x = cmd.x,
+            .y = cmd.y,
+            .src_x = 0,
+            .src_y = 0,
+            .width = image.width,
+            .height = image.height,
+            .image = image,
+        });
     }
 
     fn exec_blit_partial_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitPartialBitmap, base: Point, target_rect: Rectangle) void {
@@ -611,11 +692,19 @@ pub const Rasterizer = struct {
     }
 
     fn exec_blit_partial_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitPartialFramebuffer, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = base;
-        _ = target_rect;
-        @panic("TODO: Implement framebuffer resolution");
+
+        // Get the framebuffer handle. We resolved that already earlier, so we know it exists:
+        const image = rast.resolver.resolve_framebuffer(cmd.framebuffer) orelse unreachable;
+
+        rast.exec_blit_partial_image(base, target_rect, .{
+            .x = cmd.x,
+            .y = cmd.y,
+            .src_x = cmd.src_x,
+            .src_y = cmd.src_y,
+            .width = cmd.width,
+            .height = cmd.height,
+            .image = image,
+        });
     }
 
     fn exec_blit_partial_image(rast: *Rasterizer, base: Point, clip_rect: Rectangle, cmd: struct {
@@ -835,6 +924,28 @@ test TileStateCache {
     }
 }
 
+const TestResolver = struct {
+    const vtable: Resolver.VTable = .{
+        .resolve_font_fn = resolveFont,
+        .resolve_framebuffer_fn = resolveFramebuffer,
+    };
+
+    fn resolver() Resolver {
+        return .{
+            .ctx = @ptrFromInt(1),
+            .vtable = &vtable,
+        };
+    }
+
+    fn resolveFont(_: *anyopaque, _: Font) ?*const FontInstance {
+        return null;
+    }
+
+    fn resolveFramebuffer(_: *anyopaque, _: agp.Framebuffer) ?Image {
+        return null;
+    }
+};
+
 test "Rasterizer smoke" {
     var rast: Rasterizer = .{};
 
@@ -847,7 +958,7 @@ test "Rasterizer smoke" {
         .pixels = &buffer,
     };
 
-    try rast.execute(target, "");
+    try rast.execute(target, TestResolver.resolver(), "");
 }
 
 test "Rectangle.overlappedRegion" {
@@ -928,7 +1039,7 @@ test "Rasterizer renders clipped diagonal lines across tiles" {
     defer stream.deinit();
     const enc = agp.encoder(&stream.writer);
     try enc.draw_line(-5, 70, 70, -5, .yellow);
-    try rast.execute(target, stream.written());
+    try rast.execute(target, TestResolver.resolver(), stream.written());
 
     try std.testing.expectEqual(Color.yellow, buffer[0 * target.stride + 65]);
     try std.testing.expectEqual(Color.yellow, buffer[1 * target.stride + 64]);

@@ -118,15 +118,93 @@ const RunSummary = struct {
     total_pixels: usize = 0,
 };
 
-const NullResolver = struct {
-    fn resolveFont(_: *anyopaque, _: agp.Font) ?*const agp_swrast.fonts.FontInstance {
+const ResourceCatalog = struct {
+    const FramebufferFixture = struct {
+        pixels: []align(64) const Color,
+        width: u16,
+        height: u16,
+        stride: u32,
+
+        fn asReferenceImage(self: *const FramebufferFixture) agp_swrast.Image {
+            return .{
+                .pixels = self.pixels.ptr,
+                .width = self.width,
+                .height = self.height,
+                .stride = self.stride,
+            };
+        }
+
+        fn asCandidateImage(self: *const FramebufferFixture) agp_tiled_rast.Image {
+            return .{
+                .pixels = self.pixels.ptr,
+                .width = self.width,
+                .height = self.height,
+                .stride = self.stride,
+            };
+        }
+    };
+
+    const mono_6_font_instance = loadFont(@embedFile("mono-6.font"), .{});
+    const mono_8_font_instance = loadFont(@embedFile("mono-8.font"), .{});
+    const sans_font_instance = loadFont(@embedFile("sans.font"), .{ .size = 12 });
+
+    const mono_6_font: agp.Font = @ptrCast(@constCast(&mono_6_font_instance));
+    const mono_8_font: agp.Font = @ptrCast(@constCast(&mono_8_font_instance));
+    const sans_font: agp.Font = @ptrCast(@constCast(&sans_font_instance));
+
+    const framebuffer_primary_pixels: [64 * 29]Color align(64) = makeGradientBitmapPixels(37, 29, 64, false);
+    const framebuffer_secondary_pixels: [128 * 33]Color align(64) = makeGradientBitmapPixels(71, 33, 128, false);
+
+    const framebuffer_primary_fixture: FramebufferFixture = .{
+        .pixels = framebuffer_primary_pixels[0..],
+        .width = 37,
+        .height = 29,
+        .stride = 64,
+    };
+
+    const framebuffer_secondary_fixture: FramebufferFixture = .{
+        .pixels = framebuffer_secondary_pixels[0..],
+        .width = 71,
+        .height = 33,
+        .stride = 128,
+    };
+
+    const framebuffer_primary: agp.Framebuffer = @ptrCast(@constCast(&framebuffer_primary_fixture));
+    const framebuffer_secondary: agp.Framebuffer = @ptrCast(@constCast(&framebuffer_secondary_fixture));
+
+    fn loadFont(comptime bytes: []const u8, comptime hint: agp_swrast.fonts.FontHint) agp_swrast.fonts.FontInstance {
+        @setEvalBranchQuota(10_000);
+        return agp_swrast.fonts.FontInstance.load(bytes, hint) catch unreachable;
+    }
+
+    fn resolveFontReference(_: *anyopaque, handle: agp.Font) ?*const agp_swrast.fonts.FontInstance {
+        if (handle == mono_6_font) return &mono_6_font_instance;
+        if (handle == mono_8_font) return &mono_8_font_instance;
+        if (handle == sans_font) return &sans_font_instance;
         return null;
     }
 
-    fn resolveFramebuffer(_: *anyopaque, _: agp.Framebuffer) ?agp_swrast.Image {
+    fn resolveFontCandidate(_: *anyopaque, handle: agp.Font) ?*const agp_tiled_rast.FontInstance {
+        if (handle == mono_6_font) return @ptrCast(&mono_6_font_instance);
+        if (handle == mono_8_font) return @ptrCast(&mono_8_font_instance);
+        if (handle == sans_font) return @ptrCast(&sans_font_instance);
+        return null;
+    }
+
+    fn resolveFramebufferReference(_: *anyopaque, handle: agp.Framebuffer) ?agp_swrast.Image {
+        if (handle == framebuffer_primary) return framebuffer_primary_fixture.asReferenceImage();
+        if (handle == framebuffer_secondary) return framebuffer_secondary_fixture.asReferenceImage();
+        return null;
+    }
+
+    fn resolveFramebufferCandidate(_: *anyopaque, handle: agp.Framebuffer) ?agp_tiled_rast.Image {
+        if (handle == framebuffer_primary) return framebuffer_primary_fixture.asCandidateImage();
+        if (handle == framebuffer_secondary) return framebuffer_secondary_fixture.asCandidateImage();
         return null;
     }
 };
+
+const resource_catalog: ResourceCatalog = .{};
 
 const opaque_fixture_pixels = [_]Color{
     .red,   .white,  .blue,   .yellow,
@@ -759,9 +837,9 @@ fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: 
     });
 
     const resolver = agp_swrast.Rasterizer.Resolver{
-        .ctx = @ptrFromInt(1),
-        .resolve_font_fn = NullResolver.resolveFont,
-        .resolve_framebuffer_fn = NullResolver.resolveFramebuffer,
+        .ctx = @ptrCast(@constCast(&resource_catalog)),
+        .resolve_font_fn = ResourceCatalog.resolveFontReference,
+        .resolve_framebuffer_fn = ResourceCatalog.resolveFramebufferReference,
     };
 
     var decoder: agp.BufferDecoder = .init(sequence);
@@ -784,12 +862,19 @@ fn render_candidate(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: 
     fillXorPrefill(backing, canvas.width, canvas.height, stride);
 
     var rasterizer: agp_tiled_rast.Rasterizer = .{};
+    const resolver = agp_tiled_rast.Resolver{
+        .ctx = @ptrCast(@constCast(&resource_catalog)),
+        .vtable = &.{
+            .resolve_font_fn = ResourceCatalog.resolveFontCandidate,
+            .resolve_framebuffer_fn = ResourceCatalog.resolveFramebufferCandidate,
+        },
+    };
     try rasterizer.execute(.{
         .pixels = backing.ptr,
         .width = canvas.width,
         .height = canvas.height,
         .stride = stride,
-    }, sequence);
+    }, resolver, sequence);
 
     const tight = try allocator.alloc(Color, @as(usize, canvas.width) * @as(usize, canvas.height));
     for (0..canvas.height) |y| {
@@ -952,7 +1037,8 @@ fn alignStride(width: u16) u32 {
 }
 
 fn suiteSupported(required: Capabilities) bool {
-    return !required.text and !required.framebuffers;
+    _ = required;
+    return true;
 }
 
 fn accumulateSummary(summary: *RunSummary, stats: SuiteRunStats) void {
@@ -1557,19 +1643,24 @@ fn build_command_blit_partial_bitmap_only(enc: agp.Encoder, case: *const CaseDef
 fn build_command_draw_text_only(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
     try enc.clear(.black);
-    try enc.draw_text(8, 20, @ptrFromInt(1), .white, "cmd");
+    try enc.draw_text(6, 14, ResourceCatalog.mono_6_font, .white, "mono6");
+    try enc.draw_text(6, 32, ResourceCatalog.mono_8_font, .yellow, "mono8");
+    try enc.draw_text(6, 56, ResourceCatalog.sans_font, .cyan, "sans");
 }
 
 fn build_command_blit_framebuffer_only(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
     try enc.clear(.black);
-    try enc.blit_framebuffer(12, 10, @ptrFromInt(1));
+    try enc.blit_framebuffer(6, 8, ResourceCatalog.framebuffer_primary);
+    try enc.blit_framebuffer(28, 26, ResourceCatalog.framebuffer_secondary);
 }
 
 fn build_command_blit_partial_framebuffer_only(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
     try enc.clear(.black);
-    try enc.blit_partial_framebuffer(12, 10, 20, 16, 2, 1, @ptrFromInt(1));
+    try enc.blit_partial_framebuffer(12, 10, 20, 16, 2, 1, ResourceCatalog.framebuffer_primary);
+    try enc.blit_partial_framebuffer(58, 28, 30, 22, 17, 5, ResourceCatalog.framebuffer_secondary);
+    try enc.blit_partial_framebuffer(-5, 50, 20, 18, 3, 2, ResourceCatalog.framebuffer_primary);
 }
 
 fn build_mixed_clip_geometry_bitmap(enc: agp.Encoder, case: *const CaseDef) !void {
@@ -1779,18 +1870,24 @@ fn profiling_color(x: i16, y: i16, phase: i16) Color {
 
 fn build_draw_text_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
-    try enc.clear(.black);
-    try enc.draw_text(4, 16, @ptrFromInt(1), .white, "text");
+    try enc.clear(.from_gray(4));
+    try enc.draw_text(4, 14, ResourceCatalog.mono_6_font, .white, "tiny bitmap");
+    try enc.draw_text(4, 30, ResourceCatalog.mono_8_font, .yellow, "bigger bitmap");
+    try enc.set_clip_rect(0, 36, 96, 32);
+    try enc.draw_text(4, 54, ResourceCatalog.sans_font, .cyan, "vector font");
 }
 
 fn build_framebuffer_blit_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
-    try enc.clear(.black);
-    try enc.blit_framebuffer(8, 8, @ptrFromInt(1));
+    try enc.clear(.from_gray(3));
+    try enc.blit_framebuffer(8, 8, ResourceCatalog.framebuffer_primary);
+    try enc.blit_framebuffer(20, 28, ResourceCatalog.framebuffer_secondary);
 }
 
 fn build_framebuffer_partial_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
-    try enc.clear(.black);
-    try enc.blit_partial_framebuffer(8, 8, 16, 16, 2, 2, @ptrFromInt(1));
+    try enc.clear(.from_gray(5));
+    try enc.blit_partial_framebuffer(8, 8, 16, 16, 2, 2, ResourceCatalog.framebuffer_primary);
+    try enc.blit_partial_framebuffer(36, 18, 40, 24, 11, 4, ResourceCatalog.framebuffer_secondary);
+    try enc.blit_partial_framebuffer(72, 40, 24, 20, 45, 8, ResourceCatalog.framebuffer_secondary);
 }
