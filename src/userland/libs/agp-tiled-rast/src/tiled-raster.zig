@@ -851,54 +851,51 @@ pub const Rasterizer = struct {
 
         const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
 
-        _ = rast;
-        _ = base;
-        _ = target_rect;
-        _ = &codepoints;
-        _ = fallback_glyph;
+        var dx: i16 = op.x;
+        while (codepoints.nextCodepoint()) |char| {
+            if (dx > target_rect.right()) {
+                break;
+            }
+            const glyph: BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
-        // while (codepoints.nextCodepoint()) |char| {
-        //     if (sw.dx >= sw.limit) {
-        //         break;
-        //     }
-        //     const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
+            if (dx + glyph.advance >= 0) {
+                const row_stride = (glyph.width + 7) / 8;
 
-        //     if (sw.dx + glyph.advance >= 0) {
-        //         const row_stride = (glyph.width + 7) / 8;
+                const px: i16 = @intCast(dx + glyph.offset_x);
+                const py: i16 = @intCast(op.y + glyph.offset_y);
 
-        //         const px: i16 = @intCast(sw.dx + glyph.offset_x);
-        //         const py: i16 = @intCast(sw.dy + glyph.offset_y);
+                var gy: u15 = 0;
+                while (gy < glyph.height) : (gy += 1) {
+                    var row_ptr = glyph.bits.ptr + row_stride * gy;
 
-        //         var gy: u15 = 0;
-        //         while (gy < glyph.height) : (gy += 1) {
-        //             var row_ptr = glyph.bits.ptr + row_stride * gy;
+                    {
+                        var gx: u15 = 0;
+                        var mask: u8 = 1;
+                        var bits: u8 = row_ptr[0];
+                        while (gx < glyph.width) : (gx += 1) {
+                            if (dx + gx > target_rect.right()) {
+                                break;
+                            }
 
-        //             {
-        //                 var gx: u15 = 0;
-        //                 var mask: u8 = 1;
-        //                 var bits: u8 = row_ptr[0];
-        //                 while (gx < glyph.width) : (gx += 1) {
-        //                     if (sw.dx + gx >= sw.limit) {
-        //                         break;
-        //                     }
+                            if ((bits & mask) != 0) {
+                                if (target_rect.contains(.new(px + gx, py + gy))) {
+                                    rast.current_tile[@intCast(py + gy - base.y)][@intCast(px + gx - base.x)] = op.color;
+                                }
+                            }
 
-        //                     if ((bits & mask) != 0) {
-        //                         sw.rast.set_pixel(.new(px + gx, py + gy), sw.color);
-        //                     }
+                            mask <<= 1;
+                            if (mask == 0) {
+                                row_ptr += 1;
+                                mask = 1;
+                                bits = row_ptr[0];
+                            }
+                        }
+                    }
+                }
+            }
 
-        //                     mask <<= 1;
-        //                     if (mask == 0) {
-        //                         row_ptr += 1;
-        //                         mask = 1;
-        //                         bits = row_ptr[0];
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-
-        //     sw.dx += glyph.advance;
-        // }
+            dx += glyph.advance;
+        }
     }
 
     fn exec_draw_vector_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, vector_font: *const VectorFont, op: DrawLineOp) void {
@@ -936,7 +933,7 @@ pub const Rasterizer = struct {
 
         while (codepoints.nextCodepoint()) |char| {
             // Stop when we're leaving the tile
-            if (dx >= tile_size)
+            if (dx > target_rect.right())
                 break;
 
             const glyph: VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
