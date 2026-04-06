@@ -244,8 +244,6 @@ pub const Rasterizer = struct {
         rast.tile_width = tile_width;
         rast.tile_height = tile_height;
 
-        std.log.info("render image into {f}", .{output_rect});
-
         var start_of_cmd: u16 = 0;
         while (try decoder.next()) |cmd| {
             const end_of_cmd: u16 = @intCast(decoder.cursor);
@@ -281,12 +279,6 @@ pub const Rasterizer = struct {
                 cmd_area.overlappedRegion(output_rect),
             );
 
-            std.log.info("test cmd {t}: {f}, {}", .{
-                cmd,
-                cmd_area,
-                potential_tile_area,
-            });
-
             for (potential_tile_area.top..potential_tile_area.bottom) |tile_y| {
                 std.debug.assert(tile_y < tile_height); // assert we're in bounds
 
@@ -298,7 +290,6 @@ pub const Rasterizer = struct {
                     const tile_rect = get_tile_rect(tile_x, tile_y);
 
                     const state = cmd_touches_rectangle(&cmd, tile_rect);
-                    std.log.info("assign cmd {t} to {}/{}: {t}", .{ cmd, tile_x, tile_y, state });
                     if (state == .uncovered) {
                         // Ignore all tiles that aren't touched inside the bounding box.
                         continue;
@@ -397,8 +388,6 @@ pub const Rasterizer = struct {
 
                 const base = target_rect.position();
 
-                std.log.info("render to {f}", .{target_rect});
-
                 var clipped_rect = target_rect;
                 while (decoder.next() catch unreachable) |cmd| {
                     switch (cmd) {
@@ -413,7 +402,6 @@ pub const Rasterizer = struct {
                             std.debug.assert(clipped_rect.y >= target_rect.y);
                             std.debug.assert(clipped_rect.width <= tile_size);
                             std.debug.assert(clipped_rect.height <= tile_size);
-                            std.log.info("updated clip to {f} by {}", .{ clipped_rect, clip_rect_cmd });
                         },
 
                         // That will dispatch each command to the "exec_*" command and call the function:
@@ -465,7 +453,6 @@ pub const Rasterizer = struct {
     }
 
     fn exec_clear(rast: *Rasterizer, cmd: agp.Command.Clear, base: Point, target_rect: Rectangle) void {
-        std.log.info("clear({f}, {})", .{ target_rect, cmd });
         rast.exec_fill_rect(.{
             .color = cmd.color,
             .x = rast.screen_rect.x,
@@ -622,11 +609,6 @@ pub const Rasterizer = struct {
         if (clipped.empty())
             return;
 
-        std.log.info("{f} {f} {f}", .{
-            rast.screen_rect,
-            target_rect,
-            clipped,
-        });
         std.debug.assert(rast.screen_rect.containsRectangle(clipped));
         std.debug.assert(target_rect.containsRectangle(clipped));
 
