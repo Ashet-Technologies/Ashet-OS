@@ -68,12 +68,14 @@ const Comparison = struct {
 const CaseResult = struct {
     width: u16,
     height: u16,
+    sequence: []u8,
     reference: []Color,
     candidate: []Color,
     diff: []Color,
     comparison: Comparison,
 
     fn deinit(self: *CaseResult, allocator: std.mem.Allocator) void {
+        allocator.free(self.sequence);
         allocator.free(self.reference);
         allocator.free(self.candidate);
         allocator.free(self.diff);
@@ -191,6 +193,13 @@ const ResourceCatalog = struct {
         return null;
     }
 
+    fn lookupFontInstance(handle: agp.Font) ?*const agp_swrast.fonts.FontInstance {
+        if (handle == mono_6_font) return &mono_6_font_instance;
+        if (handle == mono_8_font) return &mono_8_font_instance;
+        if (handle == sans_font) return &sans_font_instance;
+        return null;
+    }
+
     fn resolveFramebufferReference(_: *anyopaque, handle: agp.Framebuffer) ?agp_swrast.Image {
         if (handle == framebuffer_primary) return framebuffer_primary_fixture.asReferenceImage();
         if (handle == framebuffer_secondary) return framebuffer_secondary_fixture.asReferenceImage();
@@ -200,6 +209,12 @@ const ResourceCatalog = struct {
     fn resolveFramebufferCandidate(_: *anyopaque, handle: agp.Framebuffer) ?agp_tiled_rast.Image {
         if (handle == framebuffer_primary) return framebuffer_primary_fixture.asCandidateImage();
         if (handle == framebuffer_secondary) return framebuffer_secondary_fixture.asCandidateImage();
+        return null;
+    }
+
+    fn lookupFramebufferFixture(handle: agp.Framebuffer) ?*const FramebufferFixture {
+        if (handle == framebuffer_primary) return &framebuffer_primary_fixture;
+        if (handle == framebuffer_secondary) return &framebuffer_secondary_fixture;
         return null;
     }
 };
@@ -611,7 +626,7 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
 
         if (!result.comparison.matched()) {
             stats.failed_cases += 1;
-            try writeStaticCaseRender(suite.name, case.name, max_canvas, composite);
+            try writeStaticCaseArtifacts(suite.name, case.name, case.canvas, max_canvas, composite, result.sequence);
             std.debug.print(
                 "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                 .{
@@ -637,7 +652,7 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
             }
             try failure_gif.?.add_frame(composite);
         } else {
-            try deleteStaticCaseRender(suite.name, case.name);
+            try deleteStaticCaseArtifacts(suite.name, case.name);
         }
     }
 
@@ -747,7 +762,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
 
             if (!result.comparison.matched()) {
                 stats.failed_cases += 1;
-                try writeStaticCaseRender(suite_name, case.name, max_canvas, composite);
+                try writeStaticCaseArtifacts(suite_name, case.name, case.canvas, max_canvas, composite, result.sequence);
                 std.debug.print(
                     "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                     .{
@@ -772,7 +787,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
                 }
                 try failure_gif.?.add_frame(composite);
             } else {
-                try deleteStaticCaseRender(suite_name, case.name);
+                try deleteStaticCaseArtifacts(suite_name, case.name);
             }
         }
     }
@@ -782,7 +797,6 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
 
 fn run_case(allocator: std.mem.Allocator, case: *const CaseDef) !CaseResult {
     const sequence = try build_command_stream(allocator, case);
-    defer allocator.free(sequence);
 
     const reference = try render_reference(allocator, case.canvas, sequence);
     errdefer allocator.free(reference);
@@ -798,6 +812,7 @@ fn run_case(allocator: std.mem.Allocator, case: *const CaseDef) !CaseResult {
     return .{
         .width = case.canvas.width,
         .height = case.canvas.height,
+        .sequence = sequence,
         .reference = reference,
         .candidate = candidate,
         .diff = diff,
@@ -925,6 +940,8 @@ fn compare_images(reference: []const Color, candidate: []const Color, diff: []Co
 
 fn make_error_result(allocator: std.mem.Allocator, canvas: CanvasSize) !CaseResult {
     const pixel_count = @as(usize, canvas.width) * @as(usize, canvas.height);
+    const sequence = try allocator.alloc(u8, 0);
+    errdefer allocator.free(sequence);
 
     const reference = try allocator.alloc(Color, pixel_count);
     errdefer allocator.free(reference);
@@ -940,6 +957,7 @@ fn make_error_result(allocator: std.mem.Allocator, canvas: CanvasSize) !CaseResu
     return .{
         .width = canvas.width,
         .height = canvas.height,
+        .sequence = sequence,
         .reference = reference,
         .candidate = candidate,
         .diff = diff,
@@ -1005,21 +1023,34 @@ fn sanitizeFileName(buf: []u8, name: []const u8) []const u8 {
     return buf[0..name.len];
 }
 
-fn writeStaticCaseRender(
+fn writeStaticCaseArtifacts(
     suite_name: []const u8,
     case_name: []const u8,
+    canvas: CanvasSize,
     max_canvas: CanvasSize,
     composite: []const agp.Color,
+    sequence: []const u8,
 ) !void {
     var path_buffer: [512]u8 = undefined;
     const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
     try gif.write_to_file_path(std.fs.cwd(), path, compositeWidth(max_canvas.width), max_canvas.height, composite);
+
+    var dump_path_buffer: [512]u8 = undefined;
+    const dump_path = try staticCaseDumpPath(&dump_path_buffer, suite_name, case_name);
+    try writeCaseCommandDumpToPath(dump_path, canvas, sequence);
 }
 
-fn deleteStaticCaseRender(suite_name: []const u8, case_name: []const u8) !void {
+fn deleteStaticCaseArtifacts(suite_name: []const u8, case_name: []const u8) !void {
     var path_buffer: [512]u8 = undefined;
     const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
     std.fs.cwd().deleteFile(path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+
+    var dump_path_buffer: [512]u8 = undefined;
+    const dump_path = try staticCaseDumpPath(&dump_path_buffer, suite_name, case_name);
+    std.fs.cwd().deleteFile(dump_path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
     };
@@ -1029,6 +1060,166 @@ fn staticCaseRenderPath(path_buffer: []u8, suite_name: []const u8, case_name: []
     var file_name_buffer: [160]u8 = undefined;
     const file_name = sanitizeFileName(&file_name_buffer, case_name);
     return std.fmt.bufPrint(path_buffer, "{s}/{s}/{s}.gif", .{ output_dir_path, suite_name, file_name });
+}
+
+fn staticCaseDumpPath(path_buffer: []u8, suite_name: []const u8, case_name: []const u8) ![]const u8 {
+    var file_name_buffer: [160]u8 = undefined;
+    const file_name = sanitizeFileName(&file_name_buffer, case_name);
+    return std.fmt.bufPrint(path_buffer, "{s}/{s}/{s}.txt", .{ output_dir_path, suite_name, file_name });
+}
+
+fn writeCaseCommandDumpToPath(path: []const u8, canvas: CanvasSize, sequence: []const u8) !void {
+    var file = try std.fs.cwd().createFile(path, .{ .truncate = true });
+    defer file.close();
+
+    var buffer: [8192]u8 = undefined;
+    var file_writer = file.writer(&buffer);
+    try writeCaseCommandDump(&file_writer.interface, canvas, sequence);
+    try file_writer.interface.flush();
+}
+
+fn writeCaseCommandDump(writer: *std.Io.Writer, canvas: CanvasSize, sequence: []const u8) !void {
+    var decoder: agp.BufferDecoder = .init(sequence);
+    var optimizing_state = agp.OptimizingEncoder.State.initForImage(canvas.width, canvas.height);
+    while (try decoder.next()) |cmd| {
+        const emission = optimizing_state.classify(cmd);
+        try writer.print("{s} ", .{@tagName(emission)});
+        try dumpCommand(writer, cmd);
+        try writer.writeByte('\n');
+    }
+}
+
+fn dumpCommand(writer: *std.Io.Writer, cmd: agp.Command) !void {
+    switch (cmd) {
+        .clear => |item| {
+            try writer.writeAll("clear(");
+            try writer.writeAll("color=");
+            try formatColor(writer, item.color);
+            try writer.writeAll(")");
+        },
+        .set_clip_rect => |item| {
+            try writer.print(
+                "set_clip_rect(x={}, y={}, width={}, height={})",
+                .{ item.x, item.y, item.width, item.height },
+            );
+        },
+        .set_pixel => |item| {
+            try writer.print("set_pixel(x={}, y={}, color=", .{ item.x, item.y });
+            try formatColor(writer, item.color);
+            try writer.writeAll(")");
+        },
+        .draw_line => |item| {
+            try writer.print("draw_line(x1={}, y1={}, x2={}, y2={}, color=", .{
+                item.x1,
+                item.y1,
+                item.x2,
+                item.y2,
+            });
+            try formatColor(writer, item.color);
+            try writer.writeAll(")");
+        },
+        .draw_rect => |item| {
+            try writer.print("draw_rect(x={}, y={}, width={}, height={}, color=", .{
+                item.x,
+                item.y,
+                item.width,
+                item.height,
+            });
+            try formatColor(writer, item.color);
+            try writer.writeAll(")");
+        },
+        .fill_rect => |item| {
+            try writer.print("fill_rect(x={}, y={}, width={}, height={}, color=", .{
+                item.x,
+                item.y,
+                item.width,
+                item.height,
+            });
+            try formatColor(writer, item.color);
+            try writer.writeAll(")");
+        },
+        .draw_text => |item| {
+            try writer.print("draw_text(x={}, y={}, font=", .{ item.x, item.y });
+            try formatFont(writer, item.font);
+            try writer.writeAll(", color=");
+            try formatColor(writer, item.color);
+            try writer.print(", text=\"{f}\")", .{std.zig.fmtString(item.text)});
+        },
+        .blit_bitmap => |item| {
+            try writer.print("blit_bitmap(x={}, y={}, bitmap=", .{ item.x, item.y });
+            try formatBitmap(writer, &item.bitmap);
+            try writer.writeAll(")");
+        },
+        .blit_framebuffer => |item| {
+            try writer.print("blit_framebuffer(x={}, y={}, framebuffer=", .{ item.x, item.y });
+            try formatFramebuffer(writer, item.framebuffer);
+            try writer.writeAll(")");
+        },
+        .blit_partial_bitmap => |item| {
+            try writer.print(
+                "blit_partial_bitmap(x={}, y={}, width={}, height={}, src_x={}, src_y={}, bitmap=",
+                .{ item.x, item.y, item.width, item.height, item.src_x, item.src_y },
+            );
+            try formatBitmap(writer, &item.bitmap);
+            try writer.writeAll(")");
+        },
+        .blit_partial_framebuffer => |item| {
+            try writer.print(
+                "blit_partial_framebuffer(x={}, y={}, width={}, height={}, src_x={}, src_y={}, framebuffer=",
+                .{ item.x, item.y, item.width, item.height, item.src_x, item.src_y },
+            );
+            try formatFramebuffer(writer, item.framebuffer);
+            try writer.writeAll(")");
+        },
+    }
+}
+
+fn formatColor(writer: *std.Io.Writer, color: Color) !void {
+    const rgb = color.to_rgb888();
+    try writer.print("#{x:0>2}{x:0>2}{x:0>2}[{x:0>2}]", .{
+        rgb.r,
+        rgb.g,
+        rgb.b,
+        @as(u8, @bitCast(color)),
+    });
+}
+
+fn formatBitmap(writer: *std.Io.Writer, bitmap: *const Bitmap) !void {
+    try writer.print("Bmp({}x{}/{})", .{ bitmap.width, bitmap.height, bitmap.stride });
+    if (bitmap.has_transparency) {
+        try writer.writeAll(", ");
+        try formatColor(writer, bitmap.transparency_key);
+    }
+}
+
+fn formatFont(writer: *std.Io.Writer, handle: agp.Font) !void {
+    const font = ResourceCatalog.lookupFontInstance(handle) orelse {
+        try writer.print("Font(unknown/0x{x}, ?px)", .{@intFromPtr(handle)});
+        return;
+    };
+
+    try writer.print("Font({s}/0x{x}, {}px)", .{
+        switch (font.*) {
+            .bitmap => "bitmap",
+            .vector => "vector",
+        },
+        @intFromPtr(handle),
+        font.line_height(),
+    });
+}
+
+fn formatFramebuffer(writer: *std.Io.Writer, handle: agp.Framebuffer) !void {
+    const fixture = ResourceCatalog.lookupFramebufferFixture(handle) orelse {
+        try writer.print("FrameBuf(0x{x})", .{@intFromPtr(handle)});
+        return;
+    };
+
+    try writer.print("FrameBuf(0x{x}, {}x{}/{})", .{
+        @intFromPtr(handle),
+        fixture.width,
+        fixture.height,
+        fixture.stride,
+    });
 }
 
 fn alignStride(width: u16) u32 {
@@ -1890,4 +2081,290 @@ fn build_framebuffer_partial_placeholder(enc: agp.Encoder, case: *const CaseDef)
     try enc.blit_partial_framebuffer(8, 8, 16, 16, 2, 2, ResourceCatalog.framebuffer_primary);
     try enc.blit_partial_framebuffer(36, 18, 40, 24, 11, 4, ResourceCatalog.framebuffer_secondary);
     try enc.blit_partial_framebuffer(72, 40, 24, 20, 45, 8, ResourceCatalog.framebuffer_secondary);
+}
+
+const optimizing_encoder_test_bitmap_pixels = [_]Color{
+    .red,  .green,
+    .blue, .white,
+};
+
+const optimizing_encoder_test_bitmap: Bitmap = .{
+    .pixels = optimizing_encoder_test_bitmap_pixels[0..].ptr,
+    .width = 2,
+    .height = 2,
+    .stride = 2,
+    .transparency_key = .black,
+    .has_transparency = false,
+};
+
+fn encodeRegularCommands(allocator: std.mem.Allocator, commands: []const agp.Command) ![]u8 {
+    var stream: std.Io.Writer.Allocating = .init(allocator);
+    defer stream.deinit();
+
+    const enc = agp.encoder(&stream.writer);
+    for (commands) |cmd| {
+        try enc.encode(cmd);
+    }
+
+    return try stream.toOwnedSlice();
+}
+
+fn encodeOptimizedCommands(allocator: std.mem.Allocator, commands: []const agp.Command) ![]u8 {
+    var stream: std.Io.Writer.Allocating = .init(allocator);
+    defer stream.deinit();
+
+    var base = agp.encoder(&stream.writer);
+    var enc = agp.optimizingEncoder(&base);
+    for (commands) |cmd| {
+        _ = try enc.encode(cmd);
+    }
+
+    return try stream.toOwnedSlice();
+}
+
+fn encodeOptimizedCommandsForImage(
+    allocator: std.mem.Allocator,
+    width: u16,
+    height: u16,
+    commands: []const agp.Command,
+) ![]u8 {
+    var stream: std.Io.Writer.Allocating = .init(allocator);
+    defer stream.deinit();
+
+    var base = agp.encoder(&stream.writer);
+    var enc = agp.optimizingEncoderForImage(&base, width, height);
+    for (commands) |cmd| {
+        _ = try enc.encode(cmd);
+    }
+
+    return try stream.toOwnedSlice();
+}
+
+fn encodeOptimizedDirect(
+    allocator: std.mem.Allocator,
+    comptime build_fn: *const fn (*agp.OptimizingEncoder) anyerror!void,
+) ![]u8 {
+    var stream: std.Io.Writer.Allocating = .init(allocator);
+    defer stream.deinit();
+
+    var base = agp.encoder(&stream.writer);
+    var enc = agp.optimizingEncoder(&base);
+    try build_fn(&enc);
+
+    return try stream.toOwnedSlice();
+}
+
+test "writeCaseCommandDump marks off-image commands as skipped" {
+    const commands = [_]agp.Command{
+        .{ .set_pixel = .{ .x = 1, .y = 1, .color = .white } },
+        .{ .set_pixel = .{ .x = 7, .y = 7, .color = .red } },
+    };
+
+    const sequence = try encodeRegularCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(sequence);
+
+    var writer: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer writer.deinit();
+
+    try writeCaseCommandDump(&writer.writer, .{ .width = 4, .height = 4 }, sequence);
+
+    try std.testing.expectEqualStrings(
+        \\emitted set_pixel(x=1, y=1, color=#ffffff[3f])
+        \\skipped set_pixel(x=7, y=7, color=#ff0000[f8])
+        \\
+    , writer.written());
+}
+
+test "OptimizingEncoder inside command passes through" {
+    const commands = [_]agp.Command{
+        .{ .set_pixel = .{ .x = 4, .y = 5, .color = .white } },
+        .{ .draw_rect = .{ .x = 1, .y = 2, .width = 8, .height = 6, .color = .red } },
+        .{ .fill_rect = .{ .x = 3, .y = 4, .width = 5, .height = 4, .color = .green } },
+        .{ .draw_line = .{ .x1 = 0, .y1 = 0, .x2 = 9, .y2 = 9, .color = .blue } },
+        .{ .blit_bitmap = .{ .x = 7, .y = 8, .bitmap = optimizing_encoder_test_bitmap } },
+    };
+
+    const regular = try encodeRegularCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(regular);
+
+    const optimized = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    try std.testing.expectEqualSlices(u8, regular, optimized);
+}
+
+test "OptimizingEncoder outside command is dropped after clip" {
+    const commands = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 10, .y = 10, .width = 4, .height = 4 } },
+        .{ .set_pixel = .{ .x = 0, .y = 0, .color = .white } },
+        .{ .draw_rect = .{ .x = 0, .y = 0, .width = 4, .height = 4, .color = .red } },
+        .{ .fill_rect = .{ .x = 1, .y = 1, .width = 3, .height = 3, .color = .green } },
+        .{ .draw_line = .{ .x1 = 0, .y1 = 0, .x2 = 4, .y2 = 4, .color = .blue } },
+        .{ .blit_bitmap = .{ .x = 1, .y = 1, .bitmap = optimizing_encoder_test_bitmap } },
+        .{ .blit_partial_framebuffer = .{
+            .x = 0,
+            .y = 0,
+            .width = 2,
+            .height = 2,
+            .src_x = 0,
+            .src_y = 0,
+            .framebuffer = @ptrFromInt(2),
+        } },
+    };
+
+    const expected = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 10, .y = 10, .width = 4, .height = 4 } },
+    };
+
+    const optimized = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    const regular_expected = try encodeRegularCommands(std.testing.allocator, &expected);
+    defer std.testing.allocator.free(regular_expected);
+
+    try std.testing.expectEqualSlices(u8, regular_expected, optimized);
+}
+
+test "OptimizingEncoder partially overlapping command is preserved" {
+    const commands = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 4, .y = 4, .width = 8, .height = 8 } },
+        .{ .draw_rect = .{ .x = 0, .y = 0, .width = 8, .height = 8, .color = .white } },
+        .{ .draw_line = .{ .x1 = 0, .y1 = 10, .x2 = 10, .y2 = 10, .color = .red } },
+        .{ .blit_bitmap = .{ .x = 11, .y = 11, .bitmap = optimizing_encoder_test_bitmap } },
+    };
+
+    const regular = try encodeRegularCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(regular);
+
+    const optimized = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    try std.testing.expectEqualSlices(u8, regular, optimized);
+}
+
+test "OptimizingEncoder clear under empty clip is dropped" {
+    const commands = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 3, .y = 3, .width = 0, .height = 0 } },
+        .{ .clear = .{ .color = .white } },
+    };
+
+    const expected = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 3, .y = 3, .width = 0, .height = 0 } },
+    };
+
+    const optimized = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    const regular_expected = try encodeRegularCommands(std.testing.allocator, &expected);
+    defer std.testing.allocator.free(regular_expected);
+
+    try std.testing.expectEqualSlices(u8, regular_expected, optimized);
+}
+
+test "OptimizingEncoder set_clip_rect resets absolute clip" {
+    const commands = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 0, .y = 0, .width = 1, .height = 1 } },
+        .{ .set_clip_rect = .{ .x = 10, .y = 10, .width = 2, .height = 2 } },
+        .{ .set_pixel = .{ .x = 10, .y = 10, .color = .white } },
+    };
+
+    const regular = try encodeRegularCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(regular);
+
+    const optimized = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    try std.testing.expectEqualSlices(u8, regular, optimized);
+}
+
+test "OptimizingEncoder unknown-bounds commands pass through" {
+    const commands = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 } },
+        .{ .draw_text = .{
+            .x = 4,
+            .y = 5,
+            .font = @ptrFromInt(1),
+            .color = .white,
+            .text = "text",
+        } },
+        .{ .blit_framebuffer = .{
+            .x = 7,
+            .y = 8,
+            .framebuffer = @ptrFromInt(2),
+        } },
+    };
+
+    const regular = try encodeRegularCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(regular);
+
+    const optimized = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    try std.testing.expectEqualSlices(u8, regular, optimized);
+}
+
+test "OptimizingEncoder image bounds drop off-image commands" {
+    const commands = [_]agp.Command{
+        .{ .set_pixel = .{ .x = 2, .y = 2, .color = .white } },
+        .{ .set_pixel = .{ .x = 9, .y = 9, .color = .red } },
+        .{ .fill_rect = .{ .x = 6, .y = 1, .width = 4, .height = 2, .color = .green } },
+        .{ .draw_line = .{ .x1 = -3, .y1 = 1, .x2 = -1, .y2 = 1, .color = .blue } },
+        .{ .draw_text = .{
+            .x = 20,
+            .y = 20,
+            .font = @ptrFromInt(1),
+            .color = .yellow,
+            .text = "unknown stays",
+        } },
+    };
+
+    const expected = [_]agp.Command{
+        .{ .set_pixel = .{ .x = 2, .y = 2, .color = .white } },
+        .{ .fill_rect = .{ .x = 6, .y = 1, .width = 4, .height = 2, .color = .green } },
+        .{ .draw_text = .{
+            .x = 20,
+            .y = 20,
+            .font = @ptrFromInt(1),
+            .color = .yellow,
+            .text = "unknown stays",
+        } },
+    };
+
+    const optimized = try encodeOptimizedCommandsForImage(std.testing.allocator, 8, 8, &commands);
+    defer std.testing.allocator.free(optimized);
+
+    const regular_expected = try encodeRegularCommands(std.testing.allocator, &expected);
+    defer std.testing.allocator.free(regular_expected);
+
+    try std.testing.expectEqualSlices(u8, regular_expected, optimized);
+}
+
+test "OptimizingEncoder encode Command matches direct methods" {
+    const commands = [_]agp.Command{
+        .{ .set_clip_rect = .{ .x = 3, .y = 3, .width = 2, .height = 2 } },
+        .{ .set_pixel = .{ .x = 4, .y = 4, .color = .white } },
+        .{ .set_pixel = .{ .x = 9, .y = 9, .color = .red } },
+        .{ .draw_text = .{
+            .x = 1,
+            .y = 1,
+            .font = @ptrFromInt(1),
+            .color = .green,
+            .text = "x",
+        } },
+    };
+
+    const encoded = try encodeOptimizedCommands(std.testing.allocator, &commands);
+    defer std.testing.allocator.free(encoded);
+
+    const direct = try encodeOptimizedDirect(std.testing.allocator, struct {
+        fn build(enc: *agp.OptimizingEncoder) !void {
+            _ = try enc.set_clip_rect(3, 3, 2, 2);
+            _ = try enc.set_pixel(4, 4, .white);
+            _ = try enc.set_pixel(9, 9, .red);
+            _ = try enc.draw_text(1, 1, @ptrFromInt(1), .green, "x");
+        }
+    }.build);
+    defer std.testing.allocator.free(direct);
+
+    try std.testing.expectEqualSlices(u8, encoded, direct);
 }

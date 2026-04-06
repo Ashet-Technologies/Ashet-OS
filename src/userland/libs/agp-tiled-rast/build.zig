@@ -52,6 +52,23 @@ pub fn build(b: *std.Build) void {
     }
     test_step.dependOn(&exerciser_run.step);
 
+    const exerciser_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/exerciser.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ashet-abi", .module = abi_mod },
+                .{ .name = "agp", .module = agp_mod },
+                .{ .name = "agp-tiled-rast", .module = rast_mod },
+                .{ .name = "agp-swrast", .module = agp_swrast_mod },
+            },
+        }),
+    });
+
+    const exerciser_test_run = b.addRunArtifact(exerciser_tests);
+    test_step.dependOn(&exerciser_test_run.step);
+
     // regular unit tests:
 
     const rast_tests = b.addTest(.{

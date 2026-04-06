@@ -271,6 +271,8 @@ pub const Rasterizer = struct {
                 else => {},
             }
 
+            // TODO: Add clip rect tracking here so we can also skip tiles that are
+            //       not affected due to clip rectangle handling
             const cmd_area = rast.cmd_area_of_effect(&cmd);
 
             const potential_tile_area: TileArea = .from_rectangle(
@@ -782,13 +784,15 @@ pub const Rasterizer = struct {
 fn cmd_touches_rectangle(cmd: *const Command, rect: Rectangle) TileState {
     _ = cmd;
     _ = rect;
+
+    // TODO: Implement a much more refined version of this function
     return .updated;
 }
 
 /// Gets the rectangle pixel area for a given tile index.
 fn get_tile_rect(x: usize, y: usize) Rectangle {
-    std.debug.assert(x < tile_count);
-    std.debug.assert(y < tile_count);
+    std.debug.assert(x < grid_size);
+    std.debug.assert(y < grid_size);
     return .{
         .x = @intCast(x * tile_size),
         .y = @intCast(y * tile_size),
