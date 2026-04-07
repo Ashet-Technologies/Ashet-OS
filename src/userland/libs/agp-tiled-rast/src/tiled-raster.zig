@@ -395,6 +395,8 @@ pub const Rasterizer = struct {
             target_rect.height = get_tile_extend((tile_y == rast.tile_height - 1), rast.target.height);
 
             for (row_of_tile_spans[0..rast.tile_width], 0..) |*tile_span, tile_x| {
+                defer target_rect.x += tile_size; // ensure we always increment the tile cursor
+
                 const state = rast.tile_states.get(row_index + tile_x);
                 switch (state) {
                     .uncovered => continue,
@@ -446,8 +448,6 @@ pub const Rasterizer = struct {
 
                 // Write the data back to the target buffer:
                 rast.flush_tile_data(tile_x, tile_y);
-
-                target_rect.x += tile_size;
             }
 
             target_rect.x = 0;
