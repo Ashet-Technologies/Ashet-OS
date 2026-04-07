@@ -9,6 +9,7 @@ const Color = agp.Color;
 const Bitmap = agp.Bitmap;
 
 const BuildFn = *const fn (agp.Encoder, *const CaseDef) anyerror!void;
+const MultiBuildFn = *const fn (std.mem.Allocator, *const CaseDef) anyerror![][]u8;
 
 const output_dir_path = "zig-out/agp-tiled-rast-exerciser";
 const suite_frame_delay_cs: u16 = 75;
@@ -35,6 +36,7 @@ const CaseDef = struct {
     capabilities: Capabilities = .{},
     seed: ?u64 = null,
     build_fn: BuildFn,
+    multi_build_fn: ?MultiBuildFn = null,
 };
 
 const SuiteDef = struct {
@@ -68,14 +70,17 @@ const Comparison = struct {
 const CaseResult = struct {
     width: u16,
     height: u16,
-    sequence: []u8,
+    sequences: [][]u8,
     reference: []Color,
     candidate: []Color,
     diff: []Color,
     comparison: Comparison,
 
     fn deinit(self: *CaseResult, allocator: std.mem.Allocator) void {
-        allocator.free(self.sequence);
+        for (self.sequences) |sequence| {
+            allocator.free(sequence);
+        }
+        allocator.free(self.sequences);
         allocator.free(self.reference);
         allocator.free(self.candidate);
         allocator.free(self.diff);
@@ -356,6 +361,132 @@ const medium_transparent_fixture: Bitmap = .{
     .has_transparency = true,
 };
 
+fn parseClassicDesktopIcon(comptime def: []const u8) Bitmap {
+    @setEvalBranchQuota(100_000);
+
+    comptime var width: ?usize = null;
+    comptime var height: usize = 0;
+
+    var line_iter = std.mem.splitScalar(u8, def, '\n');
+    while (line_iter.next()) |line| {
+        if (line.len == 0) continue;
+        if (width == null) {
+            width = line.len;
+        } else if (width.? != line.len) {
+            @compileError("icon lines must all have the same width");
+        }
+        height += 1;
+    }
+
+    if (width == null or height == 0)
+        @compileError("icon definition must not be empty");
+
+    var pixels: [width.? * height]Color align(4) = undefined;
+    var pixel_index: usize = 0;
+
+    var pixel_iter = std.mem.splitScalar(u8, def, '\n');
+    while (pixel_iter.next()) |line| {
+        if (line.len == 0) continue;
+        for (line) |ch| {
+            pixels[pixel_index] = switch (ch) {
+                '.', ' ' => .black,
+                'F' => .white,
+                'B' => .from_rgb(0xa6, 0xcf, 0xd0),
+                '9' => .from_rgb(0x50, 0x5d, 0x6d),
+                '4' => .from_rgb(0xe4, 0x16, 0x2b),
+                else => @compileError("unsupported icon pixel"),
+            };
+            pixel_index += 1;
+        }
+    }
+
+    const icon_pixels align(4) = comptime pixels;
+    return .{
+        .pixels = icon_pixels[0..].ptr,
+        .width = width.?,
+        .height = height,
+        .stride = width.?,
+        .transparency_key = .black,
+        .has_transparency = true,
+    };
+}
+
+const classic_icon_maximize = parseClassicDesktopIcon(
+    \\.........
+    \\.FFFFFFF.
+    \\.F.....F.
+    \\.FFFFFFF.
+    \\.F.....F.
+    \\.F.....F.
+    \\.F.....F.
+    \\.FFFFFFF.
+    \\.........
+);
+
+const classic_icon_minimize = parseClassicDesktopIcon(
+    \\.........
+    \\.........
+    \\.........
+    \\.........
+    \\.........
+    \\.........
+    \\.........
+    \\..FFFFF..
+    \\.........
+);
+
+const classic_icon_restore = parseClassicDesktopIcon(
+    \\.........
+    \\...FFFFF.
+    \\...F...F.
+    \\.FFFFF.F.
+    \\.FFFFF.F.
+    \\.F...FFF.
+    \\.F...F...
+    \\.FFFFF...
+    \\.........
+);
+
+const classic_icon_close = parseClassicDesktopIcon(
+    \\444444444
+    \\444444444
+    \\44F444F44
+    \\444F4F444
+    \\4444F4444
+    \\444F4F444
+    \\44F444F44
+    \\444444444
+    \\444444444
+);
+
+const classic_icon_resize = parseClassicDesktopIcon(
+    \\.........
+    \\.FFF.....
+    \\.F.F.....
+    \\.FFFFFFF.
+    \\...F...F.
+    \\...F...F.
+    \\...F...F.
+    \\...FFFFF.
+    \\.........
+);
+
+const classic_icon_cursor = parseClassicDesktopIcon(
+    \\BBB..........
+    \\9FFBB........
+    \\9FFFFBB......
+    \\.9FFFFFBB....
+    \\.9FFFFFFFBB..
+    \\..9FFFFFFFFB.
+    \\..9FFFFFFFB..
+    \\...9FFFFFB...
+    \\...9FFFFFB...
+    \\....9FF99FB..
+    \\....9F9..9FB.
+    \\.....9....9FB
+    \\...........9.
+);
+
 const geometry_core_cases = [_]CaseDef{
     .{ .name = "clear-and-pixels", .canvas = .{ .width = 65, .height = 65 }, .build_fn = build_geometry_clear_and_pixels },
     .{ .name = "line-octants", .canvas = .{ .width = 65, .height = 65 }, .build_fn = build_geometry_line_octants },
@@ -407,6 +538,21 @@ const overdraw_profile_cases = [_]CaseDef{
     .{ .name = "large-overdraw-elimination-profile", .canvas = .{ .width = 512, .height = 320 }, .build_fn = build_overdraw_elimination_profile },
 };
 
+const multi_execution_cases = [_]CaseDef{
+    .{
+        .name = "icon-boundary-redraws",
+        .canvas = .{ .width = 193, .height = 129 },
+        .build_fn = build_unused_single,
+        .multi_build_fn = build_multi_icon_boundary_redraws,
+    },
+    .{
+        .name = "cursor-slow-right-640x400",
+        .canvas = .{ .width = 640, .height = 400 },
+        .build_fn = build_unused_single,
+        .multi_build_fn = build_multi_cursor_slow_right_640x400,
+    },
+};
+
 const draw_text_cases = [_]CaseDef{
     .{ .name = "draw-text-placeholder", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_placeholder },
     .{ .name = "clip-bitmap-fonts", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .text = true }, .build_fn = build_draw_text_clip_bitmap_fonts },
@@ -433,6 +579,7 @@ const static_suites = [_]SuiteDef{
     .{ .name = "command-focused", .cases = command_focused_cases[0..] },
     .{ .name = "mixed-curated", .cases = mixed_curated_cases[0..] },
     .{ .name = "overdraw-profile", .cases = overdraw_profile_cases[0..] },
+    .{ .name = "multi-execution", .cases = multi_execution_cases[0..] },
     .{ .name = "draw-text", .capabilities = .{ .text = true }, .cases = draw_text_cases[0..] },
     .{ .name = "blit-framebuffer", .capabilities = .{ .framebuffers = true }, .cases = framebuffer_blit_cases[0..] },
     .{ .name = "blit-partial-framebuffer", .capabilities = .{ .framebuffers = true }, .cases = framebuffer_partial_cases[0..] },
@@ -649,7 +796,9 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
 
         if (!result.comparison.matched()) {
             stats.failed_cases += 1;
-            try writeStaticCaseArtifacts(suite.name, case.name, case.canvas, max_canvas, composite, result.sequence);
+            const static_composite = try compose_case_frame(allocator, case.canvas, &result);
+            defer allocator.free(static_composite);
+            try writeStaticCaseArtifacts(suite.name, case.name, case.canvas, static_composite, result.sequences);
             std.debug.print(
                 "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                 .{
@@ -789,7 +938,9 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
 
             if (!result.comparison.matched()) {
                 stats.failed_cases += 1;
-                try writeStaticCaseArtifacts(suite_name, case.name, case.canvas, max_canvas, composite, result.sequence);
+                const static_composite = try compose_case_frame(allocator, case.canvas, &result);
+                defer allocator.free(static_composite);
+                try writeStaticCaseArtifacts(suite_name, case.name, case.canvas, static_composite, result.sequences);
                 std.debug.print(
                     "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                     .{
@@ -834,12 +985,17 @@ fn deleteFileIfPresent(path: []const u8) !void {
 }
 
 fn run_case(allocator: std.mem.Allocator, case: *const CaseDef) !CaseResult {
-    const sequence = try build_command_stream(allocator, case);
+    const sequences = try build_command_streams(allocator, case);
 
-    const reference = try render_reference(allocator, case.canvas, sequence);
+    errdefer {
+        for (sequences) |sequence| allocator.free(sequence);
+        allocator.free(sequences);
+    }
+
+    const reference = try render_reference(allocator, case.canvas, sequences);
     errdefer allocator.free(reference);
 
-    const candidate = try render_candidate(allocator, case.canvas, sequence);
+    const candidate = try render_candidate(allocator, case.canvas, sequences);
     errdefer allocator.free(candidate);
 
     const diff = try allocator.alloc(Color, reference.len);
@@ -850,7 +1006,7 @@ fn run_case(allocator: std.mem.Allocator, case: *const CaseDef) !CaseResult {
     return .{
         .width = case.canvas.width,
         .height = case.canvas.height,
-        .sequence = sequence,
+        .sequences = sequences,
         .reference = reference,
         .candidate = candidate,
         .diff = diff,
@@ -868,6 +1024,19 @@ fn build_command_stream(allocator: std.mem.Allocator, case: *const CaseDef) ![]u
     return try stream.toOwnedSlice();
 }
 
+fn build_command_streams(allocator: std.mem.Allocator, case: *const CaseDef) ![][]u8 {
+    if (case.multi_build_fn) |build_multi_fn| {
+        return try build_multi_fn(allocator, case);
+    }
+
+    const sequence = try build_command_stream(allocator, case);
+    errdefer allocator.free(sequence);
+
+    const sequences = try allocator.alloc([]u8, 1);
+    sequences[0] = sequence;
+    return sequences;
+}
+
 fn fillXorPrefill(pixels: []Color, width: u16, height: u16, stride: u32) void {
     for (0..height) |y| {
         const row = pixels[@as(usize, y) * @as(usize, stride) ..][0..width];
@@ -877,17 +1046,10 @@ fn fillXorPrefill(pixels: []Color, width: u16, height: u16, stride: u32) void {
     }
 }
 
-fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: []const u8) ![]Color {
+fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequences: [][]u8) ![]Color {
     const pixel_count = @as(usize, canvas.width) * @as(usize, canvas.height);
     const pixels = try allocator.alloc(Color, pixel_count);
     fillXorPrefill(pixels, canvas.width, canvas.height, canvas.width);
-
-    var rasterizer = agp_swrast.Rasterizer.init(.{
-        .pixels = pixels.ptr,
-        .width = canvas.width,
-        .height = canvas.height,
-        .stride = canvas.width,
-    });
 
     const resolver = agp_swrast.Rasterizer.Resolver{
         .ctx = @ptrCast(@constCast(&resource_catalog)),
@@ -895,15 +1057,25 @@ fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: 
         .resolve_framebuffer_fn = ResourceCatalog.resolveFramebufferReference,
     };
 
-    var decoder: agp.BufferDecoder = .init(sequence);
-    while (try decoder.next()) |cmd| {
-        rasterizer.execute(cmd, resolver);
+    const target: agp_swrast.RenderTarget = .{
+        .pixels = pixels.ptr,
+        .width = canvas.width,
+        .height = canvas.height,
+        .stride = canvas.width,
+    };
+
+    for (sequences) |sequence| {
+        var rasterizer = agp_swrast.Rasterizer.init(target);
+        var decoder: agp.BufferDecoder = .init(sequence);
+        while (try decoder.next()) |cmd| {
+            rasterizer.execute(cmd, resolver);
+        }
     }
 
     return pixels;
 }
 
-fn render_candidate(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: []const u8) ![]Color {
+fn render_candidate(allocator: std.mem.Allocator, canvas: CanvasSize, sequences: [][]u8) ![]Color {
     const stride = alignStride(canvas.width);
     const backing = try allocator.alignedAlloc(
         Color,
@@ -922,12 +1094,14 @@ fn render_candidate(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: 
             .resolve_framebuffer_fn = ResourceCatalog.resolveFramebufferCandidate,
         },
     };
-    try rasterizer.execute(.{
-        .pixels = backing.ptr,
-        .width = canvas.width,
-        .height = canvas.height,
-        .stride = stride,
-    }, resolver, sequence);
+    for (sequences) |sequence| {
+        try rasterizer.execute(.{
+            .pixels = backing.ptr,
+            .width = canvas.width,
+            .height = canvas.height,
+            .stride = stride,
+        }, resolver, sequence);
+    }
 
     const tight = try allocator.alloc(Color, @as(usize, canvas.width) * @as(usize, canvas.height));
     for (0..canvas.height) |y| {
@@ -978,8 +1152,8 @@ fn compare_images(reference: []const Color, candidate: []const Color, diff: []Co
 
 fn make_error_result(allocator: std.mem.Allocator, canvas: CanvasSize) !CaseResult {
     const pixel_count = @as(usize, canvas.width) * @as(usize, canvas.height);
-    const sequence = try allocator.alloc(u8, 0);
-    errdefer allocator.free(sequence);
+    const sequences = try allocator.alloc([]u8, 0);
+    errdefer allocator.free(sequences);
 
     const reference = try allocator.alloc(Color, pixel_count);
     errdefer allocator.free(reference);
@@ -995,7 +1169,7 @@ fn make_error_result(allocator: std.mem.Allocator, canvas: CanvasSize) !CaseResu
     return .{
         .width = canvas.width,
         .height = canvas.height,
-        .sequence = sequence,
+        .sequences = sequences,
         .reference = reference,
         .candidate = candidate,
         .diff = diff,
@@ -1065,17 +1239,16 @@ fn writeStaticCaseArtifacts(
     suite_name: []const u8,
     case_name: []const u8,
     canvas: CanvasSize,
-    max_canvas: CanvasSize,
     composite: []const agp.Color,
-    sequence: []const u8,
+    sequences: [][]u8,
 ) !void {
     var path_buffer: [512]u8 = undefined;
     const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
-    try gif.write_to_file_path(std.fs.cwd(), path, compositeWidth(max_canvas.width), max_canvas.height, composite);
+    try gif.write_to_file_path(std.fs.cwd(), path, compositeWidth(canvas.width), canvas.height, composite);
 
     var dump_path_buffer: [512]u8 = undefined;
     const dump_path = try staticCaseDumpPath(&dump_path_buffer, suite_name, case_name);
-    try writeCaseCommandDumpToPath(dump_path, canvas, sequence);
+    try writeCaseCommandDumpToPath(dump_path, canvas, sequences);
 }
 
 fn deleteStaticCaseArtifacts(suite_name: []const u8, case_name: []const u8) !void {
@@ -1106,24 +1279,32 @@ fn staticCaseDumpPath(path_buffer: []u8, suite_name: []const u8, case_name: []co
     return std.fmt.bufPrint(path_buffer, "{s}/{s}/{s}.txt", .{ output_dir_path, suite_name, file_name });
 }
 
-fn writeCaseCommandDumpToPath(path: []const u8, canvas: CanvasSize, sequence: []const u8) !void {
+fn writeCaseCommandDumpToPath(path: []const u8, canvas: CanvasSize, sequences: [][]u8) !void {
     var file = try std.fs.cwd().createFile(path, .{ .truncate = true });
     defer file.close();
 
     var buffer: [8192]u8 = undefined;
     var file_writer = file.writer(&buffer);
-    try writeCaseCommandDump(&file_writer.interface, canvas, sequence);
+    try writeCaseCommandDump(&file_writer.interface, canvas, sequences);
     try file_writer.interface.flush();
 }
 
-fn writeCaseCommandDump(writer: *std.Io.Writer, canvas: CanvasSize, sequence: []const u8) !void {
-    var decoder: agp.BufferDecoder = .init(sequence);
-    var optimizing_state = agp.OptimizingEncoder.State.initForImage(canvas.width, canvas.height);
-    while (try decoder.next()) |cmd| {
-        const emission = optimizing_state.classify(cmd);
-        try writer.print("{s} ", .{@tagName(emission)});
-        try dumpCommand(writer, cmd);
-        try writer.writeByte('\n');
+fn writeCaseCommandDump(writer: *std.Io.Writer, canvas: CanvasSize, sequences: [][]u8) !void {
+    for (sequences, 0..) |sequence, index| {
+        if (sequences.len > 1) {
+            if (index != 0)
+                try writer.writeByte('\n');
+            try writer.print("# sequence {}\n", .{index});
+        }
+
+        var decoder: agp.BufferDecoder = .init(sequence);
+        var optimizing_state = agp.OptimizingEncoder.State.initForImage(canvas.width, canvas.height);
+        while (try decoder.next()) |cmd| {
+            const emission = optimizing_state.classify(cmd);
+            try writer.print("{s} ", .{@tagName(emission)});
+            try dumpCommand(writer, cmd);
+            try writer.writeByte('\n');
+        }
     }
 }
 
@@ -2298,6 +2479,318 @@ fn build_framebuffer_partial_placeholder(enc: agp.Encoder, case: *const CaseDef)
     try enc.blit_partial_framebuffer(72, 40, 24, 20, 45, 8, ResourceCatalog.framebuffer_secondary);
 }
 
+const DesktopRect = struct {
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+};
+
+const IconPlacement = struct {
+    x: i16,
+    y: i16,
+    bitmap: *const Bitmap,
+};
+
+const CursorPlacement = struct {
+    x: i16,
+    y: i16,
+};
+
+const LinePlacement = struct {
+    x1: i16,
+    y1: i16,
+    x2: i16,
+    y2: i16,
+    color: Color,
+};
+
+const icon_boundary_placements = [_]IconPlacement{
+    .{ .x = 56, .y = 18, .bitmap = &classic_icon_maximize },
+    .{ .x = 64, .y = 18, .bitmap = &classic_icon_minimize },
+    .{ .x = 120, .y = 18, .bitmap = &classic_icon_restore },
+    .{ .x = 128, .y = 18, .bitmap = &classic_icon_close },
+    .{ .x = 60, .y = 62, .bitmap = &classic_icon_resize },
+    .{ .x = 126, .y = 62, .bitmap = &classic_icon_maximize },
+    .{ .x = 182, .y = 116, .bitmap = &classic_icon_close },
+};
+
+const icon_boundary_lines = [_]LinePlacement{
+    .{ .x1 = 56, .y1 = 18, .x2 = 64, .y2 = 26, .color = .white },
+    .{ .x1 = 72, .y1 = 18, .x2 = 64, .y2 = 26, .color = .yellow },
+    .{ .x1 = 120, .y1 = 18, .x2 = 128, .y2 = 26, .color = .cyan },
+    .{ .x1 = 136, .y1 = 18, .x2 = 128, .y2 = 26, .color = .green },
+    .{ .x1 = 60, .y1 = 62, .x2 = 68, .y2 = 70, .color = .red },
+    .{ .x1 = 134, .y1 = 62, .x2 = 126, .y2 = 70, .color = .magenta },
+    .{ .x1 = 182, .y1 = 116, .x2 = 190, .y2 = 124, .color = .blue },
+};
+
+const cursor_demo_icon_placements = [_]IconPlacement{
+    .{ .x = 48, .y = 170, .bitmap = &classic_icon_maximize },
+    .{ .x = 126, .y = 170, .bitmap = &classic_icon_minimize },
+    .{ .x = 206, .y = 170, .bitmap = &classic_icon_restore },
+    .{ .x = 286, .y = 170, .bitmap = &classic_icon_close },
+    .{ .x = 366, .y = 170, .bitmap = &classic_icon_resize },
+    .{ .x = 446, .y = 170, .bitmap = &classic_icon_restore },
+    .{ .x = 526, .y = 170, .bitmap = &classic_icon_close },
+};
+
+const cursor_demo_steps = [_]i16{
+    8,   21,  40,  51,  74,  91,  120, 130, 144, 171, 183, 207, 223, 244, 262,
+    288, 303, 333, 346, 368, 385, 413, 425, 444, 469, 482, 506, 524, 551, 565,
+    589, 607,
+};
+
+fn build_unused_single(_: agp.Encoder, _: *const CaseDef) !void {
+    unreachable;
+}
+
+fn build_multi_icon_boundary_redraws(allocator: std.mem.Allocator, case: *const CaseDef) ![][]u8 {
+    _ = case;
+    const repairs = [_]DesktopRect{
+        .{ .x = 54, .y = 16, .width = 22, .height = 13 },
+        .{ .x = 118, .y = 16, .width = 22, .height = 13 },
+        .{ .x = 58, .y = 60, .width = 22, .height = 13 },
+        .{ .x = 124, .y = 60, .width = 22, .height = 13 },
+        .{ .x = 180, .y = 114, .width = 13, .height = 13 },
+    };
+
+    const sequences = try allocator.alloc([]u8, repairs.len + 1);
+    var built: usize = 0;
+    errdefer {
+        for (sequences[0..built]) |sequence| allocator.free(sequence);
+        allocator.free(sequences);
+    }
+
+    sequences[0] = try encodeDesktopSceneSequence(
+        allocator,
+        .{ .width = 193, .height = 129 },
+        &icon_boundary_placements,
+        &icon_boundary_lines,
+        null,
+    );
+    built = 1;
+    for (repairs, 0..) |repair, index| {
+        sequences[index + 1] = try encodeDesktopRepairSequence(
+            allocator,
+            .{ .width = 193, .height = 129 },
+            repair,
+            &icon_boundary_placements,
+            &icon_boundary_lines,
+            null,
+        );
+        built = index + 2;
+    }
+    return sequences;
+}
+
+fn build_multi_cursor_slow_right_640x400(allocator: std.mem.Allocator, case: *const CaseDef) ![][]u8 {
+    _ = case;
+
+    const sequences = try allocator.alloc([]u8, cursor_demo_steps.len);
+    var built: usize = 0;
+    errdefer {
+        for (sequences[0..built]) |sequence| allocator.free(sequence);
+        allocator.free(sequences);
+    }
+
+    const canvas: CanvasSize = .{ .width = 640, .height = 400 };
+    const cursor_y: i16 = 176;
+
+    sequences[0] = try encodeDesktopSceneSequence(
+        allocator,
+        canvas,
+        &cursor_demo_icon_placements,
+        &.{},
+        .{ .x = cursor_demo_steps[0], .y = cursor_y },
+    );
+    built = 1;
+
+    for (cursor_demo_steps[1..], 1..) |x, index| {
+        const previous_x = cursor_demo_steps[index - 1];
+        sequences[index] = try encodeDesktopRepairSequence(
+            allocator,
+            canvas,
+            .{
+                .x = previous_x,
+                .y = cursor_y,
+                .width = classic_icon_cursor.width,
+                .height = classic_icon_cursor.height,
+            },
+            &cursor_demo_icon_placements,
+            &.{},
+            .{ .x = x, .y = cursor_y },
+        );
+        built = index + 1;
+    }
+
+    return sequences;
+}
+
+fn encodeDesktopSceneSequence(
+    allocator: std.mem.Allocator,
+    canvas: CanvasSize,
+    placements: []const IconPlacement,
+    lines: []const LinePlacement,
+    cursor: ?CursorPlacement,
+) ![]u8 {
+    var stream: std.Io.Writer.Allocating = .init(allocator);
+    defer stream.deinit();
+
+    const enc = agp.encoder(&stream.writer);
+    try emitDesktopBackgroundRegion(enc, canvas, .{
+        .x = 0,
+        .y = 0,
+        .width = canvas.width,
+        .height = canvas.height,
+    });
+    try emitLinePlacements(enc, lines);
+    try emitIconPlacements(enc, placements);
+    if (cursor) |cursor_pos| {
+        try enc.blit_bitmap(cursor_pos.x, cursor_pos.y, &classic_icon_cursor);
+    }
+
+    return try stream.toOwnedSlice();
+}
+
+fn encodeDesktopRepairSequence(
+    allocator: std.mem.Allocator,
+    canvas: CanvasSize,
+    repair: DesktopRect,
+    placements: []const IconPlacement,
+    lines: []const LinePlacement,
+    cursor: ?CursorPlacement,
+) ![]u8 {
+    var stream: std.Io.Writer.Allocating = .init(allocator);
+    defer stream.deinit();
+
+    const enc = agp.encoder(&stream.writer);
+    try emitDesktopBackgroundRegion(enc, canvas, repair);
+    try emitIntersectingLinePlacements(enc, lines, repair);
+    try emitIntersectingIconPlacements(enc, placements, repair);
+    if (cursor) |cursor_pos| {
+        try enc.blit_bitmap(cursor_pos.x, cursor_pos.y, &classic_icon_cursor);
+    }
+
+    return try stream.toOwnedSlice();
+}
+
+fn emitDesktopBackgroundRegion(enc: agp.Encoder, canvas: CanvasSize, area: DesktopRect) !void {
+    const clipped = clipDesktopRect(area, canvas) orelse return;
+    const cell: i16 = agp_tiled_rast.tile_size;
+    const dark_a = Color.from_rgb(0x18, 0x24, 0x2c);
+    const dark_b = Color.from_rgb(0x22, 0x31, 0x3a);
+
+    var cell_y = @divFloor(clipped.y, cell) * cell;
+    while (cell_y < rectBottom(clipped)) : (cell_y += cell) {
+        var cell_x = @divFloor(clipped.x, cell) * cell;
+        while (cell_x < rectRight(clipped)) : (cell_x += cell) {
+            const tile_rect: DesktopRect = .{
+                .x = cell_x,
+                .y = cell_y,
+                .width = @intCast(cell),
+                .height = @intCast(cell),
+            };
+            const fill_rect = intersectDesktopRects(clipped, tile_rect) orelse continue;
+            try enc.fill_rect(
+                fill_rect.x,
+                fill_rect.y,
+                fill_rect.width,
+                fill_rect.height,
+                if (@mod(@divFloor(cell_x, cell) + @divFloor(cell_y, cell), 2) == 0) dark_a else dark_b,
+            );
+        }
+    }
+}
+
+fn emitIconPlacements(enc: agp.Encoder, placements: []const IconPlacement) !void {
+    for (placements) |placement| {
+        try enc.blit_bitmap(placement.x, placement.y, placement.bitmap);
+    }
+}
+
+fn emitLinePlacements(enc: agp.Encoder, lines: []const LinePlacement) !void {
+    for (lines) |line| {
+        try enc.draw_line(line.x1, line.y1, line.x2, line.y2, line.color);
+    }
+}
+
+fn emitIntersectingLinePlacements(enc: agp.Encoder, lines: []const LinePlacement, area: DesktopRect) !void {
+    for (lines) |line| {
+        if (!desktopRectsOverlap(area, lineBoundsRect(line)))
+            continue;
+        try enc.draw_line(line.x1, line.y1, line.x2, line.y2, line.color);
+    }
+}
+
+fn emitIntersectingIconPlacements(enc: agp.Encoder, placements: []const IconPlacement, area: DesktopRect) !void {
+    for (placements) |placement| {
+        if (!desktopRectsOverlap(area, bitmapPlacementRect(placement)))
+            continue;
+        try enc.blit_bitmap(placement.x, placement.y, placement.bitmap);
+    }
+}
+
+fn bitmapPlacementRect(placement: IconPlacement) DesktopRect {
+    return .{
+        .x = placement.x,
+        .y = placement.y,
+        .width = placement.bitmap.width,
+        .height = placement.bitmap.height,
+    };
+}
+
+fn lineBoundsRect(line: LinePlacement) DesktopRect {
+    const min_x = @min(line.x1, line.x2);
+    const min_y = @min(line.y1, line.y2);
+    const max_x = @max(line.x1, line.x2);
+    const max_y = @max(line.y1, line.y2);
+    return .{
+        .x = min_x,
+        .y = min_y,
+        .width = @intCast(max_x - min_x + 1),
+        .height = @intCast(max_y - min_y + 1),
+    };
+}
+
+fn clipDesktopRect(area: DesktopRect, canvas: CanvasSize) ?DesktopRect {
+    return intersectDesktopRects(area, .{
+        .x = 0,
+        .y = 0,
+        .width = canvas.width,
+        .height = canvas.height,
+    });
+}
+
+fn intersectDesktopRects(a: DesktopRect, b: DesktopRect) ?DesktopRect {
+    const x0 = @max(a.x, b.x);
+    const y0 = @max(a.y, b.y);
+    const x1 = @min(rectRight(a), rectRight(b));
+    const y1 = @min(rectBottom(a), rectBottom(b));
+
+    if (x1 <= x0 or y1 <= y0)
+        return null;
+
+    return .{
+        .x = x0,
+        .y = y0,
+        .width = @intCast(x1 - x0),
+        .height = @intCast(y1 - y0),
+    };
+}
+
+fn desktopRectsOverlap(a: DesktopRect, b: DesktopRect) bool {
+    return intersectDesktopRects(a, b) != null;
+}
+
+fn rectRight(rect: DesktopRect) i16 {
+    return rect.x + @as(i16, @intCast(rect.width));
+}
+
+fn rectBottom(rect: DesktopRect) i16 {
+    return rect.y + @as(i16, @intCast(rect.height));
+}
+
 const optimizing_encoder_test_bitmap_pixels = [_]Color{
     .red,  .green,
     .blue, .white,
@@ -2378,10 +2871,14 @@ test "writeCaseCommandDump marks off-image commands as skipped" {
     const sequence = try encodeRegularCommands(std.testing.allocator, &commands);
     defer std.testing.allocator.free(sequence);
 
+    const sequences = try std.testing.allocator.alloc([]u8, 1);
+    defer std.testing.allocator.free(sequences);
+    sequences[0] = sequence;
+
     var writer: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer writer.deinit();
 
-    try writeCaseCommandDump(&writer.writer, .{ .width = 4, .height = 4 }, sequence);
+    try writeCaseCommandDump(&writer.writer, .{ .width = 4, .height = 4 }, sequences);
 
     try std.testing.expectEqualStrings(
         \\emitted set_pixel(x=1, y=1, color=#ffffff[3f])
