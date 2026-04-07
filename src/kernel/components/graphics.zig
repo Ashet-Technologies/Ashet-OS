@@ -606,10 +606,17 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 }
 
 pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
-    call.finalize(
-        ashet.abi.draw.Render,
-        render_sync(call, inputs),
-    );
+    const start_time = ashet.time.Instant.now();
+
+    const result = render_sync(call, inputs);
+
+    const end_time = ashet.time.Instant.now();
+
+    const duration = end_time.ms_since(start_time);
+
+    logger.info("{t} render of {} bytes took {} ms", .{ selected_rasterizer, inputs.sequence_len, duration });
+
+    call.finalize(ashet.abi.draw.Render, result);
 }
 
 fn blit_window_framebuffer_overlays(
