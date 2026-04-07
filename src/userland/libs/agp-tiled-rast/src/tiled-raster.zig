@@ -502,6 +502,10 @@ pub const Rasterizer = struct {
             // vertical line
             if (!in_between(cmd.x1, target_rect.left(), target_rect.right()))
                 return;
+            if (cmd.y1 < target_rect.top() and cmd.y2 < target_rect.top())
+                return;
+            if (cmd.y1 > target_rect.bottom() and cmd.y2 > target_rect.bottom())
+                return;
 
             const start: usize = @intCast(@max(target_rect.top(), @min(cmd.y1, cmd.y2)) - base.y);
             const end: usize = @intCast(@min(target_rect.bottom(), @max(cmd.y1, cmd.y2)) - base.y + 1);
@@ -515,11 +519,15 @@ pub const Rasterizer = struct {
             // horizontal line
             if (!in_between(cmd.y1, target_rect.top(), target_rect.bottom()))
                 return;
+            if (cmd.x1 < target_rect.left() and cmd.x2 < target_rect.left())
+                return;
+            if (cmd.x1 > target_rect.right() and cmd.x2 > target_rect.right())
+                return;
 
             const start: usize = @intCast(@max(target_rect.left(), @min(cmd.x1, cmd.x2)) - base.x);
             const end: usize = @intCast(@min(target_rect.right(), @max(cmd.x1, cmd.x2)) - base.x + 1);
 
-            if (start < end) {
+            if (start <= end) {
                 @memset(rast.current_tile[@intCast(cmd.y1 - base.y)][start..end], cmd.color);
             }
         } else {
@@ -539,9 +547,9 @@ pub const Rasterizer = struct {
             const y1: i32 = cmd.y2;
 
             const dx: i32 = @intCast(@abs(x1 - x0));
-            const sx: i2 = if (x0 < x1) 1 else -1;
+            const sx: i32 = if (x0 < x1) 1 else -1;
             const dy: i32 = -@as(i32, @intCast(@abs(y1 - y0)));
-            const sy: i2 = if (y0 < y1) 1 else -1;
+            const sy: i32 = if (y0 < y1) 1 else -1;
             var err: i32 = dx + dy;
 
             while (true) {

@@ -394,7 +394,10 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                 },
                 resolver,
                 code,
-            ) catch @panic("rasterizer error");
+            ) catch |err| {
+                std.log.err("rasterizer error: {t}", .{err});
+                @panic("rasterizer error");
+            };
         } else {
             var rasterizer = Rasterizer.init(fb.get_render_target());
 
