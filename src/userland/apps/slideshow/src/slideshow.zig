@@ -127,30 +127,19 @@ pub fn main() !void {
                 .window_restore,
                 .window_moving,
                 .window_moved,
-                => {
-                    std.log.info("unhandled ui event: {}", .{event.event_type});
-                },
-
-                .window_close => break :main_loop,
-
                 .window_resizing,
                 .window_resized,
                 => {},
+
+                .window_close => break :main_loop,
 
                 .mouse_motion => {},
 
                 .mouse_button_press => {
                     if (event.mouse.button == .left) {
                         state.next();
-
                         try paint(state);
                     }
-                    std.log.info("mouse {s} at ({}, {}) of button {s}", .{
-                        @tagName(event.event_type)["mouse_button_".len..],
-                        event.mouse.x,
-                        event.mouse.y,
-                        @tagName(event.mouse.button),
-                    });
                 },
 
                 .mouse_button_release => {},
