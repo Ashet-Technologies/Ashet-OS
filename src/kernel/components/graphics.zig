@@ -34,7 +34,7 @@ pub const Bitmap = struct {
     width: u16, // width of the image
     height: u16, // height of the image
     stride: u32, // row length in pixels
-    pixels: [*]align(4) Color, // height * stride pixels
+    pixels: [*]align(64) Color, // height * stride pixels
 };
 
 pub const Framebuffer = struct {
@@ -56,9 +56,9 @@ pub const Framebuffer = struct {
     type: Type,
 
     pub fn create_memory(width: u16, height: u16) error{SystemResources}!*Framebuffer {
-        const stride: usize = std.mem.alignForward(usize, width, 4);
+        const stride: usize = std.mem.alignForward(usize, width, 64);
 
-        const back_buffer = ashet.memory.allocator.alignedAlloc(Color, .@"4", stride * height) catch return error.SystemResources;
+        const back_buffer = ashet.memory.allocator.alignedAlloc(Color, .@"64", stride * height) catch return error.SystemResources;
         errdefer ashet.memory.allocator.free(back_buffer);
 
         const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
@@ -184,7 +184,7 @@ pub const Framebuffer = struct {
                 .pixels = widget.pixels.ptr,
                 .width = widget.bounds.width,
                 .height = widget.bounds.height,
-                .stride = widget.bounds.width, // TODO: Fix this
+                .stride = std.mem.alignForward(usize, widget.bounds.width, 64),
             },
         };
     }

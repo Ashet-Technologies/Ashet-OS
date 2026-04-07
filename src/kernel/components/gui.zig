@@ -773,7 +773,9 @@ pub const Widget = struct {
             // Resize the internal pixel buffer to new size:
             const allocator = widget.associated_memory.allocator();
 
-            const new_size = @as(usize, widget.bounds.width) * @as(usize, widget.bounds.height);
+            const stride = std.mem.alignForward(usize, widget.bounds.width, 64);
+
+            const new_size = stride * @as(usize, widget.bounds.height);
             if (widget.pixels.len < new_size) {
                 // we don't have enough storage for the new resized widget,
                 // so we have to get more memory:
