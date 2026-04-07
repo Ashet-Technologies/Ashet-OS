@@ -16,7 +16,17 @@ const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
 const Color = ashet.abi.Color;
 
-const newage_rasterizer = true;
+pub const RasterizerBackend = enum {
+    /// The reference rasterizer in agp-swrast.
+    ///
+    /// This is a really baseline straightforward implementation without any acceleration techniques.
+    linear,
+
+    /// The tiled rasterizer utilizing cache locality.
+    tiled,
+};
+
+pub var selected_rasterizer: RasterizerBackend = .tiled;
 
 comptime {
     std.debug.assert(Color == agp.Color);
@@ -488,99 +498,103 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     if (target_size.width > 0 and target_size.height > 0) {
         _ = render_temp_buffer.reset(.retain_capacity);
 
-        if (newage_rasterizer) {
-            const resolver: agp_tiled_rast.Resolver = .{
-                .ctx = call.resource_owner,
-                .vtable = comptime &.{
-                    .resolve_font_fn = resolve_render_font,
-                    .resolve_framebuffer_fn = resolve_render_framebuffer,
-                    .enumerate_framebuffer_overlays_fn = resolve_render_framebuffer_overlays,
-                },
-            };
-
-            const rt = fb.get_render_target();
-            tiled_rasterizer.execute(
-                .{
-                    .width = rt.width,
-                    .height = rt.height,
-                    .stride = rt.stride,
-                    .pixels = @alignCast(rt.pixels),
-                },
-                resolver,
-                code,
-            ) catch |err| {
-                std.log.err("rasterizer error: {t}", .{err});
-                @panic("rasterizer error");
-            };
-        } else {
-            var rasterizer = Rasterizer.init(fb.get_render_target());
-
-            var decoder = agp.streamDecoder(render_temp_buffer.allocator(), fbs.reader());
-            while (decoder.next() catch unreachable) |cmd| {
-                // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
-                switch (cmd) {
-                    .draw_text => |draw_text| {
-                        const font = ashet.resources.resolve(Font, call.resource_owner, draw_text.font.as_resource()) catch |err| switch (err) {
-                            error.TypeMismatch => return error.BadCode,
-                            else => |e| return e,
-                        };
-                        rasterizer.draw_text(
-                            Point.new(draw_text.x, draw_text.y),
-                            &font.font_data,
-                            draw_text.color,
-                            draw_text.text,
-                        );
+        switch (selected_rasterizer) {
+            .tiled => {
+                const resolver: agp_tiled_rast.Resolver = .{
+                    .ctx = call.resource_owner,
+                    .vtable = comptime &.{
+                        .resolve_font_fn = resolve_render_font,
+                        .resolve_framebuffer_fn = resolve_render_framebuffer,
+                        .enumerate_framebuffer_overlays_fn = resolve_render_framebuffer_overlays,
                     },
-                    .blit_framebuffer => |blit_framebuffer| {
-                        const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
-                            error.TypeMismatch => return error.BadCode,
-                            else => |e| return e,
-                        };
-                        rasterizer.blit_image(
-                            Point.new(
-                                blit_framebuffer.x,
-                                blit_framebuffer.y,
-                            ),
-                            framebuffer.get_image(),
-                        );
-                        switch (framebuffer.type) {
-                            .window => |window| blit_window_framebuffer_overlays(
-                                &rasterizer,
-                                window,
-                                Point.new(blit_framebuffer.x, blit_framebuffer.y),
-                                .zero,
-                                framebuffer.get_size(),
-                            ),
-                            .widget, .video, .memory => {},
-                        }
+                };
+
+                const rt = fb.get_render_target();
+                tiled_rasterizer.execute(
+                    .{
+                        .width = rt.width,
+                        .height = rt.height,
+                        .stride = rt.stride,
+                        .pixels = @alignCast(rt.pixels),
                     },
-                    .blit_partial_framebuffer => |blit_framebuffer| {
-                        const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
-                            error.TypeMismatch => return error.BadCode,
-                            else => |e| return e,
-                        };
-                        rasterizer.blit_partial_image(
-                            Rectangle.new(
-                                Point.new(blit_framebuffer.x, blit_framebuffer.y),
-                                Size.new(blit_framebuffer.width, blit_framebuffer.height),
-                            ),
-                            Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
-                            framebuffer.get_image(),
-                        );
-                        switch (framebuffer.type) {
-                            .window => |window| blit_window_framebuffer_overlays(
-                                &rasterizer,
-                                window,
-                                Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                    resolver,
+                    code,
+                ) catch |err| {
+                    std.log.err("rasterizer error: {t}", .{err});
+                    @panic("rasterizer error");
+                };
+            },
+
+            .linear => {
+                var rasterizer = Rasterizer.init(fb.get_render_target());
+
+                var decoder = agp.streamDecoder(render_temp_buffer.allocator(), fbs.reader());
+                while (decoder.next() catch unreachable) |cmd| {
+                    // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
+                    switch (cmd) {
+                        .draw_text => |draw_text| {
+                            const font = ashet.resources.resolve(Font, call.resource_owner, draw_text.font.as_resource()) catch |err| switch (err) {
+                                error.TypeMismatch => return error.BadCode,
+                                else => |e| return e,
+                            };
+                            rasterizer.draw_text(
+                                Point.new(draw_text.x, draw_text.y),
+                                &font.font_data,
+                                draw_text.color,
+                                draw_text.text,
+                            );
+                        },
+                        .blit_framebuffer => |blit_framebuffer| {
+                            const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
+                                error.TypeMismatch => return error.BadCode,
+                                else => |e| return e,
+                            };
+                            rasterizer.blit_image(
+                                Point.new(
+                                    blit_framebuffer.x,
+                                    blit_framebuffer.y,
+                                ),
+                                framebuffer.get_image(),
+                            );
+                            switch (framebuffer.type) {
+                                .window => |window| blit_window_framebuffer_overlays(
+                                    &rasterizer,
+                                    window,
+                                    Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                                    .zero,
+                                    framebuffer.get_size(),
+                                ),
+                                .widget, .video, .memory => {},
+                            }
+                        },
+                        .blit_partial_framebuffer => |blit_framebuffer| {
+                            const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
+                                error.TypeMismatch => return error.BadCode,
+                                else => |e| return e,
+                            };
+                            rasterizer.blit_partial_image(
+                                Rectangle.new(
+                                    Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                                    Size.new(blit_framebuffer.width, blit_framebuffer.height),
+                                ),
                                 Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
-                                Size.new(blit_framebuffer.width, blit_framebuffer.height),
-                            ),
-                            .widget, .video, .memory => {},
-                        }
-                    },
-                    else => rasterizer.execute(cmd, undefined),
+                                framebuffer.get_image(),
+                            );
+                            switch (framebuffer.type) {
+                                .window => |window| blit_window_framebuffer_overlays(
+                                    &rasterizer,
+                                    window,
+                                    Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                                    Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
+                                    Size.new(blit_framebuffer.width, blit_framebuffer.height),
+                                ),
+                                .widget, .video, .memory => {},
+                            }
+                        },
+                        else => rasterizer.execute(cmd, undefined),
+                    }
                 }
-            }
+            },
         }
     }
 

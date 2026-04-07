@@ -350,9 +350,27 @@ pub const global_hotkeys = struct {
     pub fn handle(event: abi.KeyboardEvent) bool {
         if (!event.pressed)
             return false;
+
         if (event.modifiers.alt) {
             switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
+                .f8 => {
+                    const options = std.enums.values(graphics.RasterizerBackend);
+
+                    const current = std.mem.indexOfScalar(graphics.RasterizerBackend, options, graphics.selected_rasterizer).?;
+
+                    const next = if (current + 1 == options.len)
+                        0
+                    else
+                        current + 1;
+
+                    graphics.selected_rasterizer = options[next];
+
+                    std.log.warn("Switched rasterizer from {t} to {t}", .{
+                        options[current],
+                        options[next],
+                    });
+                },
                 .f9 => {
                     scheduler.use_live_stack_pattern_probing = !scheduler.use_live_stack_pattern_probing;
                     if (scheduler.use_live_stack_pattern_probing) {
