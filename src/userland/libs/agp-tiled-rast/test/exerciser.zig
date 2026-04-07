@@ -3,10 +3,14 @@ const std = @import("std");
 const agp = @import("agp");
 const agp_swrast = @import("agp-swrast");
 const agp_tiled_rast = @import("agp-tiled-rast");
+const abi = @import("ashet-abi");
 const gif = @import("gif.zig");
 
 const Color = agp.Color;
 const Bitmap = agp.Bitmap;
+const Rectangle = abi.Rectangle;
+const DrawPoint = abi.Point;
+const DrawSize = abi.Size;
 
 const BuildFn = *const fn (agp.Encoder, *const CaseDef) anyerror!void;
 const MultiBuildFn = *const fn (std.mem.Allocator, *const CaseDef) anyerror![][]u8;
@@ -126,13 +130,13 @@ const RunSummary = struct {
 };
 
 const ResourceCatalog = struct {
-    const FramebufferFixture = struct {
+    const ImageFixture = struct {
         pixels: []align(64) const Color,
         width: u16,
         height: u16,
         stride: u32,
 
-        fn asReferenceImage(self: *const FramebufferFixture) agp_swrast.Image {
+        fn asReferenceImage(self: *const ImageFixture) agp_swrast.Image {
             return .{
                 .pixels = self.pixels.ptr,
                 .width = self.width,
@@ -141,13 +145,146 @@ const ResourceCatalog = struct {
             };
         }
 
-        fn asCandidateImage(self: *const FramebufferFixture) agp_tiled_rast.Image {
+        fn asCandidateImage(self: *const ImageFixture) agp_tiled_rast.Image {
             return .{
                 .pixels = self.pixels.ptr,
                 .width = self.width,
                 .height = self.height,
                 .stride = self.stride,
             };
+        }
+    };
+
+    const OverlayFixture = struct {
+        pixels: []align(64) const Color,
+        width: u16,
+        height: u16,
+        stride: u32,
+        x: i16,
+        y: i16,
+        transparency_key: ?Color = null,
+    };
+
+    const ResolvedFramebufferOverlay = struct {
+        framebuffer_rect: Rectangle,
+        image_src: DrawPoint,
+        pixels: []align(64) const Color,
+        width: u16,
+        height: u16,
+        stride: u32,
+        transparency_key: ?Color = null,
+
+        fn asReferenceImage(self: *const ResolvedFramebufferOverlay) agp_swrast.Image {
+            return .{
+                .pixels = self.pixels.ptr,
+                .width = self.width,
+                .height = self.height,
+                .stride = self.stride,
+                .transparency_key = self.transparency_key,
+            };
+        }
+
+        fn asCandidateOverlay(self: *const ResolvedFramebufferOverlay) agp_tiled_rast.FramebufferOverlay {
+            return .{
+                .framebuffer_rect = self.framebuffer_rect,
+                .image_src = self.image_src,
+                .image = .{
+                    .pixels = self.pixels.ptr,
+                    .width = self.width,
+                    .height = self.height,
+                    .stride = self.stride,
+                    .transparency_key = self.transparency_key,
+                },
+            };
+        }
+    };
+
+    const OverlaySink = struct {
+        ctx: *anyopaque,
+        emit_fn: *const fn (*anyopaque, ResolvedFramebufferOverlay) void,
+
+        fn emit(self: OverlaySink, overlay: ResolvedFramebufferOverlay) void {
+            self.emit_fn(self.ctx, overlay);
+        }
+    };
+
+    const WindowFramebufferFixture = struct {
+        base: ImageFixture,
+        overlays: []const OverlayFixture,
+    };
+
+    const FramebufferFixture = union(enum) {
+        plain: ImageFixture,
+        window: WindowFramebufferFixture,
+
+        fn width(self: *const FramebufferFixture) u16 {
+            return switch (self.*) {
+                .plain => |fixture| fixture.width,
+                .window => |fixture| fixture.base.width,
+            };
+        }
+
+        fn height(self: *const FramebufferFixture) u16 {
+            return switch (self.*) {
+                .plain => |fixture| fixture.height,
+                .window => |fixture| fixture.base.height,
+            };
+        }
+
+        fn stride(self: *const FramebufferFixture) u32 {
+            return switch (self.*) {
+                .plain => |fixture| fixture.stride,
+                .window => |fixture| fixture.base.stride,
+            };
+        }
+
+        fn asReferenceImage(self: *const FramebufferFixture) agp_swrast.Image {
+            return switch (self.*) {
+                .plain => |fixture| fixture.asReferenceImage(),
+                .window => |fixture| fixture.base.asReferenceImage(),
+            };
+        }
+
+        fn asCandidateImage(self: *const FramebufferFixture) agp_tiled_rast.Image {
+            return switch (self.*) {
+                .plain => |fixture| fixture.asCandidateImage(),
+                .window => |fixture| fixture.base.asCandidateImage(),
+            };
+        }
+
+        fn enumerateOverlays(self: *const FramebufferFixture, source_rect: Rectangle, sink: OverlaySink) void {
+            switch (self.*) {
+                .plain => {},
+                .window => |fixture| {
+                    for (fixture.overlays) |overlay| {
+                        const left_edge = @max(source_rect.x, overlay.x);
+                        const top_edge = @max(source_rect.y, overlay.y);
+                        const right_edge = @min(@as(i32, source_rect.x) + source_rect.width, @as(i32, overlay.x) + overlay.width);
+                        const bottom_edge = @min(@as(i32, source_rect.y) + source_rect.height, @as(i32, overlay.y) + overlay.height);
+
+                        if (right_edge <= left_edge) continue;
+                        if (bottom_edge <= top_edge) continue;
+
+                        sink.emit(.{
+                            .framebuffer_rect = .{
+                                .x = left_edge,
+                                .y = top_edge,
+                                .width = @intCast(right_edge - left_edge),
+                                .height = @intCast(bottom_edge - top_edge),
+                            },
+                            .image_src = .new(
+                                @max(0, left_edge - overlay.x),
+                                @max(0, top_edge - overlay.y),
+                            ),
+                            .pixels = overlay.pixels,
+                            .width = overlay.width,
+                            .height = overlay.height,
+                            .stride = overlay.stride,
+                            .transparency_key = overlay.transparency_key,
+                        });
+                    }
+                },
+            }
         }
     };
 
@@ -169,22 +306,110 @@ const ResourceCatalog = struct {
     const framebuffer_primary_pixels: [64 * 29]Color align(64) = makeGradientBitmapPixels(37, 29, 64, false);
     const framebuffer_secondary_pixels: [128 * 33]Color align(64) = makeGradientBitmapPixels(71, 33, 128, false);
 
+    const framebuffer_window_opaque_pixels: [128 * 61]Color align(64) = makeGradientBitmapPixels(83, 61, 128, false);
+    const framebuffer_window_mixed_pixels: [128 * 61]Color align(64) = makeGradientBitmapPixels(83, 61, 128, false);
+    const widget_opaque_primary_pixels: [64 * 13]Color align(64) = makeGradientBitmapPixels(17, 13, 64, false);
+    const widget_opaque_secondary_pixels: [64 * 15]Color align(64) = makeGradientBitmapPixels(23, 15, 64, false);
+    const widget_wide_opaque_pixels: [128 * 12]Color align(64) = makeGradientBitmapPixels(65, 12, 128, false);
+    const widget_transparent_pixels: [64 * 17]Color align(64) = makeGradientBitmapPixels(19, 17, 64, true);
+
     const framebuffer_primary_fixture: FramebufferFixture = .{
-        .pixels = framebuffer_primary_pixels[0..],
-        .width = 37,
-        .height = 29,
-        .stride = 64,
+        .plain = .{
+            .pixels = framebuffer_primary_pixels[0..],
+            .width = 37,
+            .height = 29,
+            .stride = 64,
+        },
     };
 
     const framebuffer_secondary_fixture: FramebufferFixture = .{
-        .pixels = framebuffer_secondary_pixels[0..],
-        .width = 71,
-        .height = 33,
-        .stride = 128,
+        .plain = .{
+            .pixels = framebuffer_secondary_pixels[0..],
+            .width = 71,
+            .height = 33,
+            .stride = 128,
+        },
+    };
+
+    const framebuffer_window_opaque_fixture: FramebufferFixture = .{
+        .window = .{
+            .base = .{
+                .pixels = framebuffer_window_opaque_pixels[0..],
+                .width = 83,
+                .height = 61,
+                .stride = 128,
+            },
+            .overlays = &.{
+                .{
+                    .pixels = widget_opaque_primary_pixels[0..],
+                    .width = 17,
+                    .height = 13,
+                    .stride = 64,
+                    .x = 9,
+                    .y = 7,
+                },
+                .{
+                    .pixels = widget_opaque_secondary_pixels[0..],
+                    .width = 23,
+                    .height = 15,
+                    .stride = 64,
+                    .x = 28,
+                    .y = 16,
+                },
+                .{
+                    .pixels = widget_wide_opaque_pixels[0..],
+                    .width = 65,
+                    .height = 12,
+                    .stride = 128,
+                    .x = 5,
+                    .y = 39,
+                },
+            },
+        },
+    };
+
+    const framebuffer_window_mixed_fixture: FramebufferFixture = .{
+        .window = .{
+            .base = .{
+                .pixels = framebuffer_window_mixed_pixels[0..],
+                .width = 83,
+                .height = 61,
+                .stride = 128,
+            },
+            .overlays = &.{
+                .{
+                    .pixels = widget_opaque_primary_pixels[0..],
+                    .width = 17,
+                    .height = 13,
+                    .stride = 64,
+                    .x = 10,
+                    .y = 8,
+                },
+                .{
+                    .pixels = widget_transparent_pixels[0..],
+                    .width = 19,
+                    .height = 17,
+                    .stride = 64,
+                    .x = 14,
+                    .y = 11,
+                    .transparency_key = .magenta,
+                },
+                .{
+                    .pixels = widget_wide_opaque_pixels[0..],
+                    .width = 65,
+                    .height = 12,
+                    .stride = 128,
+                    .x = 6,
+                    .y = 41,
+                },
+            },
+        },
     };
 
     const framebuffer_primary: agp.Framebuffer = @ptrCast(@constCast(&framebuffer_primary_fixture));
     const framebuffer_secondary: agp.Framebuffer = @ptrCast(@constCast(&framebuffer_secondary_fixture));
+    const framebuffer_window_opaque: agp.Framebuffer = @ptrCast(@constCast(&framebuffer_window_opaque_fixture));
+    const framebuffer_window_mixed: agp.Framebuffer = @ptrCast(@constCast(&framebuffer_window_mixed_fixture));
 
     fn loadFont(comptime bytes: []const u8, comptime hint: agp_swrast.fonts.FontHint) agp_swrast.fonts.FontInstance {
         @setEvalBranchQuota(10_000);
@@ -222,20 +447,37 @@ const ResourceCatalog = struct {
     }
 
     fn resolveFramebufferReference(_: *anyopaque, handle: agp.Framebuffer) ?agp_swrast.Image {
-        if (handle == framebuffer_primary) return framebuffer_primary_fixture.asReferenceImage();
-        if (handle == framebuffer_secondary) return framebuffer_secondary_fixture.asReferenceImage();
-        return null;
+        const fixture = lookupFramebufferFixture(handle) orelse return null;
+        return fixture.asReferenceImage();
     }
 
     fn resolveFramebufferCandidate(_: *anyopaque, handle: agp.Framebuffer) ?agp_tiled_rast.Image {
-        if (handle == framebuffer_primary) return framebuffer_primary_fixture.asCandidateImage();
-        if (handle == framebuffer_secondary) return framebuffer_secondary_fixture.asCandidateImage();
-        return null;
+        const fixture = lookupFramebufferFixture(handle) orelse return null;
+        return fixture.asCandidateImage();
+    }
+
+    fn resolveFramebufferCandidateOverlays(_: *anyopaque, handle: agp.Framebuffer, source_rect: Rectangle, sink: agp_tiled_rast.OverlaySink) void {
+        const fixture = lookupFramebufferFixture(handle) orelse return;
+
+        const CandidateOverlayEmitter = struct {
+            fn emit(ctx: *anyopaque, overlay: ResolvedFramebufferOverlay) void {
+                const inner_sink: *const agp_tiled_rast.OverlaySink = @ptrCast(@alignCast(ctx));
+                inner_sink.emit(overlay.asCandidateOverlay());
+            }
+        };
+
+        var sink_copy = sink;
+        fixture.enumerateOverlays(source_rect, .{
+            .ctx = &sink_copy,
+            .emit_fn = CandidateOverlayEmitter.emit,
+        });
     }
 
     fn lookupFramebufferFixture(handle: agp.Framebuffer) ?*const FramebufferFixture {
         if (handle == framebuffer_primary) return &framebuffer_primary_fixture;
         if (handle == framebuffer_secondary) return &framebuffer_secondary_fixture;
+        if (handle == framebuffer_window_opaque) return &framebuffer_window_opaque_fixture;
+        if (handle == framebuffer_window_mixed) return &framebuffer_window_mixed_fixture;
         return null;
     }
 };
@@ -565,11 +807,17 @@ const draw_text_cases = [_]CaseDef{
 };
 
 const framebuffer_blit_cases = [_]CaseDef{
-    .{ .name = "framebuffer-blit-placeholder", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_blit_placeholder },
+    .{ .name = "plain-regression", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_blit_plain_regression },
+    .{ .name = "window-opaque-overlays", .canvas = .{ .width = 128, .height = 96 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_blit_window_opaque },
+    .{ .name = "window-mixed-overlays", .canvas = .{ .width = 128, .height = 96 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_blit_window_mixed },
+    .{ .name = "window-negative-destination", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_blit_window_negative_destination },
 };
 
 const framebuffer_partial_cases = [_]CaseDef{
-    .{ .name = "framebuffer-partial-placeholder", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_partial_placeholder },
+    .{ .name = "plain-partial-regression", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_partial_plain_regression },
+    .{ .name = "window-partial-clipped", .canvas = .{ .width = 128, .height = 96 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_partial_window_clipped },
+    .{ .name = "window-partial-tile-crossing", .canvas = .{ .width = 193, .height = 129 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_partial_window_tile_crossing },
+    .{ .name = "window-partial-negative-destination", .canvas = .{ .width = 96, .height = 72 }, .capabilities = .{ .framebuffers = true }, .build_fn = build_framebuffer_partial_window_negative_destination },
 };
 
 const static_suites = [_]SuiteDef{
@@ -1046,6 +1294,54 @@ fn fillXorPrefill(pixels: []Color, width: u16, height: u16, stride: u32) void {
     }
 }
 
+fn renderReferenceFramebufferWithOverlays(
+    rasterizer: *agp_swrast.Rasterizer,
+    handle: agp.Framebuffer,
+    target_pos: DrawPoint,
+    source_pos: DrawPoint,
+    size: DrawSize,
+) void {
+    const fixture = ResourceCatalog.lookupFramebufferFixture(handle) orelse return;
+
+    rasterizer.blit_partial_image(.{
+        .x = target_pos.x,
+        .y = target_pos.y,
+        .width = size.width,
+        .height = size.height,
+    }, source_pos, fixture.asReferenceImage());
+
+    const ReferenceOverlayBlitter = struct {
+        rasterizer: *agp_swrast.Rasterizer,
+        target_pos: DrawPoint,
+        source_pos: DrawPoint,
+
+        fn emit(ctx: *anyopaque, overlay: ResourceCatalog.ResolvedFramebufferOverlay) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            self.rasterizer.blit_partial_image(.{
+                .x = self.target_pos.x +| (overlay.framebuffer_rect.x - self.source_pos.x),
+                .y = self.target_pos.y +| (overlay.framebuffer_rect.y - self.source_pos.y),
+                .width = overlay.framebuffer_rect.width,
+                .height = overlay.framebuffer_rect.height,
+            }, overlay.image_src, overlay.asReferenceImage());
+        }
+    };
+
+    var blitter: ReferenceOverlayBlitter = .{
+        .rasterizer = rasterizer,
+        .target_pos = target_pos,
+        .source_pos = source_pos,
+    };
+    fixture.enumerateOverlays(.{
+        .x = source_pos.x,
+        .y = source_pos.y,
+        .width = size.width,
+        .height = size.height,
+    }, .{
+        .ctx = &blitter,
+        .emit_fn = ReferenceOverlayBlitter.emit,
+    });
+}
+
 fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequences: [][]u8) ![]Color {
     const pixel_count = @as(usize, canvas.width) * @as(usize, canvas.height);
     const pixels = try allocator.alloc(Color, pixel_count);
@@ -1068,7 +1364,26 @@ fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequences:
         var rasterizer = agp_swrast.Rasterizer.init(target);
         var decoder: agp.BufferDecoder = .init(sequence);
         while (try decoder.next()) |cmd| {
-            rasterizer.execute(cmd, resolver);
+            switch (cmd) {
+                .blit_framebuffer => |blit| {
+                    const fixture = ResourceCatalog.lookupFramebufferFixture(blit.framebuffer) orelse continue;
+                    renderReferenceFramebufferWithOverlays(
+                        &rasterizer,
+                        blit.framebuffer,
+                        .new(blit.x, blit.y),
+                        .zero,
+                        .new(fixture.width(), fixture.height()),
+                    );
+                },
+                .blit_partial_framebuffer => |blit| renderReferenceFramebufferWithOverlays(
+                    &rasterizer,
+                    blit.framebuffer,
+                    .new(blit.x, blit.y),
+                    .new(blit.src_x, blit.src_y),
+                    .new(blit.width, blit.height),
+                ),
+                else => rasterizer.execute(cmd, resolver),
+            }
         }
     }
 
@@ -1092,6 +1407,7 @@ fn render_candidate(allocator: std.mem.Allocator, canvas: CanvasSize, sequences:
         .vtable = &.{
             .resolve_font_fn = ResourceCatalog.resolveFontCandidate,
             .resolve_framebuffer_fn = ResourceCatalog.resolveFramebufferCandidate,
+            .enumerate_framebuffer_overlays_fn = ResourceCatalog.resolveFramebufferCandidateOverlays,
         },
     };
     for (sequences) |sequence| {
@@ -1435,9 +1751,9 @@ fn formatFramebuffer(writer: *std.Io.Writer, handle: agp.Framebuffer) !void {
 
     try writer.print("FrameBuf(0x{x}, {}x{}/{})", .{
         @intFromPtr(handle),
-        fixture.width,
-        fixture.height,
-        fixture.stride,
+        fixture.width(),
+        fixture.height(),
+        fixture.stride(),
     });
 }
 
@@ -2464,19 +2780,70 @@ fn build_draw_text_tile_boundaries_vector_sizes(enc: agp.Encoder, case: *const C
     try enc.draw_text(94, 148, ResourceCatalog.sans_24_font, .purple, "v24 seam 128");
 }
 
-fn build_framebuffer_blit_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {
+fn build_framebuffer_blit_plain_regression(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
     try enc.clear(.from_gray(3));
     try enc.blit_framebuffer(8, 8, ResourceCatalog.framebuffer_primary);
     try enc.blit_framebuffer(20, 28, ResourceCatalog.framebuffer_secondary);
 }
 
-fn build_framebuffer_partial_placeholder(enc: agp.Encoder, case: *const CaseDef) !void {
+fn build_framebuffer_blit_window_opaque(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(4));
+    try enc.fill_rect(0, 0, 128, 96, .from_gray(10));
+    try enc.blit_framebuffer(12, 10, ResourceCatalog.framebuffer_window_opaque);
+    try enc.blit_framebuffer(74, 24, ResourceCatalog.framebuffer_primary);
+}
+
+fn build_framebuffer_blit_window_mixed(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(6));
+    try enc.fill_rect(0, 0, 128, 96, .blue);
+    try enc.blit_framebuffer(14, 12, ResourceCatalog.framebuffer_window_mixed);
+    try enc.blit_framebuffer(56, 40, ResourceCatalog.framebuffer_secondary);
+}
+
+fn build_framebuffer_blit_window_negative_destination(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(5));
+    try enc.fill_rect(0, 0, 96, 72, .from_gray(11));
+    try enc.set_clip_rect(6, 4, 74, 58);
+    try enc.blit_framebuffer(-11, 7, ResourceCatalog.framebuffer_window_mixed);
+    try enc.set_clip_rect(0, 0, 96, 72);
+    try enc.draw_rect(5, 3, 75, 59, .white);
+}
+
+fn build_framebuffer_partial_plain_regression(enc: agp.Encoder, case: *const CaseDef) !void {
     _ = case;
     try enc.clear(.from_gray(5));
     try enc.blit_partial_framebuffer(8, 8, 16, 16, 2, 2, ResourceCatalog.framebuffer_primary);
     try enc.blit_partial_framebuffer(36, 18, 40, 24, 11, 4, ResourceCatalog.framebuffer_secondary);
     try enc.blit_partial_framebuffer(72, 40, 24, 20, 45, 8, ResourceCatalog.framebuffer_secondary);
+}
+
+fn build_framebuffer_partial_window_clipped(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(3));
+    try enc.fill_rect(0, 0, 128, 96, .from_gray(8));
+    try enc.set_clip_rect(24, 14, 58, 40);
+    try enc.blit_partial_framebuffer(18, 10, 52, 36, 8, 6, ResourceCatalog.framebuffer_window_mixed);
+    try enc.set_clip_rect(0, 0, 128, 96);
+    try enc.draw_rect(23, 13, 59, 41, .red);
+}
+
+fn build_framebuffer_partial_window_tile_crossing(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+    try enc.blit_partial_framebuffer(63, 61, 65, 33, 4, 20, ResourceCatalog.framebuffer_window_opaque);
+    try enc.blit_partial_framebuffer(28, 62, 66, 31, 9, 9, ResourceCatalog.framebuffer_window_mixed);
+}
+
+fn build_framebuffer_partial_window_negative_destination(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(7));
+    try enc.fill_rect(0, 0, 96, 72, .green);
+    try enc.blit_partial_framebuffer(-7, 18, 39, 29, 6, 8, ResourceCatalog.framebuffer_window_mixed);
+    try enc.blit_partial_framebuffer(54, 34, 26, 20, 28, 37, ResourceCatalog.framebuffer_window_opaque);
 }
 
 const DesktopRect = struct {

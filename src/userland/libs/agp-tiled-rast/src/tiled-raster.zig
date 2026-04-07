@@ -131,12 +131,33 @@ pub const RenderTarget = struct {
     }
 };
 
+/// An overlay image that should be composited onto a framebuffer blit.
+///
+/// `framebuffer_rect` is expressed in framebuffer-local coordinates and denotes
+/// where the overlay appears within the framebuffer being blitted.
+pub const FramebufferOverlay = struct {
+    framebuffer_rect: Rectangle,
+    image: Image,
+    image_src: Point,
+};
+
+/// Callback sink for framebuffer overlay enumeration.
+pub const OverlaySink = struct {
+    ctx: *anyopaque,
+    emit_fn: *const fn (*anyopaque, FramebufferOverlay) void,
+
+    pub fn emit(sink: OverlaySink, overlay: FramebufferOverlay) void {
+        sink.emit_fn(sink.ctx, overlay);
+    }
+};
+
 /// The resolver provides an abstraction over different host systems that
 /// have different implementations for framebuffer objects and font instancing.
 pub const Resolver = struct {
     pub const VTable = struct {
         resolve_font_fn: *const fn (*anyopaque, Font) ?*const FontInstance,
         resolve_framebuffer_fn: *const fn (*anyopaque, agp.Framebuffer) ?Image,
+        enumerate_framebuffer_overlays_fn: ?*const fn (*anyopaque, agp.Framebuffer, Rectangle, OverlaySink) void = null,
     };
 
     ctx: *anyopaque,
@@ -153,6 +174,14 @@ pub const Resolver = struct {
     ///       64 byte alignment guarantee for super fast fused-store blitting.
     pub fn resolve_framebuffer(resolver: Resolver, handle: agp.Framebuffer) ?Image {
         return resolver.vtable.resolve_framebuffer_fn(resolver.ctx, handle);
+    }
+
+    /// Enumerates overlay images that should be composited over a framebuffer
+    /// region after the base framebuffer image has been blitted.
+    pub fn enumerate_framebuffer_overlays(resolver: Resolver, handle: agp.Framebuffer, source_rect: Rectangle, sink: OverlaySink) void {
+        if (resolver.vtable.enumerate_framebuffer_overlays_fn) |enumerate_fn| {
+            enumerate_fn(resolver.ctx, handle, source_rect, sink);
+        }
     }
 };
 
@@ -680,7 +709,7 @@ pub const Rasterizer = struct {
         // Get the framebuffer handle. We resolved that already earlier, so we know it exists:
         const image = rast.resolver.resolve_framebuffer(cmd.framebuffer) orelse unreachable;
 
-        rast.exec_blit_partial_image(base, target_rect, .{
+        rast.exec_blit_resolved_framebuffer(cmd.framebuffer, .{
             .x = cmd.x,
             .y = cmd.y,
             .src_x = 0,
@@ -688,7 +717,7 @@ pub const Rasterizer = struct {
             .width = image.width,
             .height = image.height,
             .image = image,
-        });
+        }, base, target_rect);
     }
 
     fn exec_blit_partial_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitPartialBitmap, base: Point, target_rect: Rectangle) void {
@@ -708,7 +737,7 @@ pub const Rasterizer = struct {
         // Get the framebuffer handle. We resolved that already earlier, so we know it exists:
         const image = rast.resolver.resolve_framebuffer(cmd.framebuffer) orelse unreachable;
 
-        rast.exec_blit_partial_image(base, target_rect, .{
+        rast.exec_blit_resolved_framebuffer(cmd.framebuffer, .{
             .x = cmd.x,
             .y = cmd.y,
             .src_x = cmd.src_x,
@@ -716,6 +745,69 @@ pub const Rasterizer = struct {
             .width = cmd.width,
             .height = cmd.height,
             .image = image,
+        }, base, target_rect);
+    }
+
+    fn exec_blit_resolved_framebuffer(rast: *Rasterizer, framebuffer: agp.Framebuffer, cmd: struct {
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        src_x: i16,
+        src_y: i16,
+        image: Image,
+    }, base: Point, target_rect: Rectangle) void {
+        rast.exec_blit_partial_image(base, target_rect, .{
+            .x = cmd.x,
+            .y = cmd.y,
+            .src_x = cmd.src_x,
+            .src_y = cmd.src_y,
+            .width = cmd.width,
+            .height = cmd.height,
+            .image = cmd.image,
+        });
+
+        const OverlayBlitter = struct {
+            rast: *Rasterizer,
+            base: Point,
+            target_rect: Rectangle,
+            target_pos: Point,
+            source_pos: Point,
+
+            fn emit(ctx: *anyopaque, overlay: FramebufferOverlay) void {
+                const self: *@This() = @ptrCast(@alignCast(ctx));
+
+                if (overlay.framebuffer_rect.width == 0 or overlay.framebuffer_rect.height == 0)
+                    return;
+
+                self.rast.exec_blit_partial_image(self.base, self.target_rect, .{
+                    .x = self.target_pos.x +| (overlay.framebuffer_rect.x - self.source_pos.x),
+                    .y = self.target_pos.y +| (overlay.framebuffer_rect.y - self.source_pos.y),
+                    .src_x = overlay.image_src.x,
+                    .src_y = overlay.image_src.y,
+                    .width = overlay.framebuffer_rect.width,
+                    .height = overlay.framebuffer_rect.height,
+                    .image = overlay.image,
+                });
+            }
+        };
+
+        var blitter: OverlayBlitter = .{
+            .rast = rast,
+            .base = base,
+            .target_rect = target_rect,
+            .target_pos = .new(cmd.x, cmd.y),
+            .source_pos = .new(cmd.src_x, cmd.src_y),
+        };
+
+        rast.resolver.enumerate_framebuffer_overlays(framebuffer, .{
+            .x = cmd.src_x,
+            .y = cmd.src_y,
+            .width = cmd.width,
+            .height = cmd.height,
+        }, .{
+            .ctx = &blitter,
+            .emit_fn = OverlayBlitter.emit,
         });
     }
 

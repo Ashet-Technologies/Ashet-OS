@@ -312,6 +312,91 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
 
 var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_allocator);
 
+const WindowFramebufferOverlay = struct {
+    framebuffer_rect: Rectangle,
+    image_src: Point,
+    pixels: [*]align(64) const Color,
+    width: u16,
+    height: u16,
+    stride: u32,
+    transparency_key: ?Color = null,
+
+    fn as_swrast_image(overlay: WindowFramebufferOverlay) agp_swrast.Image {
+        return .{
+            .pixels = overlay.pixels,
+            .width = overlay.width,
+            .height = overlay.height,
+            .stride = overlay.stride,
+            .transparency_key = overlay.transparency_key,
+        };
+    }
+
+    fn as_tiled_overlay(overlay: WindowFramebufferOverlay) agp_tiled_rast.FramebufferOverlay {
+        return .{
+            .framebuffer_rect = overlay.framebuffer_rect,
+            .image_src = overlay.image_src,
+            .image = .{
+                .pixels = overlay.pixels,
+                .width = overlay.width,
+                .height = overlay.height,
+                .stride = overlay.stride,
+                .transparency_key = overlay.transparency_key,
+            },
+        };
+    }
+};
+
+const WindowFramebufferOverlaySink = struct {
+    ctx: *anyopaque,
+    emit_fn: *const fn (*anyopaque, WindowFramebufferOverlay) void,
+
+    fn emit(sink: WindowFramebufferOverlaySink, overlay: WindowFramebufferOverlay) void {
+        sink.emit_fn(sink.ctx, overlay);
+    }
+};
+
+fn enumerate_window_framebuffer_overlays(window: *ashet.gui.Window, source_rect: Rectangle, sink: WindowFramebufferOverlaySink) void {
+    if (window.widgets.len == 0)
+        return;
+
+    var iter = window.widgets.first;
+    while (iter) |node| : (iter = node.next) {
+        const widget = ashet.gui.Widget.from_link(node);
+
+        const left_edge = @max(source_rect.x, widget.bounds.x);
+        const top_edge = @max(source_rect.y, widget.bounds.y);
+        const right_edge = @min(@as(i32, source_rect.x) + source_rect.width, @as(i32, widget.bounds.x) + widget.bounds.width);
+        const bottom_edge = @min(@as(i32, source_rect.y) + source_rect.height, @as(i32, widget.bounds.y) + widget.bounds.height);
+
+        if (right_edge <= left_edge) continue;
+        if (bottom_edge <= top_edge) continue;
+
+        const width: u16 = @intCast(right_edge - left_edge);
+        const height: u16 = @intCast(bottom_edge - top_edge);
+
+        const src_dx = @max(0, left_edge - widget.bounds.x);
+        const src_dy = @max(0, top_edge - widget.bounds.y);
+
+        std.debug.assert(width <= widget.bounds.width);
+        std.debug.assert(height <= widget.bounds.height);
+
+        sink.emit(.{
+            .framebuffer_rect = .{
+                .x = left_edge,
+                .y = top_edge,
+                .width = width,
+                .height = height,
+            },
+            .image_src = .new(src_dx, src_dy),
+            .pixels = widget.pixels.ptr,
+            .width = widget.bounds.width,
+            .height = widget.bounds.height,
+            .stride = @intCast(std.mem.alignForward(usize, widget.bounds.width, 64)),
+            .transparency_key = null,
+        });
+    }
+}
+
 fn resolve_render_font(ctx: *anyopaque, handle: agp.Font) ?*const agp_swrast.fonts.FontInstance {
     const resource_owner: *ashet.multi_tasking.Process = @ptrCast(@alignCast(ctx));
 
@@ -338,6 +423,34 @@ fn resolve_render_framebuffer(ctx: *anyopaque, handle: agp.Framebuffer) ?agp_til
         .stride = rt.stride,
         .pixels = rt.pixels,
     };
+}
+
+fn resolve_render_framebuffer_overlays(ctx: *anyopaque, handle: agp.Framebuffer, source_rect: Rectangle, sink: agp_tiled_rast.OverlaySink) void {
+    const resource_owner: *ashet.multi_tasking.Process = @ptrCast(@alignCast(ctx));
+
+    const framebuffer = ashet.resources.resolve(Framebuffer, resource_owner, handle.as_resource()) catch |err| {
+        logger.warn("failed to resolve framebuffer resource for overlays: {t}", .{err});
+        return;
+    };
+
+    switch (framebuffer.type) {
+        .window => |window| {
+            const TiledOverlayEmitter = struct {
+                fn emit(inner_ctx: *anyopaque, overlay: WindowFramebufferOverlay) void {
+                    const inner_sink: *const agp_tiled_rast.OverlaySink = @ptrCast(@alignCast(inner_ctx));
+                    inner_sink.emit(overlay.as_tiled_overlay());
+                }
+            };
+
+            var sink_copy = sink;
+
+            enumerate_window_framebuffer_overlays(window, source_rect, .{
+                .ctx = &sink_copy,
+                .emit_fn = TiledOverlayEmitter.emit,
+            });
+        },
+        .widget, .video, .memory => {},
+    }
 }
 
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
@@ -381,6 +494,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                 .vtable = comptime &.{
                     .resolve_font_fn = resolve_render_font,
                     .resolve_framebuffer_fn = resolve_render_framebuffer,
+                    .enumerate_framebuffer_overlays_fn = resolve_render_framebuffer_overlays,
                 },
             };
 
@@ -430,7 +544,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                             framebuffer.get_image(),
                         );
                         switch (framebuffer.type) {
-                            .window => |window| try blit_widget_data(
+                            .window => |window| blit_window_framebuffer_overlays(
                                 &rasterizer,
                                 window,
                                 Point.new(blit_framebuffer.x, blit_framebuffer.y),
@@ -454,7 +568,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                             framebuffer.get_image(),
                         );
                         switch (framebuffer.type) {
-                            .window => |window| try blit_widget_data(
+                            .window => |window| blit_window_framebuffer_overlays(
                                 &rasterizer,
                                 window,
                                 Point.new(blit_framebuffer.x, blit_framebuffer.y),
@@ -484,62 +598,42 @@ pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Re
     );
 }
 
-fn blit_widget_data(
+fn blit_window_framebuffer_overlays(
     rast: *Rasterizer,
     window: *ashet.gui.Window,
     target_pos: Point,
     source_pos: Point,
     size: Size,
-) !void {
-    if (window.widgets.len == 0)
-        return;
+) void {
+    const LegacyOverlayBlitter = struct {
+        rast: *Rasterizer,
+        target_pos: Point,
+        source_pos: Point,
 
-    var iter = window.widgets.first;
-    while (iter) |node| : (iter = node.next) {
-        const widget = ashet.gui.Widget.from_link(node);
+        fn emit(ctx: *anyopaque, overlay: WindowFramebufferOverlay) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            self.rast.blit_partial_image(.{
+                .x = self.target_pos.x +| (overlay.framebuffer_rect.x - self.source_pos.x),
+                .y = self.target_pos.y +| (overlay.framebuffer_rect.y - self.source_pos.y),
+                .width = overlay.framebuffer_rect.width,
+                .height = overlay.framebuffer_rect.height,
+            }, overlay.image_src, overlay.as_swrast_image());
+        }
+    };
 
-        // Compute the enclosing edges:
-        const left_edge = @max(source_pos.x, widget.bounds.x);
-        const top_edge = @max(source_pos.y, widget.bounds.y);
-        const right_edge = @min(@as(i32, source_pos.x) + size.width, @as(i32, widget.bounds.x) + widget.bounds.width);
-        const bottom_edge = @min(@as(i32, source_pos.y) + size.height, @as(i32, widget.bounds.y) + widget.bounds.height);
+    var blitter: LegacyOverlayBlitter = .{
+        .rast = rast,
+        .target_pos = target_pos,
+        .source_pos = source_pos,
+    };
 
-        // Skip the widget completely if it isn't included in the partial update:
-        if (right_edge <= left_edge) continue;
-        if (bottom_edge <= top_edge) continue;
-
-        const width: u16 = @intCast(right_edge - left_edge);
-        const height: u16 = @intCast(bottom_edge - top_edge);
-
-        const dst_dx = @max(0, left_edge - source_pos.x);
-        const dst_dy = @max(0, top_edge - source_pos.y);
-
-        const src_dx = @max(0, left_edge - widget.bounds.x);
-        const src_dy = @max(0, top_edge - widget.bounds.y);
-
-        std.debug.assert(width <= size.width);
-        std.debug.assert(height <= size.height);
-
-        std.debug.assert(width <= widget.bounds.width);
-        std.debug.assert(height <= widget.bounds.height);
-
-        const dest: Rectangle = .{
-            .x = target_pos.x +| dst_dx,
-            .y = target_pos.y +| dst_dy,
-            .width = width,
-            .height = height,
-        };
-        const src: Point = .new(src_dx, src_dy);
-
-        const bmp: agp.Bitmap = .{
-            .has_transparency = false,
-            .transparency_key = undefined,
-            .stride = widget.bounds.width,
-            .width = widget.bounds.width,
-            .height = widget.bounds.height,
-            .pixels = widget.pixels.ptr,
-        };
-
-        rast.blit_partial_bitmap(dest, src, &bmp);
-    }
+    enumerate_window_framebuffer_overlays(window, .{
+        .x = source_pos.x,
+        .y = source_pos.y,
+        .width = size.width,
+        .height = size.height,
+    }, .{
+        .ctx = &blitter,
+        .emit_fn = LegacyOverlayBlitter.emit,
+    });
 }
