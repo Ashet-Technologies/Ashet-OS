@@ -70,7 +70,7 @@ pub const TileStateCache = extern struct {
 
     chunks: [tile_count / items_per_chunk]u32,
 
-    fn set(cache: *TileStateCache, index: usize, value: TileState) void {
+    fn set(cache: *TileStateCache, index: usize, value: TileState) linksection(rastram_section) void {
         const chunk = &cache.chunks[index / items_per_chunk];
         const shift: u5 = @intCast(2 * (index % items_per_chunk));
 
@@ -81,7 +81,7 @@ pub const TileStateCache = extern struct {
         chunk.* |= pattern;
     }
 
-    fn get(cache: *const TileStateCache, index: usize) TileState {
+    fn get(cache: *const TileStateCache, index: usize) linksection(rastram_section) TileState {
         const chunk = cache.chunks[index / items_per_chunk];
         const shift: u5 = @intCast(2 * (index % items_per_chunk));
         return @enumFromInt((chunk >> shift) & 0b11);
@@ -151,9 +151,11 @@ pub const OverlaySink = struct {
     }
 };
 
+const rastram_section = ".sram.bank0.fastram";
+
 /// The resolver provides an abstraction over different host systems that
 /// have different implementations for framebuffer objects and font instancing.
-pub const Resolver = struct {
+pub const Resolver = extern struct {
     pub const VTable = struct {
         resolve_font_fn: *const fn (*anyopaque, Font) ?*const FontInstance,
         resolve_framebuffer_fn: *const fn (*anyopaque, agp.Framebuffer) ?Image,
@@ -217,7 +219,7 @@ pub const Rasterizer = struct {
     /// Executes the given command sequence.
     ///
     /// In case of an error, the execution might have performed a partial rendering already.
-    pub fn execute(rast: *Rasterizer, target: RenderTarget, resolver: Resolver, sequence: []const u8) ExecuteError!void {
+    pub noinline fn execute(rast: *Rasterizer, target: RenderTarget, resolver: Resolver, sequence: []const u8) linksection(rastram_section) ExecuteError!void {
         std.debug.assert(std.mem.isAligned(target.stride, tile_size));
         std.debug.assert(target.width <= target.stride);
 
@@ -258,7 +260,7 @@ pub const Rasterizer = struct {
 
     /// Goes through all tiles and record which commands need to be considered for the
     /// tile and what tiles are actually touched by the code.
-    fn sweep_and_mark(rast: *Rasterizer) !void {
+    fn sweep_and_mark(rast: *Rasterizer) linksection(rastram_section) !void {
         var decoder: agp.BufferDecoder = .init(rast.cmd_sequence[0..rast.cmd_sequence_len]);
 
         const output_rect: Rectangle = .{
@@ -350,7 +352,7 @@ pub const Rasterizer = struct {
                             .updated => .updated,
 
                             .replaced => if (cmd_clipped_area.containsRectangle(tile_rect))
-                                .replaced
+                                TileState.replaced
                             else
                                 .updated,
                         };
@@ -390,7 +392,7 @@ pub const Rasterizer = struct {
         rast.screen_rect = output_rect;
     }
 
-    fn cmd_area_of_effect(rast: *Rasterizer, cmd: *const Command) Rectangle {
+    fn cmd_area_of_effect(rast: *Rasterizer, cmd: *const Command) linksection(rastram_section) Rectangle {
         return switch (cmd.*) {
             .draw_text => |draw| blk: {
                 const font = rast.resolver.resolve_font(draw.font) orelse unreachable;
@@ -440,7 +442,7 @@ pub const Rasterizer = struct {
         };
     }
 
-    fn render_all_tiles(rast: *Rasterizer) void {
+    fn render_all_tiles(rast: *Rasterizer) linksection(rastram_section) void {
         var target_rect: Rectangle = .{
             .x = 0,
             .y = 0,
@@ -515,7 +517,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn fetch_tile_data(rast: *Rasterizer, tile_x: usize, tile_y: usize) void {
+    fn fetch_tile_data(rast: *Rasterizer, tile_x: usize, tile_y: usize) linksection(rastram_section) void {
         std.debug.assert(std.mem.isAligned(rast.target.stride, tile_size));
 
         const height = get_tile_extend((tile_y == rast.tile_height - 1), rast.target.height);
@@ -527,7 +529,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn flush_tile_data(rast: *Rasterizer, tile_x: usize, tile_y: usize) void {
+    fn flush_tile_data(rast: *Rasterizer, tile_x: usize, tile_y: usize) linksection(rastram_section) void {
         std.debug.assert(std.mem.isAligned(rast.target.stride, tile_size));
 
         const height = get_tile_extend((tile_y == rast.tile_height - 1), rast.target.height);
@@ -539,7 +541,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn exec_clear(rast: *Rasterizer, cmd: agp.Command.Clear, base: Point, target_rect: Rectangle) void {
+    fn exec_clear(rast: *Rasterizer, cmd: agp.Command.Clear, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         rast.exec_fill_rect(.{
             .color = cmd.color,
             .x = rast.screen_rect.x,
@@ -549,13 +551,13 @@ pub const Rasterizer = struct {
         }, base, target_rect);
     }
 
-    fn exec_set_pixel(rast: *Rasterizer, cmd: agp.Command.SetPixel, base: Point, target_rect: Rectangle) void {
+    fn exec_set_pixel(rast: *Rasterizer, cmd: agp.Command.SetPixel, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         if (target_rect.contains(.new(cmd.x, cmd.y))) {
             rast.current_tile[@intCast(cmd.y - base.y)][@intCast(cmd.x - base.x)] = cmd.color;
         }
     }
 
-    fn exec_draw_line(rast: *Rasterizer, cmd: agp.Command.DrawLine, base: Point, target_rect: Rectangle) void {
+    fn exec_draw_line(rast: *Rasterizer, cmd: agp.Command.DrawLine, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         if (cmd.x1 == cmd.x2) {
             // vertical line
             if (!in_between(cmd.x1, target_rect.left(), target_rect.right()))
@@ -633,7 +635,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn in_between(value: anytype, min: anytype, max: anytype) bool {
+    fn in_between(value: anytype, min: anytype, max: anytype) linksection(rastram_section) bool {
         if (value < min)
             return false;
         if (value > max)
@@ -641,7 +643,7 @@ pub const Rasterizer = struct {
         return true;
     }
 
-    fn exec_draw_rect(rast: *Rasterizer, cmd: agp.Command.DrawRect, base: Point, target_rect: Rectangle) void {
+    fn exec_draw_rect(rast: *Rasterizer, cmd: agp.Command.DrawRect, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         {
             if (in_between(cmd.y, target_rect.top(), target_rect.bottom())) {
                 const left = @max(target_rect.left(), cmd.x) - base.x;
@@ -690,7 +692,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn exec_fill_rect(rast: *Rasterizer, cmd: agp.Command.FillRect, base: Point, target_rect: Rectangle) void {
+    fn exec_fill_rect(rast: *Rasterizer, cmd: agp.Command.FillRect, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         std.debug.assert(rast.screen_rect.containsRectangle(target_rect));
 
         const source: Rectangle = .{
@@ -722,7 +724,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn exec_blit_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitBitmap, base: Point, target_rect: Rectangle) void {
+    fn exec_blit_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitBitmap, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         rast.exec_blit_partial_bitmap(.{
             .x = cmd.x,
             .y = cmd.y,
@@ -734,7 +736,7 @@ pub const Rasterizer = struct {
         }, base, target_rect);
     }
 
-    fn exec_blit_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitFramebuffer, base: Point, target_rect: Rectangle) void {
+    fn exec_blit_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitFramebuffer, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         // Get the framebuffer handle. We resolved that already earlier, so we know it exists:
         const image = rast.resolver.resolve_framebuffer(cmd.framebuffer) orelse unreachable;
 
@@ -749,7 +751,7 @@ pub const Rasterizer = struct {
         }, base, target_rect);
     }
 
-    fn exec_blit_partial_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitPartialBitmap, base: Point, target_rect: Rectangle) void {
+    fn exec_blit_partial_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitPartialBitmap, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         rast.exec_blit_partial_image(base, target_rect, .{
             .x = cmd.x,
             .y = cmd.y,
@@ -761,7 +763,7 @@ pub const Rasterizer = struct {
         });
     }
 
-    fn exec_blit_partial_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitPartialFramebuffer, base: Point, target_rect: Rectangle) void {
+    fn exec_blit_partial_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitPartialFramebuffer, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
 
         // Get the framebuffer handle. We resolved that already earlier, so we know it exists:
         const image = rast.resolver.resolve_framebuffer(cmd.framebuffer) orelse unreachable;
@@ -785,7 +787,7 @@ pub const Rasterizer = struct {
         src_x: i16,
         src_y: i16,
         image: Image,
-    }, base: Point, target_rect: Rectangle) void {
+    }, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         rast.exec_blit_partial_image(base, target_rect, .{
             .x = cmd.x,
             .y = cmd.y,
@@ -803,7 +805,7 @@ pub const Rasterizer = struct {
             target_pos: Point,
             source_pos: Point,
 
-            fn emit(ctx: *anyopaque, overlay: FramebufferOverlay) void {
+            fn emit(ctx: *anyopaque, overlay: FramebufferOverlay) linksection(rastram_section) void {
                 const self: *@This() = @ptrCast(@alignCast(ctx));
 
                 if (overlay.framebuffer_rect.width == 0 or overlay.framebuffer_rect.height == 0)
@@ -848,7 +850,7 @@ pub const Rasterizer = struct {
         src_x: i16,
         src_y: i16,
         image: Image,
-    }) void {
+    }) linksection(rastram_section) void {
         std.debug.assert(rast.screen_rect.containsRectangle(clip_rect));
 
         const image: *const Image = &cmd.image;
@@ -928,7 +930,7 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn exec_draw_text(rast: *Rasterizer, draw: agp.Command.DrawText, base: Point, target_rect: Rectangle) void {
+    fn exec_draw_text(rast: *Rasterizer, draw: agp.Command.DrawText, base: Point, target_rect: Rectangle) linksection(rastram_section) void {
         const font = rast.resolver.resolve_font(draw.font) orelse unreachable;
 
         const line_height: u15 = font.line_height();
@@ -974,7 +976,7 @@ pub const Rasterizer = struct {
         color: Color,
     };
 
-    fn exec_draw_bitmap_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, bitmap_font: *const BitmapFont, op: DrawLineOp) void {
+    fn exec_draw_bitmap_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, bitmap_font: *const BitmapFont, op: DrawLineOp) linksection(rastram_section) void {
         var utf8_view = std.unicode.Utf8View.init(op.text) catch unreachable; // was invalidated already
         var codepoints = utf8_view.iterator();
 
@@ -1027,12 +1029,12 @@ pub const Rasterizer = struct {
         }
     }
 
-    fn exec_draw_vector_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, vector_font: *const VectorFont, op: DrawLineOp) void {
+    fn exec_draw_vector_line(rast: *Rasterizer, base: Point, target_rect: Rectangle, vector_font: *const VectorFont, op: DrawLineOp) linksection(rastram_section) void {
         const TurtleCtx = struct {
             tile: *Tile,
             target: Rectangle,
 
-            fn set_pixel(ctx: @This(), x: i16, y: i16, color: Color) void {
+            fn set_pixel(ctx: @This(), x: i16, y: i16, color: Color) linksection(rastram_section) void {
                 if (!ctx.target.contains(.new(x, y)))
                     return;
                 ctx.tile[@intCast(y)][@intCast(x)] = color;
@@ -1087,18 +1089,59 @@ pub const Rasterizer = struct {
 };
 
 /// Returns if the rectangle will actually be processed by `cmd`.
-fn cmd_touches_rectangle(cmd: *const Command, rect: Rectangle) TileState {
-    switch (cmd) {
+fn cmd_touches_rectangle(cmd: *const Command, rect: Rectangle) linksection(rastram_section) TileState {
+    return switch (cmd.*) {
         // clears always
-        .clear => .replace,
+        .clear => .replaced,
 
-        // default is just always loading the content:
-        else => return .updated,
-    }
+        inline .blit_bitmap, .blit_partial_bitmap => |bmp| if (bmp.bitmap.has_transparency) {
+            // Transparent images always require updated semantics:
+            return .updated;
+        } else {
+            // blit_bitmap only replaces the target when it fully overwrites the tile:
+            return if (bmp.get_area_of_effect().containsRectangle(rect))
+                .replaced
+            else
+                .updated;
+        },
+
+        .fill_rect => |fb| if (fb.get_area_of_effect().containsRectangle(rect))
+            TileState.replaced
+        else
+            .updated,
+
+        // HACK: we assume framebuffers are always opaque right now:
+        .blit_framebuffer, .blit_partial_framebuffer => .replaced,
+
+        // We can't reason about clip rects, and "updated" is the least side-effect bearing solution:
+        .set_clip_rect => .updated,
+
+        // A line, text or pixel can never cover a full tile:
+        .draw_line, .draw_text, .set_pixel => .updated,
+
+        // A draw_rect only touches a tile when we intersect with one of the outlines:
+        .draw_rect => |draw| {
+            const drect = draw.get_area_of_effect();
+
+            if (drect.left() >= rect.left() and drect.left() <= rect.right())
+                return .updated;
+
+            if (drect.right() >= rect.left() and drect.right() <= rect.right())
+                return .updated;
+
+            if (drect.top() >= rect.top() and drect.top() <= rect.bottom())
+                return .updated;
+
+            if (drect.bottom() >= rect.top() and drect.bottom() <= rect.bottom())
+                return .updated;
+
+            return .uncovered;
+        },
+    };
 }
 
 /// Gets the rectangle pixel area for a given tile index.
-fn get_tile_rect(x: usize, y: usize) Rectangle {
+fn get_tile_rect(x: usize, y: usize) linksection(rastram_section) Rectangle {
     std.debug.assert(x < grid_size);
     std.debug.assert(y < grid_size);
     return .{
@@ -1115,7 +1158,7 @@ const TileArea = struct {
     top: usize, // exclude
     bottom: usize, // exclude
 
-    fn from_rectangle(rect: Rectangle) TileArea {
+    fn from_rectangle(rect: Rectangle) linksection(rastram_section) TileArea {
         if (rect.width == 0 or rect.height == 0) {
             return .{
                 .left = 0,
@@ -1145,7 +1188,7 @@ const TileArea = struct {
     }
 };
 
-fn get_tile_extend(last: bool, dimension: u16) u16 {
+fn get_tile_extend(last: bool, dimension: u16) linksection(rastram_section) u16 {
     if (!last)
         return tile_size;
     const size = dimension & (tile_size - 1);
@@ -1160,7 +1203,7 @@ const LineIterator = struct {
     offset: usize = 0,
     y: i16,
 
-    pub fn init(font: *const FontInstance, y: i16, text: []const u8) LineIterator {
+    pub fn init(font: *const FontInstance, y: i16, text: []const u8) linksection(rastram_section) LineIterator {
         return .{
             .font = font,
             .text = text,
@@ -1168,7 +1211,7 @@ const LineIterator = struct {
         };
     }
 
-    pub fn next(iter: *LineIterator) ?TextLine {
+    pub fn next(iter: *LineIterator) linksection(rastram_section) ?TextLine {
         if (iter.offset >= iter.text.len) {
             std.debug.assert(iter.offset == iter.text.len);
             return null;

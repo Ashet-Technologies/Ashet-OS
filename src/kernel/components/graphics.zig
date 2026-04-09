@@ -22,8 +22,12 @@ pub const RasterizerBackend = enum {
     /// This is a really baseline straightforward implementation without any acceleration techniques.
     linear,
 
+    linear_fastram,
+
     /// The tiled rasterizer utilizing cache locality.
     tiled,
+
+    tiled_fastram,
 };
 
 pub var selected_rasterizer: RasterizerBackend = .tiled;
@@ -499,7 +503,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
         _ = render_temp_buffer.reset(.retain_capacity);
 
         switch (selected_rasterizer) {
-            .tiled => {
+            .tiled, .tiled_fastram => {
                 const resolver: agp_tiled_rast.Resolver = .{
                     .ctx = call.resource_owner,
                     .vtable = comptime &.{
@@ -525,7 +529,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                 };
             },
 
-            .linear => {
+            .linear, .linear_fastram => {
                 var rasterizer = Rasterizer.init(fb.get_render_target());
 
                 var decoder = agp.streamDecoder(render_temp_buffer.allocator(), fbs.reader());
@@ -605,25 +609,88 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     return .{};
 }
 
-pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
-    const perfctr = ashet.machine.perfctr;
+const has_perfctr = @hasDecl(ashet.machine, "perfctr");
+const perfctr = ashet.machine.perfctr;
 
-    perfctr.setup(
-        .xip_main0_access,
-        .xip_main0_access_contested,
-        .xip_main1_access,
-        .xip_main1_access_contested,
+const CallContext = struct {
+    call: *ashet.overlapped.AsyncCall,
+    inputs: ashet.abi.draw.Render.Inputs,
+    output: ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs,
+};
+
+export fn render_sync_wrapped(ctx: *CallContext) callconv(.c) void {
+    // ctx is passed in r0
+    ctx.output = render_sync(ctx.call, ctx.inputs);
+}
+
+extern fn render_sync_in_fastram(ctx: *CallContext) callconv(.c) void;
+
+comptime {
+    asm (
+        \\.thumb
+        \\.global render_sync_in_fastram
+        \\render_sync_in_fastram:
+        \\  push {r4, lr}
+        \\  mov r4, sp
+        \\  ldr r1, .stack_end
+        \\  mov sp, r1
+        \\  
+        \\  bl render_sync_wrapped
+        \\  
+        \\  mov sp, r4
+        \\  pop {r4, pc}
+        \\.stack_end:
+        \\  .long __kernel_stack_end 
     );
+}
 
-    perfctr.reset();
-    perfctr.start();
+pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
+    const result = if (has_perfctr) blk: {
+        perfctr.setup(
+            .xip_main0_access,
+            .xip_main0_access_contested,
+            .xip_main1_access,
+            .xip_main1_access_contested,
+        );
 
-    const result = render_sync(call, inputs);
-    perfctr.stop();
+        logger.info("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
 
-    logger.info("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
+        var ctx: CallContext = .{
+            .call = call,
+            .inputs = inputs,
+            .output = undefined,
+        };
 
-    perfctr.dump();
+        perfctr.reset();
+        {
+            var csr: ashet.CriticalSection = .enter();
+            defer csr.leave();
+
+            perfctr.start();
+
+            switch (selected_rasterizer) {
+                .tiled_fastram, .linear_fastram => render_sync_in_fastram(&ctx),
+                .tiled, .linear => render_sync_wrapped(&ctx),
+            }
+
+            perfctr.stop();
+        }
+        perfctr.dump();
+
+        break :blk ctx.output;
+    } else blk: {
+        const start = ashet.time.Instant.now();
+        const result = render_sync(call, inputs);
+        const end = ashet.time.Instant.now();
+
+        logger.info("{t} render of {} bytes took {} ms", .{
+            selected_rasterizer,
+            inputs.sequence_len,
+            end.ms_since(start),
+        });
+
+        break :blk result;
+    };
 
     call.finalize(ashet.abi.draw.Render, result);
 }

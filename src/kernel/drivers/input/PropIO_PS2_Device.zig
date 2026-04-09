@@ -94,7 +94,7 @@ const Slot = struct {
     data_source: Generic_PS2_Device.StreamSource = .{
         .read_available_fn = read_available_module_data,
     },
-    inbound_data: astd.RingBuffer(u8, 16) = .{},
+    inbound_data: astd.RingBuffer(u8, 30) = .{}, // should be a multiple of 3 as mouse reports are 3 bytes each
 
     fn write_module_data(sink: *Generic_PS2_Device.StreamSink, data: []const u8, deadline: ashet.time.Deadline) error{Timeout}!void {
         const dev: *Slot = @fieldParentPtr("data_sink", sink);

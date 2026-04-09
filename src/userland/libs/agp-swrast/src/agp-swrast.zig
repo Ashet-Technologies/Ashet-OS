@@ -19,6 +19,8 @@ const Font = agp.Font;
 const Framebuffer = agp.Framebuffer;
 const Bitmap = agp.Bitmap;
 
+const rastram_section = ".sram.bank0.fastram";
+
 /// A read-only pixel source used for blit operations.
 pub const Image = struct {
     pixels: [*]const Color,
@@ -27,7 +29,7 @@ pub const Image = struct {
     stride: u32,
     transparency_key: ?Color = null,
 
-    pub fn from_bitmap(bmp: *const Bitmap) Image {
+    pub fn from_bitmap(bmp: *const Bitmap) linksection(rastram_section) Image {
         return .{
             .pixels = bmp.pixels,
             .width = bmp.width,
@@ -37,11 +39,11 @@ pub const Image = struct {
         };
     }
 
-    pub fn row(self: Image, y: u16) [*]const Color {
+    pub fn row(self: Image, y: u16) linksection(rastram_section) [*]const Color {
         return self.pixels + @as(usize, y) * self.stride;
     }
 
-    pub fn slice(self: Image, x: u16, y: u16, len: u16) []const Color {
+    pub fn slice(self: Image, x: u16, y: u16, len: u16) linksection(rastram_section) []const Color {
         const base = @as(usize, y) * self.stride + x;
         return self.pixels[base..][0..len];
     }
@@ -54,16 +56,16 @@ pub const RenderTarget = struct {
     height: u16,
     stride: u32,
 
-    pub fn row(self: RenderTarget, y: u16) [*]Color {
+    pub fn row(self: RenderTarget, y: u16) linksection(rastram_section) [*]Color {
         return self.pixels + @as(usize, y) * self.stride;
     }
 
-    pub fn slice(self: RenderTarget, x: u16, y: u16, len: u16) []Color {
+    pub fn slice(self: RenderTarget, x: u16, y: u16, len: u16) linksection(rastram_section) []Color {
         const base = @as(usize, y) * self.stride + x;
         return self.pixels[base..][0..len];
     }
 
-    pub fn as_image(self: RenderTarget) Image {
+    pub fn as_image(self: RenderTarget) linksection(rastram_section) Image {
         return .{
             .pixels = self.pixels,
             .width = self.width,
@@ -95,7 +97,7 @@ pub const Rasterizer = struct {
         resolve_framebuffer_fn: *const fn (*anyopaque, agp.Framebuffer) ?Image,
     };
 
-    pub fn execute(rast: *Rasterizer, cmd: agp.Command, resolver: Resolver) void {
+    pub fn execute(rast: *Rasterizer, cmd: agp.Command, resolver: Resolver) linksection(rastram_section) void {
         switch (cmd) {
             .clear => |data| rast.clear(data.color),
             .set_clip_rect => |data| rast.set_clip_rect(Rectangle.new(
@@ -164,7 +166,7 @@ pub const Rasterizer = struct {
     pub fn clear(
         rast: Rasterizer,
         color: Color,
-    ) void {
+    ) linksection(rastram_section) void {
         rast.fill_rect(.{
             .x = @intCast(rast.clip_rect.x),
             .y = @intCast(rast.clip_rect.y),
@@ -176,7 +178,7 @@ pub const Rasterizer = struct {
     pub fn set_clip_rect(
         rast: *Rasterizer,
         clip: Rectangle,
-    ) void {
+    ) linksection(rastram_section) void {
         const base = ClipRect{
             .x = 0,
             .y = 0,
@@ -190,7 +192,7 @@ pub const Rasterizer = struct {
         rast: Rasterizer,
         pixel: Point,
         color: Color,
-    ) void {
+    ) linksection(rastram_section) void {
         const pos = rast.clip_point(pixel) orelse return;
         rast.target.row(pos.y)[pos.x] = color;
     }
@@ -200,14 +202,14 @@ pub const Rasterizer = struct {
         from: Point,
         to: Point,
         color: Color,
-    ) void {
+    ) linksection(rastram_section) void {
         if (from.y == to.y) {
             rast.draw_horizontal_line(from.x, to.x, from.y, color);
         } else if (from.x == to.x) {
             rast.draw_vertical_line(from.x, from.y, to.y, color);
         } else {
             const H = struct {
-                fn abs(a: i16) i16 {
+                fn abs(a: i16) linksection(rastram_section) i16 {
                     return if (a < 0) -a else a;
                 }
             };
@@ -249,7 +251,7 @@ pub const Rasterizer = struct {
     }
 
     /// Optimized version of line drawing for horizontal lines.
-    fn draw_horizontal_line(rast: Rasterizer, x0: i16, x1: i16, y: i16, color: Color) void {
+    fn draw_horizontal_line(rast: Rasterizer, x0: i16, x1: i16, y: i16, color: Color) linksection(rastram_section) void {
         if (y < rast.clip_rect.y or @as(isize, y) - rast.clip_rect.y >= rast.clip_rect.height)
             return;
 
@@ -266,7 +268,7 @@ pub const Rasterizer = struct {
     }
 
     /// Optimized version of line drawing for vertical lines.
-    fn draw_vertical_line(rast: Rasterizer, x: i16, y0: i16, y1: i16, color: Color) void {
+    fn draw_vertical_line(rast: Rasterizer, x: i16, y0: i16, y1: i16, color: Color) linksection(rastram_section) void {
         if (x < rast.clip_rect.x or @as(isize, x) - rast.clip_rect.x >= rast.clip_rect.width)
             return;
 
@@ -289,7 +291,7 @@ pub const Rasterizer = struct {
         rast: Rasterizer,
         rect: Rectangle,
         color: Color,
-    ) void {
+    ) linksection(rastram_section) void {
         const paint_rect = rast.clip_rect.intersect(rect);
 
         if (paint_rect.width == 0 or paint_rect.height == 0)
@@ -336,7 +338,7 @@ pub const Rasterizer = struct {
         rast: Rasterizer,
         rect: Rectangle,
         color: Color,
-    ) void {
+    ) linksection(rastram_section) void {
         const paint_rect = rast.clip_rect.intersect(rect);
         if (paint_rect.is_empty())
             return;
@@ -353,12 +355,12 @@ pub const Rasterizer = struct {
         font: *const fonts.FontInstance,
         color: Color,
         text: []const u8,
-    ) void {
+    ) linksection(rastram_section) void {
         var sw = rast.screen_writer(start.x, start.y, font, color, null);
         sw.writer().writeAll(text) catch {};
     }
 
-    pub fn blit_bitmap(rast: Rasterizer, point: Point, bitmap: *const Bitmap) void {
+    pub fn blit_bitmap(rast: Rasterizer, point: Point, bitmap: *const Bitmap) linksection(rastram_section) void {
         rast.blit_image_region(
             point,
             Point.zero,
@@ -367,7 +369,7 @@ pub const Rasterizer = struct {
         );
     }
 
-    pub fn blit_image(rast: Rasterizer, point: Point, image: Image) void {
+    pub fn blit_image(rast: Rasterizer, point: Point, image: Image) linksection(rastram_section) void {
         rast.blit_image_region(point, Point.zero, null, image);
     }
 
@@ -376,7 +378,7 @@ pub const Rasterizer = struct {
         target: Rectangle,
         src_pos: Point,
         bitmap: *const Bitmap,
-    ) void {
+    ) linksection(rastram_section) void {
         rast.blit_image_region(
             target.position(),
             src_pos,
@@ -390,11 +392,11 @@ pub const Rasterizer = struct {
         target: Rectangle,
         src_pos: Point,
         image: Image,
-    ) void {
+    ) linksection(rastram_section) void {
         rast.blit_image_region(target.position(), src_pos, target.size(), image);
     }
 
-    pub fn screen_writer(rast: Rasterizer, x: i16, y: i16, font: *const fonts.FontInstance, color: Color, max_width: ?u15) ScreenWriter {
+    pub fn screen_writer(rast: Rasterizer, x: i16, y: i16, font: *const fonts.FontInstance, color: Color, max_width: ?u15) linksection(rastram_section) ScreenWriter {
         const limit: u15 = @intCast(if (max_width) |mw|
             @max(0, x + mw)
         else
@@ -410,7 +412,7 @@ pub const Rasterizer = struct {
         };
     }
 
-    fn blit_image_region(rast: Rasterizer, target_pos: Point, source_pos: Point, optional_size: ?Size, image: Image) void {
+    fn blit_image_region(rast: Rasterizer, target_pos: Point, source_pos: Point, optional_size: ?Size, image: Image) linksection(rastram_section) void {
         if (target_pos.x >= rast.target.width)
             return;
         if (target_pos.y >= rast.target.height)
@@ -499,7 +501,7 @@ pub const Rasterizer = struct {
         y: u16,
     };
 
-    fn clip_point(rast: Rasterizer, point: Point) ?ClipPoint {
+    fn clip_point(rast: Rasterizer, point: Point) linksection(rastram_section) ?ClipPoint {
         if (point.x < rast.clip_rect.x) return null;
         if (point.y < rast.clip_rect.y) return null;
         if (@as(isize, point.x) - rast.clip_rect.x >= rast.clip_rect.width) return null;
@@ -511,7 +513,7 @@ pub const Rasterizer = struct {
     }
 
     const Axis = enum { x_axis, y_axis };
-    fn clamp_coord(rast: Rasterizer, value: i16, comptime axis: Axis) u16 {
+    fn clamp_coord(rast: Rasterizer, value: i16, comptime axis: Axis) linksection(rastram_section) u16 {
         const pos_key = switch (axis) {
             .x_axis => "x",
             .y_axis => "y",
@@ -539,11 +541,11 @@ pub const Rasterizer = struct {
         width: u16,
         height: u16,
 
-        fn is_empty(clip: ClipRect) bool {
+        fn is_empty(clip: ClipRect) linksection(rastram_section) bool {
             return (clip.width == 0) or (clip.height == 0);
         }
 
-        fn intersect(clip: ClipRect, rect: Rectangle) ClipRect {
+        fn intersect(clip: ClipRect, rect: Rectangle) linksection(rastram_section) ClipRect {
             const x: u16 = @intCast(@max(@as(isize, clip.x), rect.x));
             const y: u16 = @intCast(@max(@as(isize, clip.y), rect.y));
             const dw: usize = @intCast(@max(@as(isize, x) - rect.x, 0));
@@ -572,11 +574,11 @@ pub const Rasterizer = struct {
         limit: u15, // only render till this column (exclusive)
         font: *const fonts.FontInstance,
 
-        pub fn writer(sw: *ScreenWriter) Writer {
+        pub fn writer(sw: *ScreenWriter) linksection(rastram_section) Writer {
             return Writer{ .context = sw };
         }
 
-        fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
+        fn write(sw: *ScreenWriter, text: []const u8) linksection(rastram_section) Error!usize {
             if (sw.dx >= sw.limit)
                 return text.len;
 
@@ -664,7 +666,7 @@ pub const Rasterizer = struct {
             return text.len;
         }
 
-        fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: Color) void {
+        fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: Color) linksection(rastram_section) void {
             sw.rast.set_pixel(Point.new(x, y), color);
         }
     };
