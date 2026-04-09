@@ -277,6 +277,8 @@ pub const Rasterizer = struct {
         rast.tile_width = tile_width;
         rast.tile_height = tile_height;
 
+        var clip_rect: Rectangle = output_rect;
+
         var start_of_cmd: u16 = 0;
         while (try decoder.next()) |cmd| {
             const end_of_cmd: u16 = @intCast(decoder.cursor);
@@ -303,17 +305,25 @@ pub const Rasterizer = struct {
                     _ = try std.unicode.Utf8View.init(draw.text);
                 },
 
+                // Keep track of the clip rectangle:
+                .set_clip_rect => |clip| clip_rect = output_rect.overlappedRegion(.{
+                    .x = clip.x,
+                    .y = clip.y,
+                    .width = clip.width,
+                    .height = clip.height,
+                }),
+
                 else => {},
             }
 
-            // TODO: Add clip rect tracking here so we can also skip tiles that are
-            //       not affected due to clip rectangle handling
             const cmd_area = rast.cmd_area_of_effect(&cmd);
 
+            const cmd_clipped_area = cmd_area.overlappedRegion(clip_rect);
+
             const potential_tile_area: TileArea = .from_rectangle(
-                // Overlap effect area and image area so we don't activate tiles
-                // outside the actual image:
-                cmd_area.overlappedRegion(output_rect),
+                // Overlap effect area and clip area so we don't activate tiles
+                // outside the current clip region:
+                cmd_clipped_area,
             );
 
             for (potential_tile_area.top..potential_tile_area.bottom) |tile_y| {
@@ -326,7 +336,26 @@ pub const Rasterizer = struct {
 
                     const tile_rect = get_tile_rect(tile_x, tile_y);
 
-                    const state = cmd_touches_rectangle(&cmd, tile_rect);
+                    std.debug.assert(cmd_clipped_area.intersects(tile_rect));
+
+                    // Check if we actually overwrite
+                    const state = blk: {
+                        const base_effect = cmd_touches_rectangle(&cmd, tile_rect);
+
+                        // If the command won't affect the tile at all, skip it:
+                        break :blk switch (base_effect) {
+                            .uncovered => continue,
+
+                            // If the command would perform a partial update anyways, we need to prefetch data:
+                            .updated => .updated,
+
+                            .replaced => if (cmd_clipped_area.containsRectangle(tile_rect))
+                                .replaced
+                            else
+                                .updated,
+                        };
+                    };
+
                     if (state == .uncovered) {
                         // Ignore all tiles that aren't touched inside the bounding box.
                         continue;
@@ -1059,11 +1088,13 @@ pub const Rasterizer = struct {
 
 /// Returns if the rectangle will actually be processed by `cmd`.
 fn cmd_touches_rectangle(cmd: *const Command, rect: Rectangle) TileState {
-    _ = cmd;
-    _ = rect;
+    switch (cmd) {
+        // clears always
+        .clear => .replace,
 
-    // TODO: Implement a much more refined version of this function
-    return .updated;
+        // default is just always loading the content:
+        else => return .updated,
+    }
 }
 
 /// Gets the rectangle pixel area for a given tile index.

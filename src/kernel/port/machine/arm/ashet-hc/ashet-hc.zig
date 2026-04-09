@@ -1099,10 +1099,10 @@ pub const perfctr = struct {
         logger.info("Cycles     = {}", .{ctr});
         logger.info("Duration   = {} us", .{duration});
         logger.info("XIP Stats  = {} (hits: {}, misses: {})", .{ ctr_acc, ctr_hit, ctr_acc -| ctr_hit });
-        logger.info("PERF0[{s}] = {}", .{ @tagName(busctrl.PERFSEL0.read().PERFSEL0), busctrl.PERFCTR0.read().PERFCTR0 });
-        logger.info("PERF1[{s}] = {}", .{ @tagName(busctrl.PERFSEL1.read().PERFSEL1), busctrl.PERFCTR1.read().PERFCTR1 });
-        logger.info("PERF2[{s}] = {}", .{ @tagName(busctrl.PERFSEL2.read().PERFSEL2), busctrl.PERFCTR2.read().PERFCTR2 });
-        logger.info("PERF3[{s}] = {}", .{ @tagName(busctrl.PERFSEL3.read().PERFSEL3), busctrl.PERFCTR3.read().PERFCTR3 });
+        logger.info("PERF0[{t}] = {}", .{ busctrl.PERFSEL0.read().PERFSEL0, busctrl.PERFCTR0.read().PERFCTR0 });
+        logger.info("PERF1[{t}] = {}", .{ busctrl.PERFSEL1.read().PERFSEL1, busctrl.PERFCTR1.read().PERFCTR1 });
+        logger.info("PERF2[{t}] = {}", .{ busctrl.PERFSEL2.read().PERFSEL2, busctrl.PERFCTR2.read().PERFCTR2 });
+        logger.info("PERF3[{t}] = {}", .{ busctrl.PERFSEL3.read().PERFSEL3, busctrl.PERFCTR3.read().PERFCTR3 });
     }
 };
 

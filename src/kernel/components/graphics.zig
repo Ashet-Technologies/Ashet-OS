@@ -606,15 +606,24 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 }
 
 pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
-    const start_time = ashet.time.Instant.now();
+    const perfctr = ashet.machine.perfctr;
+
+    perfctr.setup(
+        .xip_main0_access,
+        .xip_main0_access_contested,
+        .xip_main1_access,
+        .xip_main1_access_contested,
+    );
+
+    perfctr.reset();
+    perfctr.start();
 
     const result = render_sync(call, inputs);
+    perfctr.stop();
 
-    const end_time = ashet.time.Instant.now();
+    logger.info("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
 
-    const duration = end_time.ms_since(start_time);
-
-    logger.info("{t} render of {} bytes took {} ms", .{ selected_rasterizer, inputs.sequence_len, duration });
+    perfctr.dump();
 
     call.finalize(ashet.abi.draw.Render, result);
 }
