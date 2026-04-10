@@ -57,7 +57,7 @@ pub fn initialize() !void {
     try initialize_system_fonts();
 
     render_thread = try ashet.scheduler.Thread.spawn(handle_render_tasks, null, .{
-        // TODO: .stack_memory = &render_thread_stack,
+        .external_stack = &render_thread_stack,
     });
 
     render_queue.wakeup_thread = render_thread;

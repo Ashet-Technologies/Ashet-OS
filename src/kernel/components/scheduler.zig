@@ -93,6 +93,10 @@ pub var use_live_stack_pattern_probing = false;
 /// considers the stack overflown.
 const stack_pattern_probing_redzone_size = 128;
 
+/// Most hardware platforms require either 4, 8 or 16 bytes stack alignment, so we're going
+/// with the most generic option:
+const min_stack_alignment = 16;
+
 const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
     .x86 => if (builtin.os.tag == .windows)
         .{ .x86_win = .{} }
@@ -181,7 +185,8 @@ pub const Thread = struct {
         detached: bool = false,
         has_redzone: bool = false,
         canary_warning: bool = false,
-        padding: u26 = 0,
+        has_external_stack: bool,
+        padding: u25 = 0,
     };
 
     pub const default_stack_size = 32768;
@@ -199,7 +204,7 @@ pub const Thread = struct {
     /// The queue node we use to enqueue/dequeue the thread between different queues.
     node: ThreadQueue.Node = .{ .data = {} },
 
-    flags: Flags = .{},
+    flags: Flags,
 
     debug_info: DebugInfo = .{},
 
@@ -216,6 +221,7 @@ pub const Thread = struct {
     pub const ThreadSpawnOptions = struct {
         stack_size: usize = Thread.default_stack_size,
         process: ?*ashet.multi_tasking.Process = null,
+        external_stack: ?[]align(4096) u8 = null,
     };
 
     /// Creates a new thread which isn't started yet.
@@ -223,20 +229,31 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const use_redzone = ashet.memory.protection.is_enabled();
+        const use_redzone, const stack_memory = if (options.external_stack) |external_stack| blk: {
+            std.debug.assert(std.mem.isAligned(external_stack.len, min_stack_alignment));
 
-        // the canary requires a single page at the "bottom" of the stack:
-        const additional_stack_size: usize = if (use_redzone)
-            redzone_size
-        else
-            0;
+            break :blk .{ false, external_stack };
+        } else blk: {
+            const use_redzone = ashet.memory.protection.is_enabled();
 
-        const stack_size = std.mem.alignForward(usize, options.stack_size + additional_stack_size, ashet.memory.page_size);
+            // the canary requires a single page at the "bottom" of the stack:
+            const additional_stack_size: usize = if (use_redzone)
+                redzone_size
+            else
+                0;
 
-        // Requires the use of `ThreadAllocator`.
-        // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
-        const stack_memory = try ashet.memory.ThreadAllocator.alloc(stack_size);
-        errdefer ashet.memory.ThreadAllocator.free(stack_memory);
+            const stack_size = std.mem.alignForward(usize, options.stack_size + additional_stack_size, ashet.memory.page_size);
+
+            // Requires the use of `ThreadAllocator`.
+            // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
+            const stack_memory = try ashet.memory.ThreadAllocator.alloc(stack_size);
+
+            break :blk .{ use_redzone, stack_memory };
+        };
+
+        errdefer if (options.external_stack == null) {
+            ashet.memory.ThreadAllocator.free(stack_memory);
+        };
 
         const thread_proc = options.process orelse ashet.multi_tasking.get_kernel_process();
 
@@ -255,6 +272,7 @@ pub const Thread = struct {
             } },
             .flags = .{
                 .has_redzone = use_redzone,
+                .has_external_stack = (options.external_stack != null),
             },
         };
 
@@ -474,11 +492,13 @@ pub const Thread = struct {
             ), .read_write);
         }
 
-        // we have to use the ThreadAlloactor that doesn't invalidate
-        // the memory.
-        // `ashet_scheduler_threadExit` relies on the assumption that the memory
-        // is not changed between the free and the `performSwitch` call.
-        ashet.memory.ThreadAllocator.free(thread.stack_memory);
+        if (!thread.flags.has_external_stack) {
+            // we have to use the ThreadAlloactor that doesn't invalidate
+            // the memory.
+            // `ashet_scheduler_threadExit` relies on the assumption that the memory
+            // is not changed between the free and the `performSwitch` call.
+            ashet.memory.ThreadAllocator.free(thread.stack_memory);
+        }
         ashet.memory.type_pool(Thread).free(thread);
 
         global_stats.total_count -= 1;
@@ -637,6 +657,7 @@ var kernel_thread: Thread = .{
     .exit_code = 0,
     .stack_memory = &kernel_thread_backup,
     .process_link = .{ .data = undefined },
+    .flags = .{ .has_external_stack = true },
 };
 
 pub fn getKernelThread() *Thread {
