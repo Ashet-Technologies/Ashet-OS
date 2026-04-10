@@ -485,7 +485,12 @@ pub const syscalls = struct {
 
                 .memory => {}, // always ok
 
-                .widget => |widget| widget.window.invalidate_region(region),
+                .widget => |widget| widget.window.invalidate_region(.{
+                    .x = widget.bounds.x +| region.x,
+                    .y = widget.bounds.y +| region.y,
+                    .width = region.width,
+                    .height = region.height,
+                }),
                 .window => |window| window.invalidate_region(region),
             }
         }
