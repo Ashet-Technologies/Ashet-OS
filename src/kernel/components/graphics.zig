@@ -20,17 +20,24 @@ pub const RasterizerBackend = enum {
     /// The reference rasterizer in agp-swrast.
     ///
     /// This is a really baseline straightforward implementation without any acceleration techniques.
-    linear,
+    linear_async,
 
-    linear_fastram,
+    linear_sync,
 
     /// The tiled rasterizer utilizing cache locality.
-    tiled,
+    tiled_async,
 
-    tiled_fastram,
+    tiled_sync,
+
+    pub fn is_async(rab: RasterizerBackend) bool {
+        return switch (rab) {
+            .linear_async, .tiled_async => true,
+            .linear_sync, .tiled_sync => false,
+        };
+    }
 };
 
-pub var selected_rasterizer: RasterizerBackend = .tiled;
+pub var selected_rasterizer: RasterizerBackend = .linear_sync;
 
 comptime {
     std.debug.assert(Color == agp.Color);
@@ -38,10 +45,107 @@ comptime {
 
 var tiled_rasterizer: agp_tiled_rast.Rasterizer = undefined;
 
+var render_thread_stack: [4096]u8 align(4096) = undefined;
+
+var render_thread: *ashet.scheduler.Thread = undefined;
+
+var render_queue: ashet.overlapped.WorkQueue = .{
+    .wakeup_thread = null,
+};
+
 pub fn initialize() !void {
     try initialize_system_fonts();
 
+    render_thread = try ashet.scheduler.Thread.spawn(handle_render_tasks, null, .{
+        // TODO: .stack_memory = &render_thread_stack,
+    });
+
+    render_queue.wakeup_thread = render_thread;
+
+    render_thread.start() catch unreachable;
+
+    // Immediately suspend the worker thread as it has no work to do anyways:
+    render_thread.@"suspend"();
+
     tiled_rasterizer = .{};
+}
+
+pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
+    if (selected_rasterizer.is_async()) {
+        render_queue.enqueue(call, null);
+    } else {
+        // Complete the render tasks synchronously
+        const result = render_one_task(call, inputs);
+
+        call.finalize(ashet.abi.draw.Render, result);
+    }
+}
+
+/// Asynchronous thread running in the background that will
+/// collect and process render tasks.
+fn handle_render_tasks(_: ?*anyopaque) callconv(.c) noreturn {
+    while (true) {
+        while (render_queue.dequeue()) |job| {
+            const call, _ = job;
+
+            const render = ashet.abi.draw.Render.from_arc(call.arc);
+
+            const result = render_one_task(call, render.inputs);
+
+            call.finalize(ashet.abi.draw.Render, result);
+        }
+
+        // After we've completed all work tasks
+        render_queue.wakeup_thread.?.@"suspend"();
+    }
+}
+
+fn render_one_task(
+    call: *ashet.overlapped.AsyncCall,
+    inputs: ashet.abi.draw.Render.Inputs,
+) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
+    const has_perfctr = @hasDecl(ashet.machine, "perfctr");
+
+    if (has_perfctr) {
+        const perfctr = ashet.machine.perfctr;
+
+        perfctr.setup(
+            .xip_main0_access,
+            .xip_main0_access_contested,
+            .xip_main1_access,
+            .xip_main1_access_contested,
+        );
+
+        logger.info("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
+
+        perfctr.reset();
+        const output = blk: {
+            var csr: ashet.CriticalSection = .enter();
+            defer csr.leave();
+
+            perfctr.start();
+
+            const output = render_sync(call, inputs);
+
+            perfctr.stop();
+            break :blk output;
+        };
+        perfctr.dump();
+
+        return output;
+    } else {
+        const start = ashet.time.Instant.now();
+        const result = render_sync(call, inputs);
+        const end = ashet.time.Instant.now();
+
+        logger.info("{t} render of {} bytes took {} ms", .{
+            selected_rasterizer,
+            inputs.sequence_len,
+            end.ms_since(start),
+        });
+
+        return result;
+    }
 }
 
 pub const Bitmap = struct {
@@ -503,7 +607,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
         _ = render_temp_buffer.reset(.retain_capacity);
 
         switch (selected_rasterizer) {
-            .tiled, .tiled_fastram => {
+            .tiled_sync, .tiled_async => {
                 const resolver: agp_tiled_rast.Resolver = .{
                     .ctx = call.resource_owner,
                     .vtable = comptime &.{
@@ -529,7 +633,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                 };
             },
 
-            .linear, .linear_fastram => {
+            .linear_sync, .linear_async => {
                 var rasterizer = Rasterizer.init(fb.get_render_target());
 
                 var decoder = agp.streamDecoder(render_temp_buffer.allocator(), fbs.reader());
@@ -607,92 +711,6 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     }
 
     return .{};
-}
-
-const has_perfctr = @hasDecl(ashet.machine, "perfctr");
-const perfctr = ashet.machine.perfctr;
-
-const CallContext = struct {
-    call: *ashet.overlapped.AsyncCall,
-    inputs: ashet.abi.draw.Render.Inputs,
-    output: ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs,
-};
-
-export fn render_sync_wrapped(ctx: *CallContext) callconv(.c) void {
-    // ctx is passed in r0
-    ctx.output = render_sync(ctx.call, ctx.inputs);
-}
-
-extern fn render_sync_in_fastram(ctx: *CallContext) callconv(.c) void;
-
-comptime {
-    asm (
-        \\.thumb
-        \\.global render_sync_in_fastram
-        \\render_sync_in_fastram:
-        \\  push {r4, lr}
-        \\  mov r4, sp
-        \\  ldr r1, .stack_end
-        \\  mov sp, r1
-        \\  
-        \\  bl render_sync_wrapped
-        \\  
-        \\  mov sp, r4
-        \\  pop {r4, pc}
-        \\.stack_end:
-        \\  .long __kernel_stack_end 
-    );
-}
-
-pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
-    const result = if (has_perfctr) blk: {
-        perfctr.setup(
-            .xip_main0_access,
-            .xip_main0_access_contested,
-            .xip_main1_access,
-            .xip_main1_access_contested,
-        );
-
-        logger.info("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
-
-        var ctx: CallContext = .{
-            .call = call,
-            .inputs = inputs,
-            .output = undefined,
-        };
-
-        perfctr.reset();
-        {
-            var csr: ashet.CriticalSection = .enter();
-            defer csr.leave();
-
-            perfctr.start();
-
-            switch (selected_rasterizer) {
-                .tiled_fastram, .linear_fastram => render_sync_in_fastram(&ctx),
-                .tiled, .linear => render_sync_wrapped(&ctx),
-            }
-
-            perfctr.stop();
-        }
-        perfctr.dump();
-
-        break :blk ctx.output;
-    } else blk: {
-        const start = ashet.time.Instant.now();
-        const result = render_sync(call, inputs);
-        const end = ashet.time.Instant.now();
-
-        logger.info("{t} render of {} bytes took {} ms", .{
-            selected_rasterizer,
-            inputs.sequence_len,
-            end.ms_since(start),
-        });
-
-        break :blk result;
-    };
-
-    call.finalize(ashet.abi.draw.Render, result);
 }
 
 fn blit_window_framebuffer_overlays(
