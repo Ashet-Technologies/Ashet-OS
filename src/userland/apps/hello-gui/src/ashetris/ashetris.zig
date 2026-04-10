@@ -1,15 +1,16 @@
 // TODOs:
 // Refactoring to use struct-members for easier state management
-// Key-repeat
 // Restart on game over
 // Start screen
 // Graphical effects (line clear (brightness cycle wave), piece set (shake), piece create (warp in))
+// Background graphics
 
 const std = @import("std");
 const ashet = @import("ashet");
 const consts = @import("consts.zig");
 const types = @import("types.zig");
 const drawing_mod = @import("drawing.zig");
+const keyrepeat_mod = @import("keyrepeat.zig");
 
 pub const std_options = ashet.core.std_options;
 pub const panic = ashet.core.panic;
@@ -35,8 +36,13 @@ var random: std.Random.Xoshiro256 = undefined;
 var game_over: bool = false;
 var score: u32 = 0;
 var cleared_lines: u32 = 0;
+var keyrepeat = keyrepeat_mod.KeyRepeat.init();
 
-const dropIntervalMsByLevel: [10]u16 = .{0, 1000, 800, 600, 450, 350, 270, 200, 150, 100};
+const dropIntervalMsByLevel: [10]u16 = .{ 0, 1000, 800, 600, 450, 350, 270, 200, 150, 100 };
+
+fn is_repeated_usage(usage: ashet.abi.KeyUsageCode) bool {
+    return usage == .left_arrow or usage == .right_arrow or usage == .down_arrow;
+}
 
 fn currentLevel() u8 {
     return @min(1 + @as(u8, @intCast(cleared_lines / 10)), 9);
@@ -170,7 +176,7 @@ pub fn main() !void {
     try ashet.overlapped.schedule(&get_event_iop.arc);
 
     main_loop: while (true) {
-        var arc_buffer: [2]*ashet.overlapped.ARC = undefined;
+        var arc_buffer: [3]*ashet.overlapped.ARC = undefined;
 
         const completed = try ashet.overlapped.await_completion(&arc_buffer, .{
             .wait = .wait_one,
@@ -184,13 +190,17 @@ pub fn main() !void {
                 }
 
                 try timer_iop.check_error();
-                game_over = (try lowerPiece(
-                    &drawing,
-                )).game_over;
+                game_over = (try lowerPiece(&drawing)).game_over;
 
                 if (!game_over) {
                     timer_iop.inputs.timeout = nextDropTime();
                     try ashet.overlapped.schedule(&timer_iop.arc);
+                }
+            } else if (overlapped_event == &keyrepeat.timer_iop.arc) {
+                try keyrepeat.timer_iop.check_error();
+                const maybe_usage = keyrepeat.on_timer_event();
+                if (maybe_usage != null) {
+                    try process_key_press(maybe_usage.?, &drawing, &timer_iop);
                 }
             } else if (overlapped_event == &get_event_iop.arc) {
                 const event = try get_event_iop.get_output();
@@ -198,57 +208,20 @@ pub fn main() !void {
                 switch (event.event_type) {
                     .window_close => break :main_loop,
 
-                    // .key_release => |kbdevt| {
-                    //     // Let's use this for auto-repeat
-                    // },
+                    .key_release => {
+                        const kbdevt = event.keyboard;
+                        if (is_repeated_usage(kbdevt.usage)) {
+                            keyrepeat.on_key_release(kbdevt.usage);
+                        }
+                    },
 
                     .key_press => {
                         const kbdevt = event.keyboard;
-                        switch (kbdevt.usage) {
-                            .left_arrow => {
-                                if (!game_over) {
-                                    _ = move_piece(-1, 0);
-                                }
-                            },
-
-                            .right_arrow => {
-                                if (!game_over) {
-                                    _ = move_piece(1, 0);
-                                }
-                            },
-
-                            .up_arrow => {
-                                if (!game_over) {
-                                    _ = rotate_current_piece();
-                                }
-                            },
-
-                            .down_arrow => {
-                                if (!game_over) {
-                                    game_over = (try lowerPiece(
-                                        &drawing,
-                                    )).game_over;
-                                }
-                            },
-
-                            .space => {
-                                if (!game_over) {
-                                    while (true) {
-                                        const lower_piece_result = try lowerPiece(
-                                            &drawing,
-                                        );
-                                        if (lower_piece_result.piece_settled or lower_piece_result.game_over) {
-                                            game_over = lower_piece_result.game_over;
-                                            break;
-                                        }
-                                    }
-                                }
-                            },
-
-                            else => {},
+                        if (is_repeated_usage(kbdevt.usage)) {
+                            keyrepeat.on_key_press(kbdevt.usage);
                         }
-                        try drawing.updatePlayfield(&field);
-                        try drawing.submit();
+
+                        try process_key_press(kbdevt.usage, &drawing, &timer_iop);
                     },
 
                     .window_resizing,
@@ -278,8 +251,65 @@ pub fn main() !void {
     }
 }
 
+fn process_key_press(usage: ashet.abi.KeyUsageCode, drawing: *Drawing, drop_timer: *ashet.clock.Timer) !void {
+    switch (usage) {
+        .left_arrow => {
+            if (!game_over) {
+                _ = move_piece(-1, 0);
+            }
+        },
+
+        .right_arrow => {
+            if (!game_over) {
+                _ = move_piece(1, 0);
+            }
+        },
+
+        .up_arrow => {
+            if (!game_over) {
+                _ = rotate_current_piece();
+            }
+        },
+
+        .down_arrow => {
+            if (!game_over) {
+                game_over = (try lowerPiece(drawing)).game_over;
+                if (!game_over) {
+                    try reset_drop_timer(drop_timer);
+                }
+            }
+        },
+
+        .space => {
+            if (!game_over) {
+                while (true) {
+                    const lower_piece_result = try lowerPiece(drawing);
+                    if (lower_piece_result.piece_settled or lower_piece_result.game_over) {
+                        game_over = lower_piece_result.game_over;
+                        break;
+                    }
+                }
+            }
+        },
+
+        else => {},
+    }
+
+    try drawing.updatePlayfield(&field);
+    try drawing.submit();
+}
+
 fn nextDropTime() ashet.clock.Absolute {
     return ashet.clock.monotonic().increment_by(ashet.clock.Duration.from_ms(currentDropDurationMs));
+}
+
+fn reset_drop_timer(timer_iop: *ashet.clock.Timer) !void {
+    ashet.overlapped.cancel(&timer_iop.arc) catch |err| switch (err) {
+        error.Unscheduled, error.Completed => {},
+        error.Unexpected => return err,
+    };
+    timer_iop.inputs.timeout = nextDropTime();
+    try ashet.overlapped.schedule(&timer_iop.arc);
 }
 
 fn seed_next_piece() void {
