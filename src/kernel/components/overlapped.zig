@@ -626,8 +626,9 @@ pub const WorkQueue = struct {
 
     /// Inserts an ARC into the WorkQueue based on a priority. The priority is determined
     /// by calling `comparer.lt(arc, node)`, with `node` being any node in the list.
-    /// If `arc` is less than node, it will be scheduled before the first `node` that meets
-    /// that requirement.
+    /// ARCs which are lower according to the comparer have higher priority.
+    /// The new node is inserted before the first node in the queue with a lower priority,
+    /// or at the end if no such node exists.
     pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, item: Item, comparer: anytype) void {
         std.debug.assert(arc.work_link.next == null);
         std.debug.assert(arc.work_link.prev == null);
@@ -638,11 +639,11 @@ pub const WorkQueue = struct {
             var iter = wq.queue.first;
 
             while (iter) |node| : (iter = node.next) {
-                // check if the new node is "more important" then
+                // check if the new node is "more important" (lower according to comparer) than
                 // the one we're iterating. If so, insert the node
                 // before the current node as it's higher priority:
                 const point = AsyncCall.from_work_link(node);
-                if (!comparer.lt(arc, point)) {
+                if (comparer.lt(arc, point)) {
                     wq.queue.insertBefore(node, &arc.work_link);
                     break;
                 }
