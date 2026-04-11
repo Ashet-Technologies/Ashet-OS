@@ -228,10 +228,12 @@ const Instance = struct {
                 }
                 writer.print("{s}/", .{root}) catch return error.SystemResources;
             } else {
-                writer.print("{d}:", .{instance.disk_index}) catch return error.SystemResources;
+                writer.print("{d}:/", .{instance.disk_index}) catch return error.SystemResources;
             }
 
-            writer.writeAll(path) catch return error.SystemResources;
+            if (!std.mem.eql(u8, path, ".")) {
+                writer.writeAll(path) catch return error.SystemResources;
+            }
         }
         @memset(buf.buffer[stream.pos..], 0); // add NUL termination
         return buf;
@@ -244,6 +246,10 @@ const Instance = struct {
 
         const handle = try instance.dir_handles.alloc();
         errdefer instance.dir_handles.free(handle);
+
+        logger.info("attempt to open \"{f}\"", .{
+            std.zig.fmtString(full_path.str()),
+        });
 
         var dir = fatfs.Dir.open(full_path.str()) catch |err| switch (err) {
             error.DiskErr => return error.DiskError,

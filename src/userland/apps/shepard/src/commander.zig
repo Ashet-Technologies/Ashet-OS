@@ -11,26 +11,28 @@ const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
+var current_directory_list: std.ArrayListUnmanaged(ashet.fs.FileInfo) = .empty;
+
 fn get_item_callback(ctx: ?*anyopaque, index: usize, item: *ashet.gui.widgets.ListBox.Item) callconv(.c) void {
     _ = ctx;
 
     if (index == 0) {
-        item.* = .new(".");
+        item.* = .new("./");
         return;
     }
 
     if (index == 1) {
-        item.* = .new("..");
+        item.* = .new("../");
         return;
     }
 
-    item.* = .new(switch (index % 4) {
-        0 => "item %0",
-        1 => "item %1",
-        2 => "item %2",
-        3 => "item %3",
-        else => unreachable,
-    });
+    const list_index = index - 2;
+    if (list_index >= current_directory_list.items.len) {
+        item.* = .new("<out of range>");
+        return;
+    }
+
+    item.* = .new(current_directory_list.items[list_index].getName());
 }
 
 pub fn main() !void {
@@ -80,12 +82,33 @@ pub fn main() !void {
         0,
     });
 
-    try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list, .{
-        11,
-        @intFromPtr(&get_item_callback),
-        0,
-        0, // ashet.gui.widgets.ListBox.set_list_clear_selection,
-    });
+    {
+        var root_dir: ashet.fs.Directory = try .openDrive(.system, ".");
+        defer root_dir.close();
+
+        try root_dir.reset();
+
+        while (try root_dir.next()) |item| {
+            std.log.info("read file: {s}", .{item.getName()});
+
+            // Append a / for directory entries
+            var copy = item;
+            if (copy.attributes.directory) {
+                if (std.mem.indexOfScalar(u8, &copy.name, 0)) |index| {
+                    @memset(copy.name[index..], 0);
+                    copy.name[index] = '/';
+                }
+            }
+            try current_directory_list.append(ashet.process.mem.allocator(), copy);
+        }
+
+        try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list, .{
+            current_directory_list.items.len + 2,
+            @intFromPtr(&get_item_callback),
+            0,
+            0, // ashet.gui.widgets.ListBox.set_list_clear_selection,
+        });
+    }
 
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);

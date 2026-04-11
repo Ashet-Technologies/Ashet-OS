@@ -410,6 +410,10 @@ pub const overlapped = struct {
 };
 
 pub const fs = struct {
+    pub const FileSystemId = abi.FileSystemId;
+    pub const FileAccess = abi.FileAccess;
+    pub const FileInfo = abi.FileInfo;
+
     pub const File = struct {
         pub const ReadError = abi.fs.Read.Error || GenericError;
         pub const WriteError = abi.fs.Write.Error || GenericError;
