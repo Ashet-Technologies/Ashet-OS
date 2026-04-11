@@ -22,6 +22,7 @@ const app_packages = [_][]const u8{
     "slideshow",
     "2048",
     "revision2026",
+    "shepard",
     // TODO: Include "wiki" again,
 };
 

@@ -175,6 +175,14 @@ pub const widgets = struct {
         pub const clicked: NotifyEvent = .from_int(1);
     };
 
+    pub const ToolButton = opaque {
+        pub const uuid = UUID.constant("8698ffe7-7768-4681-a5f4-57d9da69d6d8");
+
+        pub const clicked: NotifyEvent = .from_int(1);
+
+        // set_icon(Framebuffer)
+    };
+
     pub const Panel = opaque {
         pub const uuid = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
     };
@@ -193,6 +201,10 @@ pub const widgets = struct {
 
     pub const TextBox = opaque {
         pub const uuid = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
+
+        pub const set_text: ControlMessage = .from_int(1);
+
+        pub const clicked: NotifyEvent = .from_int(1);
     };
 
     pub const MultiLineTextBox = opaque {
@@ -213,5 +225,14 @@ pub const widgets = struct {
 
     pub const RadioButton = opaque {
         pub const uuid = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
+    };
+
+    pub const ListBox = opaque {
+        pub const uuid = UUID.constant("92dacfe5-9f1c-484d-aefe-b5fa4eb6636b");
+
+        // set_list(get_item_callback, count)
+        // set_selected_item(i32)
+        // get_selected_item() i32
+
     };
 };

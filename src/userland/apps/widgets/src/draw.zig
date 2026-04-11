@@ -26,6 +26,7 @@ pub const Theme = struct {
     title_font: ashet.graphics.Font,
     menu_font: ashet.graphics.Font,
     widget_font: ashet.graphics.Font,
+    item_font: ashet.graphics.Font,
 
     pub const WindowTheme = struct {
         background: Color,
@@ -47,6 +48,7 @@ pub const Theme = struct {
         border: Color.Hue,
         title_font: agp.Font,
         menu_font: agp.Font,
+        item_font: agp.Font,
         widget_font: agp.Font,
         text_color: agp.Color = .white,
     }) Theme {
@@ -68,6 +70,7 @@ pub const Theme = struct {
             .title_font = opt.title_font,
             .widget_font = opt.widget_font,
             .menu_font = opt.menu_font,
+            .item_font = opt.item_font,
 
             .window_active = .{
                 .background = .from_hsv(theme_hue, 1, 1),

@@ -3070,7 +3070,6 @@ union WidgetEvent {
         ///
         /// The widget server shall modify the pointed values when the widget has size constraints.
         field requested_size: *Size;
-
     }
 }
 

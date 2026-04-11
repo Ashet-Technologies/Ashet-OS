@@ -35,6 +35,7 @@ pub fn main() !void {
         .value = 4,
         .border = .yellow,
         .menu_font = try ashet.graphics.get_system_font("sans-6"),
+        .item_font = try ashet.graphics.get_system_font("sans-6"),
         .title_font = try ashet.graphics.get_system_font("sans-6"),
         .widget_font = try ashet.graphics.get_system_font("mono-8"),
     });
@@ -42,8 +43,17 @@ pub fn main() !void {
     const button_type = try register_widget_type(Button);
     defer button_type.destroy_now();
 
+    const tool_button_type = try register_widget_type(ToolButton);
+    defer tool_button_type.destroy_now();
+
     const label_type = try register_widget_type(Label);
     defer label_type.destroy_now();
+
+    const text_box_type = try register_widget_type(TextBox);
+    defer text_box_type.destroy_now();
+
+    const list_box_type = try register_widget_type(ListBox);
+    defer list_box_type.destroy_now();
 
     // TODO: Implement TSR
     while (true) {
@@ -357,6 +367,422 @@ pub const Button = struct {
         }
     }
 };
+
+pub const ToolButton = struct {
+    pub const uuid = ashet.gui.widgets.ToolButton.uuid;
+
+    pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
+        .focusable = true,
+        .context_menu = false,
+        .hit_test_visible = true,
+        .allow_drop = false,
+        .clipboard_sensitive = false,
+    };
+
+    _dummy: u32 = 0,
+
+    fn init(widget: Widget) ToolButton {
+        _ = widget;
+        return .{};
+    }
+
+    fn deinit(button: *ToolButton) void {
+        // button.text.deinit(ashet.process.mem.allocator());
+        button.* = undefined;
+    }
+
+    fn control(button: *ToolButton, msg: ashet.abi.WidgetControlMessage) !void {
+        _ = button;
+        switch (msg.type) {
+            else => return error.UnknownControl,
+        }
+    }
+
+    fn handle_event(button: *ToolButton, event: ashet.gui.WidgetEvent) !void {
+        switch (event.event_type) {
+            .resized => {
+                // Enforce the 9x9 size:
+                event.resized.requested_size.* = .new(9, 9);
+            },
+
+            .click => {
+                try ashet.gui.notify_owner(
+                    WidgetWrapper(ToolButton).from_impl(button).widget,
+                    ashet.gui.widgets.ToolButton.clicked,
+                    .{ 0, 0, 0, 0 },
+                );
+            },
+
+            // Ignore standard mouse events:
+            .mouse_enter,
+            .mouse_leave,
+            .mouse_button_press,
+            .mouse_button_release,
+            .mouse_hover,
+            .mouse_motion,
+            .scroll,
+            => {},
+
+            .key_press, .key_release => {},
+
+            .focus_enter, .focus_leave => {},
+
+            .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
+
+            .drag_enter, .drag_leave, .drag_over, .drag_drop => {}, // TODO: These should be unreachable
+
+            .context_menu_request => {}, // TODO: These should be unreachable
+
+            // Implemented in the wrapper
+            .paint, .control, .create, .destroy => unreachable,
+
+            _ => {},
+        }
+    }
+
+    fn paint(button: *ToolButton, cq: *CommandQueue, size: Size) !void {
+        _ = button;
+        const rect: Rectangle = .new(.zero, size);
+        try cq.draw_line(
+            .new(rect.left(), rect.top()),
+            .new(rect.right(), rect.top()),
+            theme.border_bright,
+        );
+        try cq.draw_line(
+            .new(rect.left(), rect.top() +| 1),
+            .new(rect.left(), rect.bottom()),
+            theme.border_bright,
+        );
+        try cq.draw_line(
+            .new(rect.right(), rect.top() +| 1),
+            .new(rect.right(), rect.bottom()),
+            theme.border_dark,
+        );
+        try cq.draw_line(
+            .new(rect.left(), rect.bottom()),
+            .new(rect.right(), rect.bottom()),
+            theme.border_dark,
+        );
+        try cq.fill_rect(
+            rect.shrink(1),
+            theme.border_normal,
+        );
+
+        // TODO: Implement bitmaps:
+        // if (opt.icon) |icon| {
+        //     try cq.blit_bitmap(
+        //         rect.left() +| 2,
+        //         rect.top() +| 2,
+        //         icon,
+        //     );
+        // }
+    }
+};
+
+pub const TextBox = struct {
+    pub const uuid = ashet.gui.widgets.TextBox.uuid;
+
+    pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
+        .focusable = true,
+        .context_menu = false,
+        .hit_test_visible = true,
+        .allow_drop = false,
+        .clipboard_sensitive = false,
+    };
+
+    text: std.ArrayListUnmanaged(u8) = .empty,
+
+    fn init(widget: Widget) TextBox {
+        _ = widget;
+        return .{};
+    }
+
+    fn deinit(button: *TextBox) void {
+        button.text.deinit(ashet.process.mem.allocator());
+        button.* = undefined;
+    }
+
+    fn control(textbox: *TextBox, msg: ashet.abi.WidgetControlMessage) !void {
+        switch (msg.type) {
+            ashet.gui.widgets.TextBox.set_text => {
+                const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
+                const text = ptr[0..msg.params[1]];
+
+                try textbox.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
+
+                textbox.text.clearRetainingCapacity();
+                textbox.text.appendSliceAssumeCapacity(text);
+
+                try WidgetWrapper(TextBox).from_impl(textbox).invalidate();
+            },
+
+            else => return error.UnknownControl,
+        }
+    }
+
+    fn handle_event(textbox: *TextBox, event: ashet.gui.WidgetEvent) !void {
+        switch (event.event_type) {
+            .click => {
+                try ashet.gui.notify_owner(
+                    WidgetWrapper(TextBox).from_impl(textbox).widget,
+                    ashet.gui.widgets.TextBox.clicked,
+                    .{ 0, 0, 0, 0 },
+                );
+            },
+
+            // Ignore standard mouse events:
+            .mouse_enter,
+            .mouse_leave,
+            .mouse_button_press,
+            .mouse_button_release,
+            .mouse_hover,
+            .mouse_motion,
+            .scroll,
+            => {},
+
+            .key_press, .key_release => {},
+
+            .focus_enter, .focus_leave => {},
+
+            // ignored events:
+            .resized => {},
+
+            .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
+
+            .drag_enter, .drag_leave, .drag_over, .drag_drop => {}, // TODO: These should be unreachable
+
+            .context_menu_request => {}, // TODO: These should be unreachable
+
+            // Implemented in the wrapper
+            .paint, .control, .create, .destroy => unreachable,
+
+            _ => {},
+        }
+    }
+
+    fn paint(button: *TextBox, cq: *CommandQueue, size: Size) !void {
+        const rect: Rectangle = .new(.zero, size);
+
+        try draw_panel(cq, .{
+            .bounds = rect,
+            .style = .sunken,
+        });
+
+        try cq.fill_rect(
+            rect.shrink(2),
+            theme.widget_background,
+        );
+
+        const text = rstrip(button.text.items);
+        if (text.len > 0) {
+            try cq.draw_text(
+                .new(rect.left() +| 4, rect.top() +| 4),
+                theme.widget_font,
+                theme.text_color,
+                text,
+            );
+        }
+    }
+};
+
+pub const ListBox = struct {
+    pub const uuid = ashet.gui.widgets.ListBox.uuid;
+
+    pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
+        .focusable = true,
+        .context_menu = false,
+        .hit_test_visible = true,
+        .allow_drop = false,
+        .clipboard_sensitive = false,
+    };
+
+    fn init(widget: Widget) ListBox {
+        _ = widget;
+        return .{};
+    }
+
+    fn deinit(listbox: *ListBox) void {
+        listbox.* = undefined;
+    }
+
+    fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !void {
+        _ = listbox;
+        switch (msg.type) {
+            // set_list
+            // get_selected_item
+            // set_selected_item
+
+            else => return error.UnknownControl,
+        }
+    }
+
+    fn handle_event(listbox: *ListBox, event: ashet.gui.WidgetEvent) !void {
+        _ = listbox;
+        switch (event.event_type) {
+            .click => {
+                // TODO
+            },
+
+            // Ignore standard mouse events:
+            .mouse_enter,
+            .mouse_leave,
+            .mouse_button_press,
+            .mouse_button_release,
+            .mouse_hover,
+            .mouse_motion,
+            .scroll,
+            => {},
+
+            .key_press, .key_release => {},
+
+            .focus_enter, .focus_leave => {},
+
+            // ignored events:
+            .resized => {},
+
+            .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
+
+            .drag_enter, .drag_leave, .drag_over, .drag_drop => {}, // TODO: These should be unreachable
+
+            .context_menu_request => {}, // TODO: These should be unreachable
+
+            // Implemented in the wrapper
+            .paint, .control, .create, .destroy => unreachable,
+
+            _ => {},
+        }
+    }
+
+    fn paint(listbox: *ListBox, cq: *CommandQueue, size: Size) !void {
+        const rect: Rectangle = .new(.zero, size);
+
+        try draw_panel(cq, .{
+            .bounds = rect,
+            .style = .sunken,
+        });
+
+        try cq.fill_rect(
+            rect.shrink(2),
+            theme.widget_background,
+        );
+
+        // TODO: Draw items here:
+
+        _ = listbox;
+
+        var item_rect: Rectangle = .{
+            .x = 2,
+            .y = 2,
+            .width = rect.width -| 4,
+            .height = 9,
+        };
+
+        const selected_index: usize = 3;
+
+        const count: usize = 9;
+        for (0..count) |index| {
+            var buf: [16]u8 = undefined;
+
+            const selected = (index == selected_index);
+
+            const src_text = std.fmt.bufPrint(&buf, "Item {}", .{index}) catch unreachable;
+
+            const stripped = rstrip(src_text);
+
+            const text_size = try ashet.graphics.measure_text_size(theme.item_font, stripped);
+
+            if (selected) {
+                // TODO: Set proper "selected item" theme color
+                try cq.fill_rect(item_rect, theme.text_color);
+            }
+
+            if (stripped.len > 0) {
+                try cq.draw_text(
+                    .new(item_rect.left() +| 1, item_rect.top() +| 1),
+                    theme.item_font,
+                    if (selected) theme.widget_background else theme.text_color,
+                    stripped,
+                );
+            }
+
+            item_rect.y += @intCast(text_size.height);
+            item_rect.y += 2;
+            if (item_rect.y >= rect.height)
+                break;
+        }
+    }
+};
+
+pub const PanelStyle = enum { sunken, raised };
+
+pub fn draw_panel(cq: *CommandQueue, opt: struct {
+    bounds: Rectangle,
+    style: PanelStyle,
+}) !void {
+    const rect = opt.bounds;
+    switch (opt.style) {
+        .raised => {
+            try cq.draw_line(
+                .new(rect.left(), rect.top()),
+                .new(rect.right(), rect.top()),
+                theme.border_bright,
+            );
+
+            try cq.draw_line(
+                .new(rect.left(), rect.top()),
+                .new(rect.left(), rect.bottom() -| 1),
+                theme.border_bright,
+            );
+
+            try cq.draw_line(
+                .new(rect.left(), rect.bottom()),
+                .new(rect.right(), rect.bottom()),
+                theme.border_dark,
+            );
+
+            try cq.draw_line(
+                .new(rect.right(), rect.top() +| 1),
+                .new(rect.right(), rect.bottom() -| 1),
+                theme.border_dark,
+            );
+
+            try cq.draw_rect(
+                rect.shrink(1),
+                theme.border_normal,
+            );
+        },
+
+        .sunken => {
+            try cq.draw_rect(
+                rect,
+                theme.border_normal,
+            );
+
+            try cq.draw_line(
+                .new(rect.left() +| 1, rect.top() +| 1),
+                .new(rect.right() -| 2, rect.top() +| 1),
+                theme.border_dark,
+            );
+            try cq.draw_line(
+                .new(rect.left() +| 1, rect.top() +| 2),
+                .new(rect.left() +| 1, rect.bottom() -| 2),
+                theme.border_dark,
+            );
+
+            try cq.draw_line(
+                .new(rect.right() -| 1, rect.top() +| 1),
+                .new(rect.right() -| 1, rect.bottom() -| 2),
+                theme.border_bright,
+            );
+
+            try cq.draw_line(
+                .new(rect.left() +| 1, rect.bottom() -| 1),
+                .new(rect.right() -| 1, rect.bottom() -| 1),
+                theme.border_bright,
+            );
+        },
+    }
+}
 
 // // indicators / passive elements:
 
