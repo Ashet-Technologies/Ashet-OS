@@ -11,6 +11,18 @@ const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
+fn get_item_callback(ctx: ?*anyopaque, index: usize, item: *ashet.gui.widgets.ListBox.Item) callconv(.c) void {
+    _ = ctx;
+
+    item.* = .new(switch (index % 4) {
+        0 => "item %0",
+        1 => "item %1",
+        2 => "item %2",
+        3 => "item %3",
+        else => unreachable,
+    });
+}
+
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = try ashet.process.get_arguments(null, &argv_buffer);
@@ -44,12 +56,12 @@ pub fn main() !void {
     _ = try ashet.gui.place_widget(go_button, .{ .x = 63, .y = 11, .width = 9, .height = 9 });
     _ = try ashet.gui.place_widget(list_box, .{ .x = 10, .y = 30, .width = 59, .height = 100 });
 
-    // try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text, .{
-    //     @intFromPtr("+"),
-    //     "+".len,
-    //     0,
-    //     0,
-    // });
+    try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list, .{
+        11,
+        @intFromPtr(&get_item_callback),
+        0,
+        ashet.gui.widgets.ListBox.set_list_clear_selection,
+    });
 
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);

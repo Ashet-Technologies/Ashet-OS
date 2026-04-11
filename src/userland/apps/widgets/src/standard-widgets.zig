@@ -586,6 +586,9 @@ pub const TextBox = struct {
 };
 
 pub const ListBox = struct {
+    pub const Item = ashet.gui.widgets.ListBox.Item;
+    pub const GetItemCallback = ashet.gui.widgets.ListBox.GetItemCallback;
+
     pub const uuid = ashet.gui.widgets.ListBox.uuid;
 
     pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
@@ -595,6 +598,12 @@ pub const ListBox = struct {
         .allow_drop = false,
         .clipboard_sensitive = false,
     };
+
+    item_count: usize = 9,
+    selected_index: ?usize = null,
+
+    get_item_callback: ?GetItemCallback = null,
+    get_item_context: ?*anyopaque = null,
 
     fn init(widget: Widget) ListBox {
         _ = widget;
@@ -606,9 +615,44 @@ pub const ListBox = struct {
     }
 
     fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !void {
-        _ = listbox;
         switch (msg.type) {
-            // set_list
+            ashet.gui.widgets.ListBox.set_list => {
+                const count: usize = msg.params[0];
+                const callback: ?GetItemCallback = @ptrFromInt(msg.params[1]);
+                const context: usize = msg.params[2];
+                const selection: usize = msg.params[3];
+
+                if (count > 0 and callback != null) {
+                    // If we got a new list callback provided:
+
+                    switch (selection) {
+                        ashet.gui.widgets.ListBox.set_list_keep_selection => {
+                            if (listbox.selected_index) |index| {
+                                // If we currently have a selected index, reset it to
+                                // null if it can't be retained.
+                                if (index >= count) {
+                                    listbox.selected_index = null;
+                                }
+                            }
+                        },
+
+                        ashet.gui.widgets.ListBox.set_list_clear_selection => listbox.selected_index = null,
+
+                        else => listbox.selected_index = @min(selection, count -| 1),
+                    }
+
+                    listbox.item_count = count;
+                    listbox.get_item_callback = callback;
+                    listbox.get_item_context = @ptrFromInt(context);
+                } else {
+                    listbox.item_count = 0;
+                    listbox.get_item_callback = null;
+                    listbox.get_item_context = null;
+                }
+
+                try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
+            },
+
             // get_selected_item
             // set_selected_item
 
@@ -617,7 +661,6 @@ pub const ListBox = struct {
     }
 
     fn handle_event(listbox: *ListBox, event: ashet.gui.WidgetEvent) !void {
-        _ = listbox;
         switch (event.event_type) {
             .click => {
                 // TODO
@@ -633,7 +676,38 @@ pub const ListBox = struct {
             .scroll,
             => {},
 
-            .key_press, .key_release => {},
+            .key_press => switch (event.keyboard.usage) {
+                .up_arrow => {
+                    if (listbox.selected_index) |*index| {
+                        std.debug.assert(listbox.item_count > 0);
+                        if (index.* > 0) {
+                            index.* -= 1;
+                        }
+                    } else if (listbox.item_count > 0) {
+                        // Default-select the last item when nothing was selected before:
+                        listbox.selected_index = listbox.item_count -| 1;
+                    }
+
+                    try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
+                },
+                .down_arrow => {
+                    if (listbox.selected_index) |*index| {
+                        std.debug.assert(listbox.item_count > 0);
+                        if (index.* < listbox.item_count - 1) {
+                            index.* += 1;
+                        }
+                    } else if (listbox.item_count > 0) {
+                        // Default-select the last item when nothing was selected before:
+                        listbox.selected_index = 0;
+                    }
+
+                    try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
+                },
+
+                else => {},
+            },
+
+            .key_release => {},
 
             .focus_enter, .focus_leave => {},
 
@@ -666,49 +740,45 @@ pub const ListBox = struct {
             theme.widget_background,
         );
 
-        // TODO: Draw items here:
+        if (listbox.get_item_callback) |get_item_callback| {
+            var item_rect: Rectangle = .{
+                .x = 2,
+                .y = 2,
+                .width = rect.width -| 4,
+                .height = 9,
+            };
 
-        _ = listbox;
+            for (0..listbox.item_count) |index| {
+                const selected = (index == listbox.selected_index);
 
-        var item_rect: Rectangle = .{
-            .x = 2,
-            .y = 2,
-            .width = rect.width -| 4,
-            .height = 9,
-        };
+                var item: Item = .{ .text_len = 0, .text_ptr = "" };
+                get_item_callback(listbox.get_item_context, index, &item);
 
-        const selected_index: usize = 3;
+                const src_text = item.text_ptr[0..item.text_len];
 
-        const count: usize = 9;
-        for (0..count) |index| {
-            var buf: [16]u8 = undefined;
+                const stripped = rstrip(src_text);
 
-            const selected = (index == selected_index);
+                const text_size = try ashet.graphics.measure_text_size(theme.item_font, stripped);
 
-            const src_text = std.fmt.bufPrint(&buf, "Item {}", .{index}) catch unreachable;
+                if (selected) {
+                    // TODO: Set proper "selected item" theme color
+                    try cq.fill_rect(item_rect, theme.text_color);
+                }
 
-            const stripped = rstrip(src_text);
+                if (stripped.len > 0) {
+                    try cq.draw_text(
+                        .new(item_rect.left() +| 1, item_rect.top() +| 1),
+                        theme.item_font,
+                        if (selected) theme.widget_background else theme.text_color,
+                        stripped,
+                    );
+                }
 
-            const text_size = try ashet.graphics.measure_text_size(theme.item_font, stripped);
-
-            if (selected) {
-                // TODO: Set proper "selected item" theme color
-                try cq.fill_rect(item_rect, theme.text_color);
+                item_rect.y += @intCast(text_size.height);
+                item_rect.y += 2;
+                if (item_rect.y >= rect.height)
+                    break;
             }
-
-            if (stripped.len > 0) {
-                try cq.draw_text(
-                    .new(item_rect.left() +| 1, item_rect.top() +| 1),
-                    theme.item_font,
-                    if (selected) theme.widget_background else theme.text_color,
-                    stripped,
-                );
-            }
-
-            item_rect.y += @intCast(text_size.height);
-            item_rect.y += 2;
-            if (item_rect.y >= rect.height)
-                break;
         }
     }
 };

@@ -230,9 +230,25 @@ pub const widgets = struct {
     pub const ListBox = opaque {
         pub const uuid = UUID.constant("92dacfe5-9f1c-484d-aefe-b5fa4eb6636b");
 
-        // set_list(get_item_callback, count)
-        // set_selected_item(i32)
-        // get_selected_item() i32
+        pub const set_list: ControlMessage = .from_int(1); // (count, get_item_callback, ctx, new_selected)
+        pub const set_selected_item: ControlMessage = .from_int(2); // (i32)
+        pub const get_selected_item: ControlMessage = .from_int(3); // () i32
 
+        pub const GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void;
+
+        pub const set_list_keep_selection = std.math.maxInt(usize) - 1;
+        pub const set_list_clear_selection = std.math.maxInt(usize) - 0;
+
+        pub const Item = extern struct {
+            pub fn new(slice: []const u8) Item {
+                return .{
+                    .text_ptr = slice.ptr,
+                    .text_len = slice.len,
+                };
+            }
+
+            text_ptr: [*]const u8,
+            text_len: usize,
+        };
     };
 };
