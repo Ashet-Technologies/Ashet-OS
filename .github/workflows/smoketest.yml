@@ -62,14 +62,14 @@ jobs:
 
       - name: Build ${{ matrix.platform.kernel }}
         run: |
-          zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} ${{ matrix.platform.kernel }}
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" -Doptimize-kernel=${{ matrix.optimize_kernel }} ${{ matrix.platform.kernel }}
 
       - name: Perform Smoke Test ${{ matrix.platform.runner }}
         run: |
-          zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless install
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless install
 
           # this command is allowed to fail, we're doing checks by grep.
-          timeout 20s zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless run 2>&1 | tee kernel.log || true
+          timeout 20s zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless run 2>&1 | tee kernel.log || true
 
           # Test if the desktop application did start:
           if ! grep -F "classic desktop ready!" kernel.log; then

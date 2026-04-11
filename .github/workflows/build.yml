@@ -46,7 +46,7 @@ jobs:
 
       - name: Build ${{ matrix.platform }}
         run: |
-          zig build ${{ matrix.platform }}
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" ${{ matrix.platform }}
 
       - name: Upload disk image
         uses: actions/upload-artifact@v4
@@ -85,7 +85,7 @@ jobs:
 
       - name: Build Tools
         run: |
-          zig build tools
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" tools
 
       - name: Upload tools
         uses: actions/upload-artifact@v4

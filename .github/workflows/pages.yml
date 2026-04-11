@@ -51,7 +51,7 @@ jobs:
       - name: Build Website
         run: |
           cd src/website
-          zig build
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
