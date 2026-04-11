@@ -5,6 +5,7 @@ const std = @import("std");
 const agp = @import("agp");
 const ashet = @import("ashet-abi");
 const turtlefont = @import("turtlefont");
+const builtin = @import("builtin");
 
 pub const fonts = @import("fonts.zig");
 
@@ -19,7 +20,10 @@ const Font = agp.Font;
 const Framebuffer = agp.Framebuffer;
 const Bitmap = agp.Bitmap;
 
-const rastram_section = ".sram.bank0.fastram";
+const rastram_section = if (builtin.mode != .Debug)
+    ".sram.bank0.fastram"
+else
+    ".text";
 
 /// A read-only pixel source used for blit operations.
 pub const Image = struct {

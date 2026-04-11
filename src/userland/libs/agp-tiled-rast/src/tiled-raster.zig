@@ -3,6 +3,7 @@ const agp = @import("agp");
 const ashet = @import("ashet-abi");
 const turtlefont = @import("turtlefont");
 const agp_swrast = @import("agp-swrast");
+const builtin = @import("builtin");
 
 const Color = ashet.Color;
 const Point = ashet.Point;
@@ -151,7 +152,10 @@ pub const OverlaySink = struct {
     }
 };
 
-const rastram_section = ".sram.bank0.fastram";
+const rastram_section = if (builtin.mode != .Debug)
+    ".sram.bank0.fastram"
+else
+    ".text";
 
 /// The resolver provides an abstraction over different host systems that
 /// have different implementations for framebuffer objects and font instancing.
@@ -1226,7 +1230,7 @@ const LineIterator = struct {
             .text = std.mem.trimEnd(u8, iter.text[iter.offset..end_of_line], "\r\t "),
             .y = iter.y,
         };
-        iter.offset = end_of_line;
+        iter.offset = @min(iter.text.len, end_of_line +| 1);
         iter.y += iter.font.line_height();
         return line;
     }
