@@ -37,6 +37,7 @@ jobs:
       - name: Cache Zig package cache
         uses: actions/cache@v4
         with:
+          # Zig stores downloaded packages in the p subdirectory of the global cache.
           path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
           key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
           restore-keys: |
@@ -75,6 +76,7 @@ jobs:
       - name: Cache Zig package cache
         uses: actions/cache@v4
         with:
+          # Zig stores downloaded packages in the p subdirectory of the global cache.
           path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
           key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
           restore-keys: |
