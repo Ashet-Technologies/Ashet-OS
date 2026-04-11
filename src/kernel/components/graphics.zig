@@ -71,9 +71,29 @@ pub fn initialize() !void {
     tiled_rasterizer = .{};
 }
 
+const RenderJob = struct {
+    target: ashet.abi.Framebuffer,
+    auto_invalidate: bool,
+    sequence: [32768]u8,
+    sequence_len: usize,
+};
+
 pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) void {
     if (selected_rasterizer.is_async()) {
-        render_queue.enqueue(call, null);
+        const job = ashet.memory.type_pool(RenderJob).alloc() catch {
+            return call.finalize(ashet.abi.draw.Render, error.SystemResources);
+        };
+
+        job.* = .{
+            .auto_invalidate = inputs.auto_invalidate,
+            .target = inputs.target,
+            .sequence = undefined,
+            .sequence_len = inputs.sequence_len,
+        };
+
+        @memcpy(job.sequence[0..job.sequence_len], inputs.sequence_ptr[0..job.sequence_len]);
+
+        render_queue.enqueue(call, job);
     } else {
         // Complete the render tasks synchronously
         const result = render_one_task(call, inputs);
@@ -86,12 +106,18 @@ pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Re
 /// collect and process render tasks.
 fn handle_render_tasks(_: ?*anyopaque) callconv(.c) noreturn {
     while (true) {
-        while (render_queue.dequeue()) |job| {
-            const call, _ = job;
+        while (render_queue.dequeue()) |packed_task| {
+            const call, const job_ptr = packed_task;
 
-            const render = ashet.abi.draw.Render.from_arc(call.arc);
+            const job: *RenderJob = @ptrCast(@alignCast(job_ptr));
+            defer ashet.memory.type_pool(RenderJob).free(job);
 
-            const result = render_one_task(call, render.inputs);
+            const result = render_one_task(call, .{
+                .auto_invalidate = job.auto_invalidate,
+                .sequence_len = job.sequence_len,
+                .sequence_ptr = &job.sequence,
+                .target = job.target,
+            });
 
             call.finalize(ashet.abi.draw.Render, result);
         }
