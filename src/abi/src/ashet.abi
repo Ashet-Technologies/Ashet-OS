@@ -2908,6 +2908,7 @@ union WidgetEvent {
     field mouse: MouseEvent;
     field keyboard: KeyboardEvent;
     field control: WidgetControlMessage;
+    field resized: ResizedEvent;
 
     //? TODO: Add event data
 
@@ -3042,6 +3043,8 @@ union WidgetEvent {
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
+        ///
+        /// NOTE: The associated event type is "Resized"
         item resized = 21;
 
         /// The widget should draw itself.
@@ -3058,6 +3061,16 @@ union WidgetEvent {
         item focus_leave = 24;
 
         ...
+    }
+
+    struct ResizedEvent {
+        field event_type: Type;
+
+        /// The requested size of the widget.
+        ///
+        /// The widget server shall modify the pointed values when the widget has size constraints.
+        field requested_size: *Size;
+
     }
 }
 

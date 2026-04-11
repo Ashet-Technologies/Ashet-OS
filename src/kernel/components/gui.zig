@@ -757,10 +757,17 @@ pub const Widget = struct {
         const resize_requested = !previous.size().eql(desired_bounds.size());
 
         widget.bounds = desired_bounds;
+
         if (resize_requested) {
+            var desired_size = widget.bounds.size();
             widget.process_event(.{
-                .event_type = .resized,
+                .resized = .{
+                    .event_type = .resized,
+                    .requested_size = &desired_size,
+                },
             });
+            widget.bounds.width = desired_size.width;
+            widget.bounds.height = desired_size.height;
         }
 
         const resize_granted = resize_requested and !previous.size().eql(widget.bounds.size());
