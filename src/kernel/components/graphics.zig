@@ -37,7 +37,8 @@ pub const RasterizerBackend = enum {
     }
 };
 
-pub var selected_rasterizer: RasterizerBackend = .linear_sync;
+pub var selected_rasterizer: RasterizerBackend = .linear_async;
+pub var use_perfctrl: bool = false;
 
 comptime {
     std.debug.assert(Color == agp.Color);
@@ -106,7 +107,7 @@ fn render_one_task(
 ) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
     const has_perfctr = @hasDecl(ashet.machine, "perfctr");
 
-    if (has_perfctr) {
+    if (has_perfctr and use_perfctrl) {
         const perfctr = ashet.machine.perfctr;
 
         perfctr.setup(
@@ -116,7 +117,7 @@ fn render_one_task(
             .xip_main1_access_contested,
         );
 
-        logger.info("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
+        logger.debug("{t} render of {} bytes:", .{ selected_rasterizer, inputs.sequence_len });
 
         perfctr.reset();
         const output = blk: {
@@ -138,7 +139,7 @@ fn render_one_task(
         const result = render_sync(call, inputs);
         const end = ashet.time.Instant.now();
 
-        logger.info("{t} render of {} bytes took {} ms", .{
+        logger.debug("{t} render of {} bytes took {} ms", .{
             selected_rasterizer,
             inputs.sequence_len,
             end.ms_since(start),

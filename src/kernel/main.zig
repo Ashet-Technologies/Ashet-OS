@@ -355,21 +355,32 @@ pub const global_hotkeys = struct {
             switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
                 .f8 => {
-                    const options = std.enums.values(graphics.RasterizerBackend);
+                    if (event.modifiers.shift) {
+                        graphics.use_perfctrl = !graphics.use_perfctrl;
 
-                    const current = std.mem.indexOfScalar(graphics.RasterizerBackend, options, graphics.selected_rasterizer).?;
+                        std.log.warn("graphics perfcounters are now {s}", .{
+                            if (graphics.use_perfctrl)
+                                "enabled"
+                            else
+                                "disabled",
+                        });
+                    } else {
+                        const options = std.enums.values(graphics.RasterizerBackend);
 
-                    const next = if (current + 1 == options.len)
-                        0
-                    else
-                        current + 1;
+                        const current = std.mem.indexOfScalar(graphics.RasterizerBackend, options, graphics.selected_rasterizer).?;
 
-                    graphics.selected_rasterizer = options[next];
+                        const next = if (current + 1 == options.len)
+                            0
+                        else
+                            current + 1;
 
-                    std.log.warn("Switched rasterizer from {t} to {t}", .{
-                        options[current],
-                        options[next],
-                    });
+                        graphics.selected_rasterizer = options[next];
+
+                        std.log.warn("Switched rasterizer from {t} to {t}", .{
+                            options[current],
+                            options[next],
+                        });
+                    }
                 },
                 .f9 => {
                     scheduler.use_live_stack_pattern_probing = !scheduler.use_live_stack_pattern_probing;
