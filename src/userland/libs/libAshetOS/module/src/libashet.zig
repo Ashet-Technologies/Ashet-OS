@@ -379,7 +379,7 @@ pub const overlapped = struct {
     }
 
     pub fn cancel(event: *ARC) !void {
-        try abi.arcs.cancel(event);
+        try abi.overlapped.cancel(event);
     }
 
     pub fn singleShot(op: anytype) !void {
