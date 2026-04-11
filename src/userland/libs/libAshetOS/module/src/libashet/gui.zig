@@ -202,9 +202,18 @@ pub const widgets = struct {
     pub const TextBox = opaque {
         pub const uuid = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
 
-        pub const set_text: ControlMessage = .from_int(1);
+        pub const set_text: ControlMessage = .from_int(1); // (ptr, length)
 
-        pub const clicked: NotifyEvent = .from_int(1);
+        pub const get_text: ControlMessage = .from_int(2); // (buffer, max_length, *length)
+
+        /// User typed text and get
+        pub const text_changed: NotifyEvent = .from_int(1);
+
+        /// User clicked "return" inside the text box
+        pub const accepted: NotifyEvent = .from_int(2);
+
+        /// User clicked "escape" inside the text box
+        pub const cancelled: NotifyEvent = .from_int(3);
     };
 
     pub const MultiLineTextBox = opaque {

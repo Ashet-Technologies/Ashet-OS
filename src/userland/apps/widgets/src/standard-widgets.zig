@@ -281,6 +281,10 @@ pub const Button = struct {
 
     fn handle_event(button: *Button, event: ashet.gui.WidgetEvent) !void {
         switch (event.event_type) {
+            .resized => {
+                event.resized.requested_size.height = 15;
+            },
+
             .click => {
                 try ashet.gui.notify_owner(
                     WidgetWrapper(Button).from_impl(button).widget,
@@ -304,7 +308,6 @@ pub const Button = struct {
             .focus_enter, .focus_leave => {},
 
             // ignored events:
-            .resized => {},
 
             .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
 
@@ -522,13 +525,64 @@ pub const TextBox = struct {
 
     fn handle_event(textbox: *TextBox, event: ashet.gui.WidgetEvent) !void {
         switch (event.event_type) {
-            .click => {
-                try ashet.gui.notify_owner(
-                    WidgetWrapper(TextBox).from_impl(textbox).widget,
-                    ashet.gui.widgets.TextBox.clicked,
-                    .{ 0, 0, 0, 0 },
-                );
+            .resized => {
+                event.resized.requested_size.height = 15;
             },
+
+            .key_press => {
+                const kbd = event.keyboard;
+
+                const prevlen = textbox.text.items.len;
+                switch (kbd.usage) {
+                    .backspace, .kp_backspace => {
+                        // TODO: Right now, we're dropping the last codepoint, which is
+                        //       wrong. We have to drop the last codepoint:
+                        var popped: usize = 0;
+                        while (textbox.text.pop()) |last| {
+                            popped += 1;
+                            if (std.unicode.utf8ByteSequenceLength(last)) |length| {
+                                std.debug.assert(popped == length);
+                                break;
+                            } else |err| switch (err) {
+                                error.Utf8InvalidStartByte => {},
+                            }
+                        }
+                    },
+
+                    .enter, .kp_enter => {
+                        try ashet.gui.notify_owner(
+                            WidgetWrapper(TextBox).from_impl(textbox).widget,
+                            ashet.gui.widgets.TextBox.accepted,
+                            .{ 0, 0, 0, 0 },
+                        );
+                    },
+
+                    .escape => {
+                        try ashet.gui.notify_owner(
+                            WidgetWrapper(TextBox).from_impl(textbox).widget,
+                            ashet.gui.widgets.TextBox.accepted,
+                            .{ 0, 0, 0, 0 },
+                        );
+                    },
+
+                    else => if (kbd.text_ptr != null and kbd.text_len > 0) {
+                        try textbox.text.appendSlice(ashet.process.mem.allocator(), kbd.text_ptr.?[0..kbd.text_len]);
+                    },
+                }
+
+                if (textbox.text.items.len != prevlen) {
+                    try WidgetWrapper(TextBox).from_impl(textbox).invalidate();
+
+                    try ashet.gui.notify_owner(
+                        WidgetWrapper(TextBox).from_impl(textbox).widget,
+                        ashet.gui.widgets.TextBox.text_changed,
+                        .{ 0, 0, 0, 0 },
+                    );
+                }
+            },
+            .key_release => {},
+
+            .click => {},
 
             // Ignore standard mouse events:
             .mouse_enter,
@@ -540,12 +594,9 @@ pub const TextBox = struct {
             .scroll,
             => {},
 
-            .key_press, .key_release => {},
-
             .focus_enter, .focus_leave => {},
 
             // ignored events:
-            .resized => {},
 
             .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
 
