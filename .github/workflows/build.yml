@@ -1,5 +1,9 @@
 name: Build
 
+env:
+  ZIG_VERSION: "0.15.2"
+  ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-global-cache
+
 on:
   push:
     branches: [master]
@@ -28,7 +32,16 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: "0.15.2"
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache Zig package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
+          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
+          restore-keys: |
+            zig-pkg-cache-${{ env.ZIG_VERSION }}-
+          enableCrossOsArchive: true
 
       - name: Build ${{ matrix.platform }}
         run: |
@@ -57,7 +70,16 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: "0.15.2"
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache Zig package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
+          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
+          restore-keys: |
+            zig-pkg-cache-${{ env.ZIG_VERSION }}-
+          enableCrossOsArchive: true
 
       - name: Build Tools
         run: |
