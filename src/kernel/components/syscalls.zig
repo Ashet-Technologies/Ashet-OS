@@ -633,9 +633,9 @@ pub const syscalls = struct {
         }
 
         /// Triggers the `control` event of the widget with the given `message` as a payload.
-        pub fn control_widget(widget: abi.Widget, message: abi.WidgetControlMessage) error{ InvalidHandle, SystemResources }!void {
+        pub fn control_widget(widget: abi.Widget, message: abi.WidgetControlMessage) error{ InvalidHandle, SystemResources }!usize {
             _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
-            wid.control(message);
+            return wid.control(message);
         }
 
         /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.

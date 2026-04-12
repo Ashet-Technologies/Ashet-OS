@@ -68,14 +68,14 @@ pub fn main() !void {
     _ = try ashet.gui.place_widget(go_button, .{ .x = 180, .y = 5, .width = 15, .height = 15 });
     _ = try ashet.gui.place_widget(list_box, .{ .x = 5, .y = 25, .width = 190, .height = 120 });
 
-    try ashet.gui.control_widget(go_button, ashet.gui.widgets.Button.set_text, .{
+    _ = try ashet.gui.control_widget(go_button, ashet.gui.widgets.Button.set_text, .{
         @intFromPtr("→"),
         "→".len,
         0,
         0,
     });
 
-    try ashet.gui.control_widget(path_box, ashet.gui.widgets.TextBox.set_text, .{
+    _ = try ashet.gui.control_widget(path_box, ashet.gui.widgets.TextBox.set_text, .{
         @intFromPtr("SYS:/"),
         "SYS:/".len,
         0,
@@ -102,7 +102,7 @@ pub fn main() !void {
             try current_directory_list.append(ashet.process.mem.allocator(), copy);
         }
 
-        try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list, .{
+        _ = try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list, .{
             current_directory_list.items.len + 2,
             @intFromPtr(&get_item_callback),
             0,
@@ -128,6 +128,35 @@ pub fn main() !void {
 
                 if (notify.widget == go_button) {
                     //
+                } else if (notify.widget == path_box) {
+                    //
+                } else if (notify.widget == list_box) {
+                    switch (notify.type) {
+                        ashet.gui.widgets.ListBox.clicked => {
+                            const index = try ashet.gui.control_widget(
+                                list_box,
+                                ashet.gui.widgets.ListBox.get_selected_item,
+                                .{ 0, 0, 0, 0 },
+                            );
+
+                            switch (index) {
+                                0 => {}, // clicked on "."
+                                1 => {
+                                    //  clicked on ".."
+                                    std.log.info("clicked on ..", .{});
+                                },
+
+                                else => if (index - 2 < current_directory_list.items.len) {
+                                    // clicked on regular file or path
+
+                                    std.log.info("clicked on {s}", .{
+                                        current_directory_list.items[index - 2].getName(),
+                                    });
+                                },
+                            }
+                        },
+                        else => {},
+                    }
                 }
             },
 

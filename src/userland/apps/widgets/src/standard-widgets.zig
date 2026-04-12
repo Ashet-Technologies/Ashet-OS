@@ -111,17 +111,17 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
             try cq.submit(fb, .{});
         }
 
-        fn control(wrapper: *Wrapper, message: ashet.gui.WidgetControlMessage) !void {
+        fn control(wrapper: *Wrapper, message: ashet.gui.WidgetControlMessage) !usize {
             // TODO: Implement auto-magic control functions with parameter unwrapping
-            try wrapper.impl.control(message);
+            return try wrapper.impl.control(message);
         }
 
-        fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
+        fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) usize {
             _ = widget_type;
 
             const data_ptr = ashet.abi.gui.get_widget_data(widget) catch |err| {
                 std.log.err("failed to fetch widget data: {s}", .{@errorName(err)});
-                return;
+                return 0;
             };
             const wrapper: *Wrapper = @ptrCast(data_ptr);
 
@@ -158,8 +158,9 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
                     std.log.err("failed to paint {s}: {s}", .{ @typeName(WidgetImpl), @errorName(err) });
                 },
 
-                .control => wrapper.control(event.control) catch |err| {
+                .control => return wrapper.control(event.control) catch |err| {
                     std.log.err("failed to control {s}: {s}", .{ @typeName(WidgetImpl), @errorName(err) });
+                    return 0;
                 },
 
                 else => {
@@ -173,6 +174,7 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
                     }
                 },
             }
+            return 0;
         }
     };
 }
@@ -216,7 +218,7 @@ pub const Label = struct {
         );
     }
 
-    fn control(label: *Label, msg: ashet.abi.WidgetControlMessage) !void {
+    fn control(label: *Label, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
             ashet.gui.widgets.Label.set_text => {
                 const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
@@ -235,6 +237,7 @@ pub const Label = struct {
 
             else => return error.UnknownControl,
         }
+        return 0;
     }
 };
 
@@ -261,7 +264,7 @@ pub const Button = struct {
         button.* = undefined;
     }
 
-    fn control(button: *Button, msg: ashet.abi.WidgetControlMessage) !void {
+    fn control(button: *Button, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
             ashet.gui.widgets.Button.set_text => {
                 const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
@@ -273,6 +276,7 @@ pub const Button = struct {
                 button.text.appendSliceAssumeCapacity(text);
 
                 try WidgetWrapper(Button).from_impl(button).invalidate();
+                return 0;
             },
 
             else => return error.UnknownControl,
@@ -281,8 +285,8 @@ pub const Button = struct {
 
     fn handle_event(button: *Button, event: ashet.gui.WidgetEvent) !void {
         switch (event.event_type) {
-            .resized => {
-                event.resized.requested_size.height = 15;
+            .resize_requested => {
+                event.resize_requested.requested_size.height = 15;
             },
 
             .click => {
@@ -308,6 +312,8 @@ pub const Button = struct {
             .focus_enter, .focus_leave => {},
 
             // ignored events:
+
+            .resized => {},
 
             .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
 
@@ -394,7 +400,7 @@ pub const ToolButton = struct {
         button.* = undefined;
     }
 
-    fn control(button: *ToolButton, msg: ashet.abi.WidgetControlMessage) !void {
+    fn control(button: *ToolButton, msg: ashet.abi.WidgetControlMessage) !usize {
         _ = button;
         switch (msg.type) {
             else => return error.UnknownControl,
@@ -403,9 +409,9 @@ pub const ToolButton = struct {
 
     fn handle_event(button: *ToolButton, event: ashet.gui.WidgetEvent) !void {
         switch (event.event_type) {
-            .resized => {
+            .resize_requested => {
                 // Enforce the 9x9 size:
-                event.resized.requested_size.* = .new(9, 9);
+                event.resize_requested.requested_size.* = .new(9, 9);
             },
 
             .click => {
@@ -425,6 +431,8 @@ pub const ToolButton = struct {
             .mouse_motion,
             .scroll,
             => {},
+
+            .resized => {},
 
             .key_press, .key_release => {},
 
@@ -505,7 +513,7 @@ pub const TextBox = struct {
         button.* = undefined;
     }
 
-    fn control(textbox: *TextBox, msg: ashet.abi.WidgetControlMessage) !void {
+    fn control(textbox: *TextBox, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
             ashet.gui.widgets.TextBox.set_text => {
                 const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
@@ -517,6 +525,7 @@ pub const TextBox = struct {
                 textbox.text.appendSliceAssumeCapacity(text);
 
                 try WidgetWrapper(TextBox).from_impl(textbox).invalidate();
+                return 0;
             },
 
             else => return error.UnknownControl,
@@ -525,8 +534,8 @@ pub const TextBox = struct {
 
     fn handle_event(textbox: *TextBox, event: ashet.gui.WidgetEvent) !void {
         switch (event.event_type) {
-            .resized => {
-                event.resized.requested_size.height = 15;
+            .resize_requested => {
+                event.resize_requested.requested_size.height = 15;
             },
 
             .key_press => {
@@ -583,6 +592,7 @@ pub const TextBox = struct {
             .key_release => {},
 
             .click => {},
+            .resized => {},
 
             // Ignore standard mouse events:
             .mouse_enter,
@@ -665,7 +675,7 @@ pub const ListBox = struct {
         listbox.* = undefined;
     }
 
-    fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !void {
+    fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
             ashet.gui.widgets.ListBox.set_list => {
                 const count: usize = msg.params[0];
@@ -702,6 +712,7 @@ pub const ListBox = struct {
                 }
 
                 try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
+                return 0;
             },
 
             // get_selected_item
@@ -764,6 +775,7 @@ pub const ListBox = struct {
 
             // ignored events:
             .resized => {},
+            .resize_requested => {},
 
             .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
 

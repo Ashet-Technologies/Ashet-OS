@@ -143,8 +143,8 @@ pub fn get_widget_bounds(widget: Widget) !Rectangle {
 pub const ControlMessage = ashet.abi.gui.WidgetControlID;
 pub const NotifyEvent = ashet.abi.gui.WidgetNotifyID;
 
-pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize) !void {
-    try ashet.abi.gui.control_widget(widget, .{
+pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize) !usize {
+    return try ashet.abi.gui.control_widget(widget, .{
         .event_type = undefined,
         .type = control,
         .params = params,
@@ -242,6 +242,9 @@ pub const widgets = struct {
         pub const set_list: ControlMessage = .from_int(1); // (count, get_item_callback, ctx, new_selected)
         pub const set_selected_item: ControlMessage = .from_int(2); // (i32)
         pub const get_selected_item: ControlMessage = .from_int(3); // () i32
+
+        pub const clicked: NotifyEvent = .from_int(1);
+        pub const selected_item_changed: NotifyEvent = .from_int(2);
 
         pub const GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void;
 

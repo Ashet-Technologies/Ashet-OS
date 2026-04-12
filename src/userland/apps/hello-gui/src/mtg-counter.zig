@@ -46,14 +46,14 @@ pub fn main() !void {
     _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 10, .width = 62, .height = 8 });
     _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 22, .width = 30, .height = 18 });
 
-    try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text, .{
+    _ = try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text, .{
         @intFromPtr("+"),
         "+".len,
         0,
         0,
     });
 
-    try ashet.gui.control_widget(dec_button, ashet.gui.widgets.Button.set_text, .{
+    _ = try ashet.gui.control_widget(dec_button, ashet.gui.widgets.Button.set_text, .{
         @intFromPtr("-"),
         "-".len,
         0,
@@ -106,7 +106,7 @@ fn set_label_int(label: ashet.gui.Widget, number: i32) !void {
     var buffer: [32]u8 = undefined;
     const text = std.fmt.bufPrint(&buffer, "{}", .{number}) catch unreachable;
 
-    try ashet.gui.control_widget(label, ashet.gui.widgets.Label.set_text, .{
+    _ = try ashet.gui.control_widget(label, ashet.gui.widgets.Label.set_text, .{
         @intFromPtr(text.ptr),
         text.len,
         0,
