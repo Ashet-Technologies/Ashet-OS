@@ -883,7 +883,19 @@ export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
 }
 
 test {
+    // Bring unit test dependencies into existence:
     _ = resources;
+
+    _ = filesystem;
+    _ = drivers.filesystem.VFAT; // required to bring VFAT impl into existence
+
+    @export(&__primitive_kernel_hang, .{ .name = "hang" });
+}
+
+fn __primitive_kernel_hang() callconv(.c) void {
+    while (true) {
+        asm volatile ("" ::: .{ .memory = true });
+    }
 }
 
 export fn __ashet_os_panic(msg: [*]const u8, len: usize, ra: usize) noreturn {
