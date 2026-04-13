@@ -546,7 +546,7 @@ pub const fs = struct {
 
         pub fn openDir(dir: Directory, path: []const u8) OpenError!Directory {
             const out = try overlapped.performOne(abi.fs.OpenDir, .{
-                .dir = dir.handle,
+                .start_dir = dir.handle,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
             });
