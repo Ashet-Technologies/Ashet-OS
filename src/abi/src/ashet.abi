@@ -2915,6 +2915,7 @@ union WidgetEvent {
     field keyboard: KeyboardEvent;
     field control: WidgetControlMessage;
     field resize_requested: LimitSizeEvent;
+    field clicked: ClickEvent;
 
     //? TODO: Add event data
 
@@ -3077,13 +3078,38 @@ union WidgetEvent {
     }
 
     struct LimitSizeEvent {
-        field event_type: Type;
+        field event_type: Type; //? TODO: = Type.resize_requested;
 
         /// A pointer to the new size of the widget.
         ///
         /// The widget server shall modify the pointed `Size` such that it
         /// fulfils the size constraints of the widget type.
         field requested_size: *Size;
+    }
+
+    struct ClickEvent {
+        field event_type: Type; //? TODO: = Type.clicked;
+
+        /// The source of the click event
+        field source: Source;
+
+        /// The position of the event, if applicable.
+        ///
+        /// Currently only valid if `.source == Source.mouse`.
+        field position: Point;
+
+
+        enum Source : u8 {
+            /// The click event was not created through an input device.
+            item synthetical = 0;
+
+            /// The click event was created through a keyboard interaction.
+            item keyboard = 1;
+
+            /// The click event was created through a mouse interaction.
+            item mouse = 2;
+        }
+
     }
 }
 

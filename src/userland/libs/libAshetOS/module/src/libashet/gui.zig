@@ -243,13 +243,18 @@ pub const widgets = struct {
         pub const set_selected_item: ControlMessage = .from_int(2); // (i32)
         pub const get_selected_item: ControlMessage = .from_int(3); // () i32
 
-        pub const clicked: NotifyEvent = .from_int(1);
-        pub const selected_item_changed: NotifyEvent = .from_int(2);
+        pub const clicked: NotifyEvent = .from_int(1); // [ item index ]
+
+        pub const selected_item_changed: NotifyEvent = .from_int(2); // [ item index ]
 
         pub const GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void;
 
         pub const set_list_keep_selection = std.math.maxInt(usize) - 1;
         pub const set_list_clear_selection = std.math.maxInt(usize) - 0;
+
+        /// The index used by `set_selected_item`, `get_selected_item` and the `selected_item_changed` event
+        /// that signals that no item is selected
+        pub const empty_selection_index: usize = @bitCast(@as(isize, -1));
 
         pub const Item = extern struct {
             pub fn new(slice: []const u8) Item {

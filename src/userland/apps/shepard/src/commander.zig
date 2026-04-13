@@ -132,12 +132,15 @@ pub fn main() !void {
                     //
                 } else if (notify.widget == list_box) {
                     switch (notify.type) {
-                        ashet.gui.widgets.ListBox.clicked => {
+                        ashet.gui.widgets.ListBox.selected_item_changed => {
                             const index = try ashet.gui.control_widget(
                                 list_box,
                                 ashet.gui.widgets.ListBox.get_selected_item,
                                 .{ 0, 0, 0, 0 },
                             );
+
+                            std.log.info("index from event: {}", .{notify.data[0]});
+                            std.log.info("index from control: {}", .{index});
 
                             switch (index) {
                                 0 => {}, // clicked on "."

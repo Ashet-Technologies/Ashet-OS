@@ -666,6 +666,8 @@ pub const ListBox = struct {
     get_item_callback: ?GetItemCallback = null,
     get_item_context: ?*anyopaque = null,
 
+    item_height: u15 = 0,
+
     fn init(widget: Widget) ListBox {
         _ = widget;
         return .{};
@@ -673,6 +675,27 @@ pub const ListBox = struct {
 
     fn deinit(listbox: *ListBox) void {
         listbox.* = undefined;
+    }
+
+    fn select_item(listbox: *ListBox, new_index: ?usize) !void {
+        if (listbox.selected_index == new_index)
+            return;
+
+        if (new_index) |index| {
+            std.debug.assert(index < listbox.item_count);
+        }
+
+        listbox.selected_index = new_index;
+
+        const wrapper = WidgetWrapper(ListBox).from_impl(listbox);
+
+        try wrapper.invalidate();
+
+        try ashet.gui.notify_owner(
+            wrapper.widget,
+            ashet.gui.widgets.ListBox.selected_item_changed,
+            .{ listbox.selected_index orelse ashet.gui.widgets.ListBox.empty_selection_index, 0, 0, 0 },
+        );
     }
 
     fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !usize {
@@ -715,8 +738,28 @@ pub const ListBox = struct {
                 return 0;
             },
 
-            // get_selected_item
-            // set_selected_item
+            ashet.gui.widgets.ListBox.get_selected_item => {
+                return listbox.selected_index orelse ashet.gui.widgets.ListBox.empty_selection_index;
+            },
+
+            ashet.gui.widgets.ListBox.set_selected_item => {
+                const raw_index = msg.params[0];
+
+                const index = if (raw_index !=
+                    ashet.gui.widgets.ListBox.empty_selection_index)
+                    raw_index
+                else
+                    null;
+
+                if (index) |i| {
+                    if (i >= listbox.item_count)
+                        return 0;
+                }
+
+                try listbox.select_item(index);
+
+                return 0;
+            },
 
             else => return error.UnknownControl,
         }
@@ -726,13 +769,30 @@ pub const ListBox = struct {
         switch (event.event_type) {
             .click => {
                 // TODO
+                std.log.warn("clicked listbox", .{});
             },
 
             // Ignore standard mouse events:
+            .mouse_button_press => if (event.mouse.button == .left) {
+                // TODO: Compute
+
+                if (listbox.item_height > 0) {
+                    const top_offset: i16 = 2;
+
+                    const index_signed = @divFloor(event.mouse.y - top_offset, listbox.item_height);
+
+                    if (index_signed < 0 or index_signed >= listbox.item_count) {
+                        return;
+                    }
+
+                    const index: usize = @intCast(index_signed);
+
+                    try listbox.select_item(index);
+                }
+            },
+            .mouse_button_release => {},
             .mouse_enter,
             .mouse_leave,
-            .mouse_button_press,
-            .mouse_button_release,
             .mouse_hover,
             .mouse_motion,
             .scroll,
@@ -740,30 +800,26 @@ pub const ListBox = struct {
 
             .key_press => switch (event.keyboard.usage) {
                 .up_arrow => {
-                    if (listbox.selected_index) |*index| {
+                    if (listbox.selected_index) |index| {
                         std.debug.assert(listbox.item_count > 0);
-                        if (index.* > 0) {
-                            index.* -= 1;
+                        if (index > 0) {
+                            try listbox.select_item(index - 1);
                         }
                     } else if (listbox.item_count > 0) {
                         // Default-select the last item when nothing was selected before:
-                        listbox.selected_index = listbox.item_count -| 1;
+                        try listbox.select_item(listbox.item_count -| 1);
                     }
-
-                    try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
                 },
                 .down_arrow => {
-                    if (listbox.selected_index) |*index| {
+                    if (listbox.selected_index) |index| {
                         std.debug.assert(listbox.item_count > 0);
-                        if (index.* < listbox.item_count - 1) {
-                            index.* += 1;
+                        if (index < listbox.item_count - 1) {
+                            try listbox.select_item(index + 1);
                         }
                     } else if (listbox.item_count > 0) {
                         // Default-select the last item when nothing was selected before:
-                        listbox.selected_index = 0;
+                        try listbox.select_item(0);
                     }
-
-                    try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
                 },
 
                 else => {},
@@ -836,6 +892,8 @@ pub const ListBox = struct {
                         stripped,
                     );
                 }
+
+                listbox.item_height = @as(u15, @intCast(text_size.height)) +| 2;
 
                 item_rect.y += @intCast(text_size.height);
                 item_rect.y += 2;

@@ -394,7 +394,13 @@ pub const Window = struct {
                         if (clicked_widget == focused_widget and event.keyboard.usage == source_key) {
                             // If we have a primed key click, and we have a key release of the
                             // same key that primed our focus change, we can trigger the click event:
-                            _ = focused_widget.process_event(.{ .event_type = .click });
+                            _ = focused_widget.process_event(.{
+                                .clicked = .{
+                                    .event_type = .click,
+                                    .source = .keyboard,
+                                    .position = .new(std.math.minInt(i16), std.math.minInt(i16)),
+                                },
+                            });
                         }
                     }
 
@@ -453,7 +459,14 @@ pub const Window = struct {
                                     window.update_focused_widget(clicked_widget);
                                 }
 
-                                _ = clicked_widget.process_event(.{ .event_type = .click });
+                                _ = clicked_widget.process_event(.{ .clicked = .{
+                                    .event_type = .click,
+                                    .source = .mouse,
+                                    .position = .new(
+                                        pos.x -| clicked_widget.bounds.x,
+                                        pos.y -| clicked_widget.bounds.y,
+                                    ),
+                                } });
                             }
                         }
                     }
