@@ -3101,7 +3101,7 @@ union WidgetEvent {
 
         enum Source : u8 {
             /// The click event was not created through an input device.
-            item synthetical = 0;
+            item synthetic = 0;
 
             /// The click event was created through a keyboard interaction.
             item keyboard = 1;

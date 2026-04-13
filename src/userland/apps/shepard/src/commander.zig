@@ -132,6 +132,9 @@ pub fn main() !void {
                     //
                 } else if (notify.widget == list_box) {
                     switch (notify.type) {
+                        ashet.gui.widgets.ListBox.item_clicked => {
+                            std.log.info("clicked item: {}", .{notify.data[0]});
+                        },
                         ashet.gui.widgets.ListBox.selected_item_changed => {
                             const index = try ashet.gui.control_widget(
                                 list_box,
@@ -139,20 +142,20 @@ pub fn main() !void {
                                 .{ 0, 0, 0, 0 },
                             );
 
-                            std.log.info("index from event: {}", .{notify.data[0]});
-                            std.log.info("index from control: {}", .{index});
+                            std.log.info("selected from event: {}", .{notify.data[0]});
+                            std.log.info("selected from control: {}", .{index});
 
                             switch (index) {
                                 0 => {}, // clicked on "."
                                 1 => {
                                     //  clicked on ".."
-                                    std.log.info("clicked on ..", .{});
+                                    std.log.info("selected ..", .{});
                                 },
 
                                 else => if (index - 2 < current_directory_list.items.len) {
                                     // clicked on regular file or path
 
-                                    std.log.info("clicked on {s}", .{
+                                    std.log.info("selected {s}", .{
                                         current_directory_list.items[index - 2].getName(),
                                     });
                                 },

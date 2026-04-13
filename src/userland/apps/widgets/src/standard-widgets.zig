@@ -176,6 +176,14 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
             }
             return 0;
         }
+
+        fn notify_owner(wrapper: *Wrapper, event: ashet.gui.NotifyEvent, params: [4]usize) !void {
+            try ashet.gui.notify_owner(
+                wrapper.widget,
+                event,
+                params,
+            );
+        }
     };
 }
 
@@ -189,6 +197,8 @@ pub const Label = struct {
         .allow_drop = false,
         .clipboard_sensitive = false,
     };
+
+    const wrapper = WidgetWrapper(@This()).from_impl;
 
     text: std.ArrayListUnmanaged(u8) = .empty,
 
@@ -252,6 +262,8 @@ pub const Button = struct {
         .clipboard_sensitive = false,
     };
 
+    const wrapper = WidgetWrapper(@This()).from_impl;
+
     text: std.ArrayListUnmanaged(u8) = .empty,
 
     fn init(widget: Widget) Button {
@@ -290,8 +302,7 @@ pub const Button = struct {
             },
 
             .click => {
-                try ashet.gui.notify_owner(
-                    WidgetWrapper(Button).from_impl(button).widget,
+                try button.wrapper().notify_owner(
                     ashet.gui.widgets.Button.clicked,
                     .{ 0, 0, 0, 0 },
                 );
@@ -387,6 +398,8 @@ pub const ToolButton = struct {
         .allow_drop = false,
         .clipboard_sensitive = false,
     };
+
+    const wrapper = WidgetWrapper(@This()).from_impl;
 
     _dummy: u32 = 0,
 
@@ -500,6 +513,8 @@ pub const TextBox = struct {
         .allow_drop = false,
         .clipboard_sensitive = false,
     };
+
+    const wrapper = WidgetWrapper(@This()).from_impl;
 
     text: std.ArrayListUnmanaged(u8) = .empty,
 
@@ -660,6 +675,8 @@ pub const ListBox = struct {
         .clipboard_sensitive = false,
     };
 
+    const wrapper = WidgetWrapper(@This()).from_impl;
+
     item_count: usize = 9,
     selected_index: ?usize = null,
 
@@ -687,12 +704,9 @@ pub const ListBox = struct {
 
         listbox.selected_index = new_index;
 
-        const wrapper = WidgetWrapper(ListBox).from_impl(listbox);
+        try listbox.wrapper().invalidate();
 
-        try wrapper.invalidate();
-
-        try ashet.gui.notify_owner(
-            wrapper.widget,
+        try listbox.wrapper().notify_owner(
             ashet.gui.widgets.ListBox.selected_item_changed,
             .{ listbox.selected_index orelse ashet.gui.widgets.ListBox.empty_selection_index, 0, 0, 0 },
         );
@@ -734,7 +748,7 @@ pub const ListBox = struct {
                     listbox.get_item_context = null;
                 }
 
-                try WidgetWrapper(ListBox).from_impl(listbox).invalidate();
+                try listbox.wrapper().invalidate();
                 return 0;
             },
 
@@ -768,28 +782,43 @@ pub const ListBox = struct {
     fn handle_event(listbox: *ListBox, event: ashet.gui.WidgetEvent) !void {
         switch (event.event_type) {
             .click => {
-                // TODO
-                std.log.warn("clicked listbox", .{});
+                switch (event.clicked.source) {
+                    .keyboard, .synthetic => {
+                        // always accept synthetic or keyboard clicks
+                    },
+                    .mouse => {
+                        // reject mouse clicks outside items:
+                        if (listbox.item_height <= 0)
+                            return;
+
+                        const top_offset: i16 = 2;
+
+                        const index_signed = @divFloor(event.clicked.position.y -| top_offset, listbox.item_height);
+
+                        if (index_signed < 0 or index_signed >= listbox.item_count) {
+                            return;
+                        }
+
+                        const index: usize = @intCast(index_signed);
+
+                        // Emit clicks only when the clicked item is already selected:
+                        if (listbox.selected_index != index) {
+                            try listbox.select_item(index);
+                            return;
+                        }
+                    },
+                }
+
+                if (listbox.selected_index) |index| {
+                    try listbox.wrapper().notify_owner(
+                        ashet.gui.widgets.ListBox.item_clicked,
+                        .{ index, 0, 0, 0 },
+                    );
+                }
             },
 
             // Ignore standard mouse events:
-            .mouse_button_press => if (event.mouse.button == .left) {
-                // TODO: Compute
-
-                if (listbox.item_height > 0) {
-                    const top_offset: i16 = 2;
-
-                    const index_signed = @divFloor(event.mouse.y - top_offset, listbox.item_height);
-
-                    if (index_signed < 0 or index_signed >= listbox.item_count) {
-                        return;
-                    }
-
-                    const index: usize = @intCast(index_signed);
-
-                    try listbox.select_item(index);
-                }
-            },
+            .mouse_button_press => {},
             .mouse_button_release => {},
             .mouse_enter,
             .mouse_leave,

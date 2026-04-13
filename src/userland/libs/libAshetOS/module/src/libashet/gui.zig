@@ -243,7 +243,7 @@ pub const widgets = struct {
         pub const set_selected_item: ControlMessage = .from_int(2); // (i32)
         pub const get_selected_item: ControlMessage = .from_int(3); // () i32
 
-        pub const clicked: NotifyEvent = .from_int(1); // [ item index ]
+        pub const item_clicked: NotifyEvent = .from_int(1); // [ item index ]
 
         pub const selected_item_changed: NotifyEvent = .from_int(2); // [ item index ]
 
