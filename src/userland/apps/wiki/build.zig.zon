@@ -1,7 +1,12 @@
 .{
-    .name = "init",
+    .name = .wiki,
     .version = "0.1.0",
-    .paths = .{ "build.zig", "build.zig.zon", "init.zig" },
+    .fingerprint = 0x22cddc0618c2c8ba,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
     .dependencies = .{
         .AshetOS = .{
             .path = "../../libs/libAshetOS",

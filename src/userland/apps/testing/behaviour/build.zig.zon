@@ -1,6 +1,7 @@
 .{
     .name = .test_behaviour,
     .version = "0.1.0",
+    .fingerprint = 0x6a8fe6bc03ae1fc6,
     .paths = .{ "build.zig", "build.zig.zon", "test-behaviour.zig" },
     .dependencies = .{
         .AshetOS = .{

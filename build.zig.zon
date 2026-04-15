@@ -48,8 +48,8 @@
         },
 
         .depz = .{
-            .url = "git+https://codeberg.org/Der_Teufel/depz.git#b7041a9f0b535c70d70439aa15bc8cfbf359d2c2",
-            .hash = "depz-0.1.0-AAAAADMWAADGaaICqczZivLrwNCUK6hPvTuKUYzcwnhT",
+            .url = "git+https://codeberg.org/Der_Teufel/depz.git#ff2933bf89d6c2fad74d211ee5fc97c486c09b08",
+            .hash = "depz-0.1.0-6NLPjlkWAABbxVacv-yUGCxTC3auq-gjfNtr1S2Sh7Ti",
         },
 
         // UEFI firmware for running x86 QEMU systems with UEFI

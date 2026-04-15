@@ -1,6 +1,7 @@
 .{
     .name = .ntp_client,
     .version = "0.1.0",
+    .fingerprint = 0x8ea063541dc79dec,
     .paths = .{ "build.zig", "build.zig.zon", "ntp-client.zig" },
     .dependencies = .{
         .AshetOS = .{

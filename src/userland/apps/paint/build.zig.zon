@@ -1,6 +1,7 @@
 .{
-    .name = "paint",
+    .name = .paint,
     .version = "0.1.0",
+    .fingerprint = 0x577a8417d2c2371f,
     .paths = .{ "build.zig", "build.zig.zon", "paint.zig" },
     .dependencies = .{
         .AshetOS = .{

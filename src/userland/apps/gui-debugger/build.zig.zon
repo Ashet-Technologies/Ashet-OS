@@ -1,6 +1,7 @@
 .{
     .name = .gui_debugger,
     .version = "0.1.0",
+    .fingerprint = 0x9cba8d44db0927f3,
     .paths = .{ "build.zig", "build.zig.zon", "gui-debugger.zig" },
     .dependencies = .{
         .AshetOS = .{

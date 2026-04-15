@@ -1,6 +1,7 @@
 .{
     .name = ._2048,
     .version = "0.1.0",
+    .fingerprint = 0x910031d47bd75980,
     .paths = .{ "build.zig", "build.zig.zon", "clock.zig" },
     .dependencies = .{
         .AshetOS = .{

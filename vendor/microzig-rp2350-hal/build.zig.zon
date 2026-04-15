@@ -1,5 +1,6 @@
 .{
     .name = .rp2350_hal,
+    .fingerprint = 0xa728c9a8aea92999,
     .version = "0.15.0",
     .paths = .{"."},
 }

@@ -1,7 +1,8 @@
 .{
     .name = .hello_gui,
     .version = "0.1.0",
-    .paths = .{ "build.zig", "build.zig.zon", "hello-world.zig" },
+    .fingerprint = 0x92b06ff51979737,
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
     .dependencies = .{
         .AshetOS = .{
             .path = "../../libs/libAshetOS",

@@ -1,6 +1,7 @@
 .{
     .name = .i2c_scan,
     .version = "0.1.0",
+    .fingerprint = 0x44ae99de974572d6,
     .paths = .{ "build.zig", "build.zig.zon", "i2c-scan.zig" },
     .dependencies = .{
         .AshetOS = .{

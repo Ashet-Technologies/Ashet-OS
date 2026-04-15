@@ -1,6 +1,7 @@
 .{
     .name = .classic_desktop,
     .version = "0.1.0",
+    .fingerprint = 0x95deff3f2fd55dcd,
     .paths = .{ "build.zig", "build.zig.zon", "classic-desktop.zig" },
     .dependencies = .{
         .AshetOS = .{
