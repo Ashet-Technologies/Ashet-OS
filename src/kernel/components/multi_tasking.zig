@@ -392,7 +392,7 @@ pub const Process = struct {
                 const first = proc.async_context.in_flight.first.?;
                 const call = ashet.overlapped.AsyncCall.from_owner_link(first);
 
-                ashet.overlapped.cancel_with_context(call.arc, &proc.async_context) catch |err| {
+                ashet.overlapped.cancel_with_context(call, &proc.async_context, .in_flight) catch |err| {
                     logger.err("unexpected error {} from cancelling overlapped operation", .{err});
                     @panic("This is a kernel bug!");
                 };

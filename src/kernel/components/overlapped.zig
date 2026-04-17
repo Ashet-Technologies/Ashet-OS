@@ -348,15 +348,16 @@ pub fn cancel(arc: *ARC) error{
     Completed,
 }!void {
     _, const context = get_context();
-    return cancel_with_context(arc, context);
+
+    const call, const queue_name = context.get_call_object(arc) orelse return error.Unscheduled;
+
+    return cancel_with_context(call, context, queue_name);
 }
 
-pub fn cancel_with_context(arc: *ARC, context: *Context) error{
+pub fn cancel_with_context(call: *AsyncCall, context: *Context, queue_name: Context.QueueName) error{
     Unscheduled,
     Completed,
 }!void {
-    const call, const queue_name = context.get_call_object(arc) orelse return error.Unscheduled;
-
     switch (queue_name) {
         .completed => {
             std.debug.assert(!node_in_queue(context.in_flight, &call.owner_link));
@@ -372,7 +373,10 @@ pub fn cancel_with_context(arc: *ARC, context: *Context) error{
                 cancel_fn(call);
             } else {
                 // TODO: Implement actual cancelling of events
-                logger.err("non-implemented cancel of type {}", .{arc.type});
+                logger.err("non-implemented cancel of type {!} ({})", .{
+                    std.meta.intToEnum(ARC.Type, @intFromEnum(call.arc.type)),
+                    @intFromEnum(call.arc.type),
+                });
                 @panic("AshetOS has no idea how to cancel this!");
             }
         },
