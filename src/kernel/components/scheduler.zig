@@ -127,7 +127,21 @@ pub fn dumpStats() void {
     logger.info("waiting threads:", .{});
     {
         var index: usize = 0;
-        var queue = ThreadIterator.init();
+        var queue: ThreadIterator = .init(.waiting);
+        while (queue.next()) |thread| : (index += 1) {
+            logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
+                index,
+                thread,
+                thread.get_stack_usage(),
+                thread.stack_memory.len,
+            });
+        }
+    }
+
+    logger.info("suspended threads:", .{});
+    {
+        var index: usize = 0;
+        var queue: ThreadIterator = .init(.suspended);
         while (queue.next()) |thread| : (index += 1) {
             logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
                 index,
@@ -198,6 +212,7 @@ pub const Thread = struct {
 
     /// The queue the thread currently is in.
     queue: ?*ThreadQueue = null,
+
     /// The queue node we use to enqueue/dequeue the thread between different queues.
     node: ThreadQueue.Node = .{ .data = {} },
 
@@ -424,12 +439,20 @@ pub const Thread = struct {
         if (thread.isCurrent()) {
             // current thread will be yielded, and because it's suspended, we won't
             // requeue it into the wait queue.
+
+            // We must not be in the waiting thread queue, as this would imply we're not
+            // the active thread, thus a compiler bug:
+            std.debug.assert(!wait_queue.contains(&thread.node));
+            suspend_queue.append(&thread.node);
+
             yield();
         } else {
             // non-current thread is still in the queue, so we have to dequeue it:
             std.debug.assert(thread.queue == &wait_queue);
             thread.queue = null;
             wait_queue.remove(&thread.node);
+
+            suspend_queue.append(&thread.node);
         }
     }
 
@@ -441,8 +464,16 @@ pub const Thread = struct {
         if (!thread.flags.suspended)
             return;
 
-        if (thread.isCurrent())
-            return; // lol that doesn't make sense at all!
+        if (thread.isCurrent()) {
+            // This situation doesn't really make sense at all, but as it's still possible for a
+            // thread to just call resume() on itself, we're just doing some sanity checks here
+            // and continue business as usual:
+            std.debug.assert(!wait_queue.contains(&thread.node));
+            std.debug.assert(!suspend_queue.contains(&thread.node));
+            return;
+        }
+
+        suspend_queue.remove(&thread.node);
 
         std.debug.assert(thread.queue == null);
         enqueueThread(&wait_queue, thread);
@@ -626,12 +657,17 @@ pub const Thread = struct {
 };
 
 pub const ThreadIterator = struct {
-    pub const Group = enum { waiting };
+    pub const Group = enum { waiting, suspended };
 
     current: ?*ThreadQueue.Node,
 
-    pub fn init() ThreadIterator {
-        return ThreadIterator{ .current = wait_queue.first };
+    pub fn init(grp: Group) ThreadIterator {
+        return ThreadIterator{
+            .current = switch (grp) {
+                .waiting => wait_queue.first,
+                .suspended => suspend_queue.first,
+            },
+        };
     }
 
     pub fn next(self: *ThreadIterator) ?*Thread {
@@ -643,7 +679,11 @@ pub const ThreadIterator = struct {
 
 const ThreadQueue = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 
+/// The queue of threads that are waiting to be executed:
 var wait_queue: ThreadQueue = .{};
+
+/// The queue of threads that is currently suspended:
+var suspend_queue: ThreadQueue = .{};
 
 var current_thread: ?*Thread = null;
 

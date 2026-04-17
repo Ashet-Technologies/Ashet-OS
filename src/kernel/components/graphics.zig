@@ -59,7 +59,9 @@ pub fn initialize() !void {
 
     render_thread = try ashet.scheduler.Thread.spawn(handle_render_tasks, null, .{
         .name = "graphics.work_thread",
-        // TODO: Reinclude this! .external_stack = &render_thread_stack,
+        .external_stack = ashet.utils.target_dependent_value(?[]align(4096) u8, null, &.{
+            .on_machine(.@"arm-ashet-hc", &render_thread_stack),
+        }),
     });
 
     render_queue.wakeup_thread = render_thread;

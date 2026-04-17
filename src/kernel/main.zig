@@ -764,13 +764,24 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
             Debug.print("  [!] {f}\r\n\r\n", .{thread});
         }
 
-        Debug.write("waiting threads:\r\n");
-        var index: usize = 0;
-        var queue = scheduler.ThreadIterator.init();
-        while (queue.next()) |thread| : (index += 1) {
-            Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+        {
+            Debug.write("waiting threads:\r\n");
+            var index: usize = 0;
+            var queue: scheduler.ThreadIterator = .init(.waiting);
+            while (queue.next()) |thread| : (index += 1) {
+                Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+            }
+            Debug.write("\r\n");
         }
-        Debug.write("\r\n");
+        {
+            Debug.write("suspended threads:\r\n");
+            var index: usize = 0;
+            var queue: scheduler.ThreadIterator = .init(.suspended);
+            while (queue.next()) |thread| : (index += 1) {
+                Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+            }
+            Debug.write("\r\n");
+        }
     }
 
     {
