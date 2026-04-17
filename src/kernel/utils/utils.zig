@@ -38,7 +38,7 @@ pub fn copy_slice(comptime T: type, maybe_buf: ?[]T, source: []const T) usize {
 pub fn TargetPattern(comptime T: type) type {
     return struct {
         pub fn on_optimize(mode: std.builtin.OptimizeMode, value: T) @This() {
-            return .{ .optimize_mode = mode, .value = value };
+            return .{ .optimize = mode, .value = value };
         }
 
         pub fn on_platform(platform: ports.Platform, value: T) @This() {

@@ -458,8 +458,6 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
     return system_fonts.getPtr(font_name) orelse return error.FileNotFound;
 }
 
-var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_allocator);
-
 const WindowFramebufferOverlay = struct {
     framebuffer_rect: Rectangle,
     image_src: Point,
@@ -610,13 +608,9 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     const code = inputs.sequence_ptr[0..inputs.sequence_len];
 
-    var fbs = std.io.fixedBufferStream(code);
-
     // Validate code before drawing:
     {
-        _ = render_temp_buffer.reset(.retain_capacity);
-
-        var decoder = agp.streamDecoder(render_temp_buffer.allocator(), fbs.reader());
+        var decoder: agp.BufferDecoder = .init(code);
         while (true) {
             const maybe_cmd = decoder.next() catch |err| {
                 logger.warn("failed to decode AGP: {s}", .{@errorName(err)});
@@ -627,15 +621,11 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
         }
     }
 
-    fbs.reset();
-
     // Now render to the framebuffer:
 
     const target_size = fb.get_size();
 
     if (target_size.width > 0 and target_size.height > 0) {
-        _ = render_temp_buffer.reset(.retain_capacity);
-
         switch (selected_rasterizer) {
             .tiled_sync, .tiled_async => {
                 const resolver: agp_tiled_rast.Resolver = .{
@@ -666,7 +656,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
             .linear_sync, .linear_async => {
                 var rasterizer = Rasterizer.init(fb.get_render_target());
 
-                var decoder = agp.streamDecoder(render_temp_buffer.allocator(), fbs.reader());
+                var decoder: agp.BufferDecoder = .init(code);
                 while (decoder.next() catch unreachable) |cmd| {
                     // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
                     switch (cmd) {

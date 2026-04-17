@@ -804,10 +804,10 @@ const backplane = struct {
             }
         }
 
-        const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{});
+        const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{
+            .name = "ashet.PropIO",
+        });
         defer thread.detach();
-
-        thread.setName("PropIO") catch {};
 
         thread.start() catch unreachable; // Won't ever be non-started here
 

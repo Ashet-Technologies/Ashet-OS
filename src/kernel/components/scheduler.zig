@@ -234,7 +234,7 @@ pub const Thread = struct {
         name: ?[]const u8 = null,
         stack_size: usize = Thread.default_stack_size,
         process: ?*ashet.multi_tasking.Process = null,
-        external_stack: ?[]align(4096) u8 = null,
+        external_stack: ?[]align(ashet.memory.page_size) u8 = null,
     };
 
     /// Creates a new thread which isn't started yet.
@@ -508,6 +508,11 @@ pub const Thread = struct {
             queue.remove(&thread.node);
 
             global_stats.running_count -= 1;
+        }
+
+        if (thread.flags.suspended) {
+            std.debug.assert(suspend_queue.contains(&thread.node));
+            suspend_queue.remove(&thread.node);
         }
 
         logger.info("killing thread {f}", .{thread});
