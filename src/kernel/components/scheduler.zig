@@ -93,6 +93,10 @@ pub var use_live_stack_pattern_probing = false;
 /// considers the stack overflown.
 const stack_pattern_probing_redzone_size = 128;
 
+/// Most hardware platforms require either 4, 8 or 16 bytes stack alignment, so we're going
+/// with the most generic option:
+const min_stack_alignment = 16;
+
 const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
     .x86 => if (builtin.os.tag == .windows)
         .{ .x86_win = .{} }
@@ -123,7 +127,21 @@ pub fn dumpStats() void {
     logger.info("waiting threads:", .{});
     {
         var index: usize = 0;
-        var queue = ThreadIterator.init();
+        var queue: ThreadIterator = .init(.waiting);
+        while (queue.next()) |thread| : (index += 1) {
+            logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
+                index,
+                thread,
+                thread.get_stack_usage(),
+                thread.stack_memory.len,
+            });
+        }
+    }
+
+    logger.info("suspended threads:", .{});
+    {
+        var index: usize = 0;
+        var queue: ThreadIterator = .init(.suspended);
         while (queue.next()) |thread| : (index += 1) {
             logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
                 index,
@@ -166,12 +184,9 @@ pub const Stats = struct {
 pub const Thread = struct {
     pub const Destructor = ashet.resources.Destructor(@This(), kill);
 
-    pub const DebugInfo = if (debug_mode) struct {
+    pub const DebugInfo = struct {
         entry_point: usize = 0,
-        name: [32]u8 = [1]u8{0} ** 32,
-    } else struct {
-        entry_point: u0 = 0,
-        name: [0]u8 = .{},
+        name: [32]u8 = @splat(0),
     };
 
     pub const Flags = packed struct(u32) {
@@ -181,7 +196,8 @@ pub const Thread = struct {
         detached: bool = false,
         has_redzone: bool = false,
         canary_warning: bool = false,
-        padding: u26 = 0,
+        has_external_stack: bool,
+        padding: u25 = 0,
     };
 
     pub const default_stack_size = 32768;
@@ -196,10 +212,11 @@ pub const Thread = struct {
 
     /// The queue the thread currently is in.
     queue: ?*ThreadQueue = null,
+
     /// The queue node we use to enqueue/dequeue the thread between different queues.
     node: ThreadQueue.Node = .{ .data = {} },
 
-    flags: Flags = .{},
+    flags: Flags,
 
     debug_info: DebugInfo = .{},
 
@@ -214,8 +231,10 @@ pub const Thread = struct {
     }
 
     pub const ThreadSpawnOptions = struct {
+        name: ?[]const u8 = null,
         stack_size: usize = Thread.default_stack_size,
         process: ?*ashet.multi_tasking.Process = null,
+        external_stack: ?[]align(ashet.memory.page_size) u8 = null,
     };
 
     /// Creates a new thread which isn't started yet.
@@ -223,20 +242,31 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const use_redzone = ashet.memory.protection.is_enabled();
+        const use_redzone, const stack_memory = if (options.external_stack) |external_stack| blk: {
+            std.debug.assert(std.mem.isAligned(external_stack.len, min_stack_alignment));
 
-        // the canary requires a single page at the "bottom" of the stack:
-        const additional_stack_size: usize = if (use_redzone)
-            redzone_size
-        else
-            0;
+            break :blk .{ false, external_stack };
+        } else blk: {
+            const use_redzone = ashet.memory.protection.is_enabled();
 
-        const stack_size = std.mem.alignForward(usize, options.stack_size + additional_stack_size, ashet.memory.page_size);
+            // the canary requires a single page at the "bottom" of the stack:
+            const additional_stack_size: usize = if (use_redzone)
+                redzone_size
+            else
+                0;
 
-        // Requires the use of `ThreadAllocator`.
-        // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
-        const stack_memory = try ashet.memory.ThreadAllocator.alloc(stack_size);
-        errdefer ashet.memory.ThreadAllocator.free(stack_memory);
+            const stack_size = std.mem.alignForward(usize, options.stack_size + additional_stack_size, ashet.memory.page_size);
+
+            // Requires the use of `ThreadAllocator`.
+            // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
+            const stack_memory = try ashet.memory.ThreadAllocator.alloc(stack_size);
+
+            break :blk .{ use_redzone, stack_memory };
+        };
+
+        errdefer if (options.external_stack == null) {
+            ashet.memory.ThreadAllocator.free(stack_memory);
+        };
 
         const thread_proc = options.process orelse ashet.multi_tasking.get_kernel_process();
 
@@ -255,8 +285,18 @@ pub const Thread = struct {
             } },
             .flags = .{
                 .has_redzone = use_redzone,
+                .has_external_stack = (options.external_stack != null),
+            },
+
+            .debug_info = .{
+                .entry_point = @intFromPtr(func),
+                .name = @splat(0),
             },
         };
+
+        if (options.name) |name| {
+            thread.setName(name);
+        }
 
         if (use_redzone) {
             // make the stack canary forbidden:
@@ -271,9 +311,6 @@ pub const Thread = struct {
 
         thread_proc.threads.append(&thread.process_link);
 
-        if (@import("builtin").mode == .Debug) {
-            thread.debug_info.entry_point = @intFromPtr(func);
-        }
         switch (target) {
             .riscv32 => {
                 thread.push(0x0000_0000); //      x3  ; gp Global pointer
@@ -402,12 +439,20 @@ pub const Thread = struct {
         if (thread.isCurrent()) {
             // current thread will be yielded, and because it's suspended, we won't
             // requeue it into the wait queue.
+
+            // We must not be in the waiting thread queue, as this would imply we're not
+            // the active thread, thus a compiler bug:
+            std.debug.assert(!wait_queue.contains(&thread.node));
+            suspend_queue.append(&thread.node);
+
             yield();
         } else {
             // non-current thread is still in the queue, so we have to dequeue it:
             std.debug.assert(thread.queue == &wait_queue);
             thread.queue = null;
             wait_queue.remove(&thread.node);
+
+            suspend_queue.append(&thread.node);
         }
     }
 
@@ -419,8 +464,16 @@ pub const Thread = struct {
         if (!thread.flags.suspended)
             return;
 
-        if (thread.isCurrent())
-            return; // lol that doesn't make sense at all!
+        if (thread.isCurrent()) {
+            // This situation doesn't really make sense at all, but as it's still possible for a
+            // thread to just call resume() on itself, we're just doing some sanity checks here
+            // and continue business as usual:
+            std.debug.assert(!wait_queue.contains(&thread.node));
+            std.debug.assert(!suspend_queue.contains(&thread.node));
+            return;
+        }
+
+        suspend_queue.remove(&thread.node);
 
         std.debug.assert(thread.queue == null);
         enqueueThread(&wait_queue, thread);
@@ -457,6 +510,11 @@ pub const Thread = struct {
             global_stats.running_count -= 1;
         }
 
+        if (thread.flags.suspended) {
+            std.debug.assert(suspend_queue.contains(&thread.node));
+            suspend_queue.remove(&thread.node);
+        }
+
         logger.info("killing thread {f}", .{thread});
 
         std.debug.assert(thread.process_link.data.thread == thread);
@@ -474,11 +532,13 @@ pub const Thread = struct {
             ), .read_write);
         }
 
-        // we have to use the ThreadAlloactor that doesn't invalidate
-        // the memory.
-        // `ashet_scheduler_threadExit` relies on the assumption that the memory
-        // is not changed between the free and the `performSwitch` call.
-        ashet.memory.ThreadAllocator.free(thread.stack_memory);
+        if (!thread.flags.has_external_stack) {
+            // we have to use the ThreadAlloactor that doesn't invalidate
+            // the memory.
+            // `ashet_scheduler_threadExit` relies on the assumption that the memory
+            // is not changed between the free and the `performSwitch` call.
+            ashet.memory.ThreadAllocator.free(thread.stack_memory);
+        }
         ashet.memory.type_pool(Thread).free(thread);
 
         global_stats.total_count -= 1;
@@ -495,12 +555,15 @@ pub const Thread = struct {
         return val;
     }
 
-    pub fn setName(thread: *Thread, name: []const u8) !void {
-        if (@import("builtin").mode == .Debug) {
-            if (name.len > thread.debug_info.name.len)
-                return error.Overflow;
-            @memset(&thread.debug_info.name, 0);
-            std.mem.copyForwards(u8, &thread.debug_info.name, name);
+    pub fn setName(thread: *Thread, name: []const u8) void {
+        const len = @min(name.len, thread.debug_info.name.len);
+        @memcpy(thread.debug_info.name[0..len], name[0..len]);
+        @memset(thread.debug_info.name[len..], 0);
+        if (len < name.len) {
+            logger.warn("Truncating thread name from \"{f}\" to \"{f}\"", .{
+                std.zig.fmtString(name),
+                std.zig.fmtString(thread.getName()),
+            });
         }
     }
 
@@ -599,12 +662,17 @@ pub const Thread = struct {
 };
 
 pub const ThreadIterator = struct {
-    pub const Group = enum { waiting };
+    pub const Group = enum { waiting, suspended };
 
     current: ?*ThreadQueue.Node,
 
-    pub fn init() ThreadIterator {
-        return ThreadIterator{ .current = wait_queue.first };
+    pub fn init(grp: Group) ThreadIterator {
+        return ThreadIterator{
+            .current = switch (grp) {
+                .waiting => wait_queue.first,
+                .suspended => suspend_queue.first,
+            },
+        };
     }
 
     pub fn next(self: *ThreadIterator) ?*Thread {
@@ -616,7 +684,11 @@ pub const ThreadIterator = struct {
 
 const ThreadQueue = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 
+/// The queue of threads that are waiting to be executed:
 var wait_queue: ThreadQueue = .{};
+
+/// The queue of threads that is currently suspended:
+var suspend_queue: ThreadQueue = .{};
 
 var current_thread: ?*Thread = null;
 
@@ -637,6 +709,7 @@ var kernel_thread: Thread = .{
     .exit_code = 0,
     .stack_memory = &kernel_thread_backup,
     .process_link = .{ .data = undefined },
+    .flags = .{ .has_external_stack = true },
 };
 
 pub fn getKernelThread() *Thread {

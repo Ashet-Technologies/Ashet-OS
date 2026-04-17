@@ -10,6 +10,12 @@ enum SystemResource : usize
     typedef Type = <<resource_enum:u32>>;
 }
 
+/// This is a hack to get some different system startup done.
+/// `mode` is whatever is needed right now.
+syscall get_demo_mode {
+    out mode: u8;
+}
+
 /// All syscalls related to generic resource management.
 namespace resources {
 
@@ -1151,6 +1157,8 @@ namespace draw {
     syscall invalidate_framebuffer {
         in fb: Framebuffer;
         in area: Rectangle;
+
+        error InvalidHandle;
     }
 
     /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
@@ -1171,6 +1179,7 @@ namespace draw {
         in      auto_invalidate: bool;
         error   BadCode;
         error   InvalidHandle;
+        error   SystemResources;
     }
 
 }
@@ -3176,6 +3185,13 @@ struct Size {
 }
 
 struct Rectangle {
+    const everything: Rectangle = .{
+        .x = 0, //? TODO: Fix parsing and numeric handling so we can use -32768
+        .y = 0, //? TODO: Fix parsing and numeric handling so we can use -32768
+        .width = 65535,
+        .height = 65535
+    };
+
     field x: i16;
     field y: i16;
     field width: u16;

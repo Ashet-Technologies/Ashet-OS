@@ -203,7 +203,7 @@ pub const Window = struct {
     is_popup: bool,
 
     // Rendering:
-    pixels: []align(4) ashet.abi.Color,
+    pixels: []align(64) ashet.abi.Color,
 
     // Event handling:
     event_queue: astd.RingBuffer(ashet.abi.WindowEvent, event_queue_len) = .{},
@@ -263,7 +263,9 @@ pub const Window = struct {
             window.max_size.width, window.max_size.height,
         });
 
-        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"4", @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
+        const stride = std.mem.alignForward(usize, window.max_size.width, 64);
+
+        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"64", stride * window.max_size.height) catch return error.SystemResources;
         @memset(window.pixels, .from_hsv(.purple, 1, 1)); // TODO: Set obnoxious color here to force a default or allow passing a default via window parameters
 
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
@@ -631,7 +633,7 @@ pub const Widget = struct {
 
     // visuals
     bounds: Rectangle,
-    pixels: []align(4) ashet.abi.Color,
+    pixels: []align(64) ashet.abi.Color,
 
     // type-specific data
     widget_data: []align(16) u8,
@@ -662,7 +664,7 @@ pub const Widget = struct {
         widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, .@"16", widget_type.widget_data_size) catch return error.SystemResources;
         @memset(widget.widget_data, 0);
 
-        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"4", 0) catch return error.SystemResources;
+        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"64", 0) catch return error.SystemResources;
 
         owner.widgets.append(&widget.window_link);
         errdefer owner.widgets.remove(&widget.window_link);
@@ -771,7 +773,9 @@ pub const Widget = struct {
             // Resize the internal pixel buffer to new size:
             const allocator = widget.associated_memory.allocator();
 
-            const new_size = @as(usize, widget.bounds.width) * @as(usize, widget.bounds.height);
+            const stride = std.mem.alignForward(usize, widget.bounds.width, 64);
+
+            const new_size = stride * @as(usize, widget.bounds.height);
             if (widget.pixels.len < new_size) {
                 // we don't have enough storage for the new resized widget,
                 // so we have to get more memory:

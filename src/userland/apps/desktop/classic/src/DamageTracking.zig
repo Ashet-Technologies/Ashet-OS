@@ -40,7 +40,7 @@ pub fn invalidate_region(dt: *DamageTracking, region: Rectangle) void {
     if (region.empty())
         return;
 
-    const target = dt.tracked_area.overlap(region);
+    const target = dt.tracked_area.overlappedRegion(region);
 
     // check if we already have this region invalidated
     for (dt.invalidation_areas.items) |rect| {

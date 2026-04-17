@@ -254,8 +254,8 @@ fn main() !void {
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
             .stack_size = 32 * 1024,
+            .name = "os.tick",
         });
-        try thread.setName("os.tick");
         try thread.start();
         thread.detach();
     }
@@ -268,8 +268,8 @@ fn main() !void {
 
         const thread = try scheduler.Thread.spawn(threaded_kernel_init_unchecked, null, .{
             .stack_size = 32 * 1024,
+            .name = "os.entrypoint",
         });
-        try thread.setName("os.entrypoint");
         try thread.start();
         thread.detach();
     }
@@ -350,9 +350,38 @@ pub const global_hotkeys = struct {
     pub fn handle(event: abi.KeyboardEvent) bool {
         if (!event.pressed)
             return false;
+
         if (event.modifiers.alt) {
             switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
+                .f8 => {
+                    if (event.modifiers.shift) {
+                        graphics.use_perfctrl = !graphics.use_perfctrl;
+
+                        std.log.warn("graphics perfcounters are now {s}", .{
+                            if (graphics.use_perfctrl)
+                                "enabled"
+                            else
+                                "disabled",
+                        });
+                    } else {
+                        const options = std.enums.values(graphics.RasterizerBackend);
+
+                        const current = std.mem.indexOfScalar(graphics.RasterizerBackend, options, graphics.selected_rasterizer).?;
+
+                        const next = if (current + 1 == options.len)
+                            0
+                        else
+                            current + 1;
+
+                        graphics.selected_rasterizer = options[next];
+
+                        std.log.warn("Switched rasterizer from {t} to {t}", .{
+                            options[current],
+                            options[next],
+                        });
+                    }
+                },
                 .f9 => {
                     scheduler.use_live_stack_pattern_probing = !scheduler.use_live_stack_pattern_probing;
                     if (scheduler.use_live_stack_pattern_probing) {
@@ -735,13 +764,24 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
             Debug.print("  [!] {f}\r\n\r\n", .{thread});
         }
 
-        Debug.write("waiting threads:\r\n");
-        var index: usize = 0;
-        var queue = scheduler.ThreadIterator.init();
-        while (queue.next()) |thread| : (index += 1) {
-            Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+        {
+            Debug.write("waiting threads:\r\n");
+            var index: usize = 0;
+            var queue: scheduler.ThreadIterator = .init(.waiting);
+            while (queue.next()) |thread| : (index += 1) {
+                Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+            }
+            Debug.write("\r\n");
         }
-        Debug.write("\r\n");
+        {
+            Debug.write("suspended threads:\r\n");
+            var index: usize = 0;
+            var queue: scheduler.ThreadIterator = .init(.suspended);
+            while (queue.next()) |thread| : (index += 1) {
+                Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+            }
+            Debug.write("\r\n");
+        }
     }
 
     {

@@ -120,6 +120,7 @@ const patterns = blk: {
         .create(.number, match.sequenceOf(.{ match.literal("0x"), match.hexadecimalNumber })),
         .create(.number, match.sequenceOf(.{ match.literal("0b"), match.binaryNumber })),
         .create(.number, match.decimalNumber),
+        .create(.number, match.sequenceOf(.{ match.literal("-"), match.decimalNumber })),
 
         .create(.whitespace, match.whitespace),
     };

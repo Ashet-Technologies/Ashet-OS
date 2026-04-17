@@ -86,6 +86,11 @@ fn early_initialize() void {
         .CP11 = .full_access, // Arm FPU
     });
 
+    // init demo mode:
+    hw_alloc.pins.demo_mode.set_function(.sio);
+    hw_alloc.pins.demo_mode.set_direction(.in);
+    hw_alloc.pins.demo_mode.set_pull(.up);
+
     hw_alloc.pins.xip_cs1.set_function(.gpck);
 
     hw_alloc.pins.i2c_sda.set_function(.i2c);
@@ -173,6 +178,8 @@ fn initialize() !void {
 
     logger.info("initialize SysTick...", .{});
     systick.init();
+
+    logger.info("SysTick Trace is at 0x{X:0>8}", .{@intFromPtr(&systick.last_pc)});
 
     ashet.platform.profile.enable_interrupts();
 
@@ -360,7 +367,7 @@ const systick = struct {
 
         regs.rvr.write(.{ .reload = @max(1, calib.ten_ms / 10) });
 
-        interrupt_table_core0.SysTick = increment_clock_irq;
+        interrupt_table_core0.SysTick = @ptrCast(&increment_clock_irq_raw);
 
         regs.csr.modify(.{
             .enabled = true,
@@ -368,8 +375,36 @@ const systick = struct {
             .clock_source = .external_clock,
         });
     }
+    fn increment_clock_irq_raw() callconv(.naked) void {
+        asm volatile (
+            \\  tst lr, #4          // choose stack that holds the exception frame
+            \\  ite eq
+            \\  mrseq r0, msp
+            \\  mrsne r0, psp
+            \\  mov r1, lr          // pass EXC_RETURN too
+            \\  b increment_clock_irq
+        );
+    }
+    const ExceptionFrame = extern struct {
+        r0: u32,
+        r1: u32,
+        r2: u32,
+        r3: u32,
+        r12: u32,
+        lr: u32,
+        pc: u32,
+        xpsr: u32,
+    };
 
-    fn increment_clock_irq() callconv(.c) void {
+    export var last_pc: u32 = 0;
+
+    export fn increment_clock_irq(frame: *ExceptionFrame) callconv(.c) void {
+        // debug_log.write(0, "[00000000]");
+
+        last_pc = frame.pc;
+
+        // _ = frame;
+
         total_count_ms +%= 1;
     }
 };
@@ -769,10 +804,10 @@ const backplane = struct {
             }
         }
 
-        const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{});
+        const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{
+            .name = "ashet.PropIO",
+        });
         defer thread.detach();
-
-        thread.setName("PropIO") catch {};
 
         thread.start() catch unreachable; // Won't ever be non-started here
 
@@ -1064,10 +1099,10 @@ pub const perfctr = struct {
         logger.info("Cycles     = {}", .{ctr});
         logger.info("Duration   = {} us", .{duration});
         logger.info("XIP Stats  = {} (hits: {}, misses: {})", .{ ctr_acc, ctr_hit, ctr_acc -| ctr_hit });
-        logger.info("PERF0[{s}] = {}", .{ @tagName(busctrl.PERFSEL0.read().PERFSEL0), busctrl.PERFCTR0.read().PERFCTR0 });
-        logger.info("PERF1[{s}] = {}", .{ @tagName(busctrl.PERFSEL1.read().PERFSEL1), busctrl.PERFCTR1.read().PERFCTR1 });
-        logger.info("PERF2[{s}] = {}", .{ @tagName(busctrl.PERFSEL2.read().PERFSEL2), busctrl.PERFCTR2.read().PERFCTR2 });
-        logger.info("PERF3[{s}] = {}", .{ @tagName(busctrl.PERFSEL3.read().PERFSEL3), busctrl.PERFCTR3.read().PERFCTR3 });
+        logger.info("PERF0[{t}] = {}", .{ busctrl.PERFSEL0.read().PERFSEL0, busctrl.PERFCTR0.read().PERFCTR0 });
+        logger.info("PERF1[{t}] = {}", .{ busctrl.PERFSEL1.read().PERFSEL1, busctrl.PERFCTR1.read().PERFCTR1 });
+        logger.info("PERF2[{t}] = {}", .{ busctrl.PERFSEL2.read().PERFSEL2, busctrl.PERFCTR2.read().PERFCTR2 });
+        logger.info("PERF3[{t}] = {}", .{ busctrl.PERFSEL3.read().PERFSEL3, busctrl.PERFCTR3.read().PERFCTR3 });
     }
 };
 
@@ -1162,3 +1197,10 @@ const debug_log = struct {
         write(@truncate(rp2350.peripherals.SIO.CPUID.read().CPUID), msg);
     }
 };
+
+pub fn get_demo_mode() u8 {
+    if (hw_alloc.pins.demo_mode.read() == 0)
+        return 1;
+
+    return 0;
+}

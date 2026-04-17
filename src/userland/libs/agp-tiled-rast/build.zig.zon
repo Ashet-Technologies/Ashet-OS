@@ -1,0 +1,21 @@
+.{
+    .name = .agp_tiled_rast,
+    .version = "0.0.0",
+    .fingerprint = 0xdf32e465a527926a,
+    .paths = .{""},
+    .dependencies = .{
+        .abi = .{
+            .path = "../../../abi",
+        },
+        .agp = .{
+            .path = "../agp",
+        },
+        .agp_swrast = .{
+            .path = "../agp-swrast",
+        },
+        .turtlefont = .{
+            .url = "git+https://github.com/ikskuh/turtlefont.git?#ff599916181027b20dab62d4ccb6579b8761bdaf",
+            .hash = "turtlefont-0.1.0-TiRlDy9aAADzzrPYB51cDWDsqOQtZ41Af25bHfzWaNgr",
+        },
+    },
+}

@@ -29,6 +29,8 @@ const framebuffer_size: ashet.video.Resolution = .{
 
 const framebuffer_item_cnt = @as(u32, framebuffer_size.width) * framebuffer_size.height;
 
+var vsync_has_happened: std.atomic.Value(bool) = .init(false);
+
 fn cast_to_fb(src: *const [framebuffer_item_cnt]u8) [framebuffer_item_cnt]Color {
     return @bitCast(src.*);
 }
@@ -97,6 +99,7 @@ pub fn init(comptime clock_config: rp2350.clocks.config.Global) !HSTX_DVI {
                 .video = .{
                     .get_properties_fn = get_properties,
                     .flush_fn = flush,
+                    .get_one_vblank_event_fn = get_one_vblank_event,
                 },
             },
         },
@@ -118,6 +121,15 @@ fn get_properties(dri: *Driver) ashet.video.DeviceProperties {
         .resolution = framebuffer_size,
         .stride = framebuffer_size.width,
     };
+}
+
+fn get_one_vblank_event(dri: *Driver) bool {
+    const vd = instance(dri);
+    _ = vd;
+
+    const had_vsync = vsync_has_happened.swap(false, .seq_cst);
+
+    return had_vsync;
 }
 
 fn flush(dri: *Driver) void {
@@ -350,7 +362,6 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
     const ch = chan.get_regs();
 
     if (v_scanline >= framebuffer_size.height) {
-        // we've sent the full image so we now transfer the whole letterbox + vblank section:
         set_dma_channel(ch, HstxFifoItem, fifo_chunks.even_image_line.as_hstx_slice());
         v_scanline = 0;
     } else {
@@ -370,6 +381,10 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
 
         v_scanline += 1;
         if (v_scanline == framebuffer_size.height) {
+            // we've sent the full image so we now transfer the whole letterbox + vblank section:
+
+            vsync_has_happened.store(true, .release);
+
             current_scanline_src = &framebuffer;
             set_dma_channel(
                 ch,

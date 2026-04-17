@@ -214,6 +214,13 @@
     }
 </patch>
 <patch Rectangle>
+    fn clamp_i16(value: i32) i16 {
+        return @truncate(@max(std.math.minInt(i16), @min(std.math.maxInt(i16), value)));
+    }
+
+    fn clamp_u16(value: i32) u16 {
+        return @truncate(@max(std.math.minInt(u16), @min(std.math.maxInt(u16), value)));
+    }
 
     pub fn new(pos: Point, siz: Size) Rectangle {
         return Rectangle{
@@ -233,7 +240,7 @@
     }
 
     pub fn empty(rect: Rectangle) bool {
-        return (rect.width == 0) and (rect.height == 0);
+        return (rect.width == 0) or (rect.height == 0);
     }
 
     pub fn contains(rect: Rectangle, pt: Point) bool {
@@ -245,7 +252,7 @@
 
     pub fn containsRectangle(boundary: Rectangle, region: Rectangle) bool {
         return boundary.contains(region.position()) and
-            boundary.contains(Point.new(region.x +| @as(i16, @intCast(region.width)) - 1, region.y +| @as(i16, @intCast(region.height)) - 1));
+            boundary.contains(Point.new(region.x +| @as(i16, @intCast(region.width)) -| 1, region.y +| @as(i16, @intCast(region.height)) -| 1));
     }
 
     /// Returns true if `a` and `b` overlap.
@@ -256,12 +263,27 @@
             a.y <= b.y +| @as(i16, @intCast(b.height));
     }
 
-    /// Returns the overlapping region of `a` and `b`.
-    pub fn overlap(a: Rectangle, b: Rectangle) Rectangle {
+    /// Returns the region overlapped by both `a` and `b`.
+    pub fn overlappedRegion(a: Rectangle, b: Rectangle) Rectangle {
         const _left = @max(a.left(), b.left());
         const _right = @min(a.right(), b.right()) +| 1;
         const _top = @max(a.top(), b.top());
         const _bottom = @min(a.bottom(), b.bottom()) +| 1;
+
+        return .{
+            .x = _left,
+            .y = _top,
+            .width = clamp_u16(@as(i32, _right) -| _left),
+            .height = clamp_u16(@as(i32, _bottom) -| _top),
+        };
+    }
+
+    /// Returns the region that encloses both `a` and `b`.
+    pub fn enclosingRegion(a: Rectangle, b: Rectangle) Rectangle {
+        const _left = @min(a.left(), b.left());
+        const _right = @max(a.right(), b.right()) +| 1;
+        const _top = @max(a.top(), b.top());
+        const _bottom = @max(a.bottom(), b.bottom()) +| 1;
 
         return .{
             .x = _left,
@@ -279,13 +301,13 @@
         return rect.y;
     }
     pub fn bottom(rect: Rectangle) i16 {
-        return rect.y + @as(i16, @intCast(rect.height)) -| 1;
+        return clamp_i16(@as(i32, rect.y) +| rect.height -| 1);
     }
     pub fn left(rect: Rectangle) i16 {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x +| @as(i16, @intCast(rect.width)) -| 1;
+        return clamp_i16(@as(i32, rect.x) +| rect.width -| 1);
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
