@@ -254,8 +254,8 @@ fn main() !void {
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
             .stack_size = 32 * 1024,
+            .name = "os.tick",
         });
-        try thread.setName("os.tick");
         try thread.start();
         thread.detach();
     }
@@ -268,8 +268,8 @@ fn main() !void {
 
         const thread = try scheduler.Thread.spawn(threaded_kernel_init_unchecked, null, .{
             .stack_size = 32 * 1024,
+            .name = "os.entrypoint",
         });
-        try thread.setName("os.entrypoint");
         try thread.start();
         thread.detach();
     }

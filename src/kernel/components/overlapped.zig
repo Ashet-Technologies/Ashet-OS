@@ -15,9 +15,9 @@ var work_queues: [work_queue_count]WorkQueue = undefined;
 pub fn initialize() !void {
     var buffer: [32]u8 = undefined;
     for (&work_queues, 0..) |*wq, index| {
-        const thread = try ashet.scheduler.Thread.spawn(background_worker_loop, wq, .{});
-
-        try thread.setName(try std.fmt.bufPrint(&buffer, "background{}", .{index}));
+        const thread = try ashet.scheduler.Thread.spawn(background_worker_loop, wq, .{
+            .name = std.fmt.bufPrint(&buffer, "background{}", .{index}) catch &buffer,
+        });
 
         wq.* = WorkQueue{ .wakeup_thread = thread };
 

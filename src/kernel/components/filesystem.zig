@@ -184,8 +184,8 @@ pub fn initialize() void {
 
     const driver_thread = ashet.scheduler.Thread.spawn(filesystemCoreLoop, null, .{
         .stack_size = 64 * 1024, // some space for copying data around
+        .name = "filesystem",
     }) catch @panic("failed to spawn filesystem thread");
-    driver_thread.setName("filesystem") catch {};
 
     // Start the thread, we can't error (it was freshly created)
     driver_thread.start() catch unreachable;

@@ -75,8 +75,8 @@ const video_drivers_ctors = struct {
 
             const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
                 .stack_size = 8 * 1024 * 1024,
+                .name = "x11.eventloop",
             });
-            try thread.setName("x11.eventloop");
             try thread.start();
             thread.detach();
         } else |err| switch (err) {
@@ -100,8 +100,8 @@ const video_drivers_ctors = struct {
 
             const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
                 .stack_size = 8 * 1024 * 1024,
+                .name = "wayland.eventloop",
             });
-            try thread.setName("wayland.eventloop");
             try thread.start();
             thread.detach();
         } else |err| switch (err) {
@@ -123,8 +123,8 @@ const video_drivers_ctors = struct {
 
             const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
                 .stack_size = 8 * 1024 * 1024,
+                .name = "wayland.eventloop",
             });
-            try thread.setName("wayland.eventloop");
             try thread.start();
             thread.detach();
         } else |err| switch (err) {
@@ -140,8 +140,8 @@ const video_drivers_ctors = struct {
 
                 const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
                     .stack_size = 1024 * 1024,
+                    .name = "x11.eventloop",
                 });
-                try thread.setName("x11.eventloop");
                 try thread.start();
                 thread.detach();
             },

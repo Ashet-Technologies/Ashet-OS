@@ -77,13 +77,13 @@ pub fn spawn_blocking(
     const thread = try ashet.scheduler.Thread.spawn(
         @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
         null,
-        .{ .process = process, .stack_size = 128 * 1024 },
+        .{
+            .process = process,
+            .stack_size = 128 * 1024,
+            .name = proc_name,
+        },
     );
     errdefer thread.kill();
-
-    thread.setName(proc_name) catch {
-        logger.err("TODO(0.15.2): Remove setName() error possibility but truncate errors", .{});
-    };
 
     thread.start() catch |err| switch (err) {
         error.AlreadyStarted => unreachable,

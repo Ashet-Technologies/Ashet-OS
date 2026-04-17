@@ -170,12 +170,9 @@ pub const Stats = struct {
 pub const Thread = struct {
     pub const Destructor = ashet.resources.Destructor(@This(), kill);
 
-    pub const DebugInfo = if (debug_mode) struct {
+    pub const DebugInfo = struct {
         entry_point: usize = 0,
-        name: [32]u8 = [1]u8{0} ** 32,
-    } else struct {
-        entry_point: u0 = 0,
-        name: [0]u8 = .{},
+        name: [32]u8 = @splat(0),
     };
 
     pub const Flags = packed struct(u32) {
@@ -219,6 +216,7 @@ pub const Thread = struct {
     }
 
     pub const ThreadSpawnOptions = struct {
+        name: ?[]const u8 = null,
         stack_size: usize = Thread.default_stack_size,
         process: ?*ashet.multi_tasking.Process = null,
         external_stack: ?[]align(4096) u8 = null,
@@ -274,7 +272,16 @@ pub const Thread = struct {
                 .has_redzone = use_redzone,
                 .has_external_stack = (options.external_stack != null),
             },
+
+            .debug_info = .{
+                .entry_point = @intFromPtr(func),
+                .name = @splat(0),
+            },
         };
+
+        if (options.name) |name| {
+            thread.setName(name);
+        }
 
         if (use_redzone) {
             // make the stack canary forbidden:
@@ -289,9 +296,6 @@ pub const Thread = struct {
 
         thread_proc.threads.append(&thread.process_link);
 
-        if (@import("builtin").mode == .Debug) {
-            thread.debug_info.entry_point = @intFromPtr(func);
-        }
         switch (target) {
             .riscv32 => {
                 thread.push(0x0000_0000); //      x3  ; gp Global pointer
@@ -515,12 +519,15 @@ pub const Thread = struct {
         return val;
     }
 
-    pub fn setName(thread: *Thread, name: []const u8) !void {
-        if (@import("builtin").mode == .Debug) {
-            if (name.len > thread.debug_info.name.len)
-                return error.Overflow;
-            @memset(&thread.debug_info.name, 0);
-            std.mem.copyForwards(u8, &thread.debug_info.name, name);
+    pub fn setName(thread: *Thread, name: []const u8) void {
+        const len = @min(name.len, thread.debug_info.name.len);
+        @memcpy(thread.debug_info.name[0..len], name[0..len]);
+        @memset(thread.debug_info.name[len..], 0);
+        if (len < name.len) {
+            logger.warn("Truncating thread name from \"{f}\" to \"{f}\"", .{
+                std.zig.fmtString(name),
+                std.zig.fmtString(thread.getName()),
+            });
         }
     }
 
