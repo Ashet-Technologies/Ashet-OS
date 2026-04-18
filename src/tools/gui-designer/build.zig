@@ -27,6 +27,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
+    const nfd = b.dependency("nfd", .{
+        .target = target,
+        .optimize = .ReleaseSafe,
+    });
+    const nfd_mod = nfd.module("nfd");
+
     const editor_mod = b.addModule("gui-editor", .{
         .root_source_file = b.path("src/gui-editor.zig"),
 
@@ -44,6 +50,7 @@ pub fn build(b: *std.Build) void {
     editor_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
     editor_mod.addImport("args", args_dep.module("args"));
     editor_mod.addImport("libgui", libgui_dep.module("gui"));
+    editor_mod.addImport("nfd", nfd_mod);
 
     const editor_exe = b.addExecutable(.{
         .name = "gui-editor",

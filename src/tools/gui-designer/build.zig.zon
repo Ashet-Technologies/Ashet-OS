@@ -24,6 +24,11 @@
             .hash = "system_sdk-0.3.0-dev-alwUNqAaaALJ5VoZImZo3n6prezBnQnrpziun3ZeZwcp",
         },
 
+        .nfd = .{
+            .url = "git+https://github.com/fabioarnold/nfd-zig#031b6b08c28b4c209fde1d7cfc2387aa956febb2",
+            .hash = "nfd-0.1.0-y82kbsSLBgBgSEauGFsHxH7RmcL4AEOqZEqOvA8-NEFq",
+        },
+
         .abi = .{
             .path = "../../abi",
         },
