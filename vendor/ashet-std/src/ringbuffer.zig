@@ -199,14 +199,15 @@ test "RingBufferFuzzer" {
     try std.testing.fuzz({}, fuzz_ring_buffer, .{});
 }
 
-fn fuzz_ring_buffer(ctx: void, input: []const u8) anyerror!void {
+fn fuzz_ring_buffer(ctx: void, smith: *std.testing.Smith) anyerror!void {
     _ = ctx;
     var buffer = RingBuffer(u64, 16){};
 
     var next_push_item: u64 = 0;
     var next_pop_item: u64 = 0;
 
-    for (input) |cmd| {
+    while (!smith.eos()) {
+        const cmd = smith.value(u8);
         if (cmd < 0x80) {
             next_push_item += 1;
             buffer.push(next_push_item);

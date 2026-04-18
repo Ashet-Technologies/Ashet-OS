@@ -78,7 +78,7 @@ fn makeEmptyFs() BlockDevice(2048) {
 test "format smol file system" {
     var blockdev: BlockDevice(2048) = .{};
 
-    const create_time = std.time.nanoTimestamp();
+    const create_time = std.Io.Timestamp.now(std.testing.io, .real).toNanoseconds();
 
     try afs.format(blockdev.interface(), create_time);
 

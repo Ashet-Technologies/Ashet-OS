@@ -9,10 +9,8 @@ const CliOptions = struct {
     output: []const u8 = "-",
 };
 
-pub fn main() !u8 {
-    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-
-    const allocator = arena.allocator();
+pub fn main(init: std.process.Init) !u8 {
+    const allocator = init.arena.allocator();
 
     const cli_options: CliOptions = .{
         .bits = .@"32",
@@ -39,31 +37,37 @@ pub fn main() !u8 {
     //     return usage_error("--base must not be higher than --limit.");
     // }
 
-    var input_file = try std.fs.cwd().openFile("zig-out/arm-ashet-hc/kernel.elf", .{});
-    defer input_file.close();
+    var input_file = try std.Io.Dir.cwd().openFile(init.io, "zig-out/arm-ashet-hc/kernel.elf", .{});
+    defer input_file.close(init.io);
 
     var read_buffer: [1024]u8 = undefined;
-    var input_file_reader = input_file.reader(&read_buffer);
+    var input_file_reader = input_file.reader(init.io, &read_buffer);
 
     const output_to_stdout = std.mem.eql(u8, cli_options.output, "-");
 
     var output_buffer: [1024]u8 = undefined;
-    var output_disk_file: std.fs.AtomicFile = undefined;
-    var stdout_writer: std.fs.File.Writer = undefined;
+    var output_disk_file: std.Io.File.Atomic = undefined;
+    var file_writer: std.Io.File.Writer = undefined;
 
     const svg: SvgWriter = if (output_to_stdout) blk: {
-        stdout_writer = std.fs.File.stdout().writer(&output_buffer);
-        break :blk .{ .writer = &stdout_writer.interface };
+        file_writer = std.Io.File.stdout().writer(init.io, &output_buffer);
+        break :blk .{ .writer = &file_writer.interface };
     } else blk: {
-        output_disk_file = try std.fs.cwd().atomicFile(
+        output_disk_file = try std.Io.Dir.cwd().createFileAtomic(
+            init.io,
             cli_options.output,
-            .{ .write_buffer = &output_buffer },
+            .{
+                .make_path = true,
+                .replace = true,
+            },
         );
-        break :blk .{ .writer = &output_disk_file.file_writer.interface };
+        file_writer = output_disk_file.file.writer(init.io, &output_buffer);
+        break :blk .{ .writer = &file_writer.interface };
     };
 
-    defer if (!output_to_stdout)
-        output_disk_file.deinit();
+    defer if (!output_to_stdout) {
+        output_disk_file.replace(init.io) catch {};
+    };
 
     var header = try elf.Header.read(&input_file_reader.interface);
 
@@ -363,11 +367,7 @@ pub fn main() !u8 {
 
     try svg.write_footer();
 
-    if (!output_to_stdout) {
-        try output_disk_file.finish();
-    } else {
-        try stdout_writer.interface.flush();
-    }
+    try file_writer.interface.flush();
 
     return 0;
 }

@@ -9,12 +9,15 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "fs",
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/fstool.zig"),
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/fstool.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "args", .module = args_mod },
+            },
+        }),
     });
-
-    exe.root_module.addImport("args", args_mod);
 
     b.installArtifact(exe);
 }

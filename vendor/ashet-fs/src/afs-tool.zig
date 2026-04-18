@@ -7,22 +7,18 @@ var verbose: bool = true;
 var stderr: *std.Io.Writer = undefined;
 var stdout: *std.Io.Writer = undefined;
 
-pub fn main() !u8 {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
+pub fn main(init: std.process.Init) !u8 {
     var stderr_buff: [1024]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writer(&stderr_buff);
+    var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buff);
     stderr = &stderr_writer.interface;
     defer stderr.flush() catch {};
 
     var stdout_buff: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buff);
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buff);
     stdout = &stdout_writer.interface;
     defer stdout.flush() catch {};
 
-    var cli = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, allocator, .print) catch return 1;
+    var cli = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, init, .print) catch return 1;
     defer cli.deinit();
 
     if (cli.options.help) {
@@ -37,18 +33,19 @@ pub fn main() !u8 {
         return 1;
     };
 
-    var image_file = try std.fs.cwd().openFile(image_file_name, .{ .mode = .read_write });
-    defer image_file.close();
+    var image_file = try std.Io.Dir.cwd().openFile(init.io, image_file_name, .{ .mode = .read_write });
+    defer image_file.close(init.io);
 
-    const image_file_stat = try image_file.stat();
+    const image_file_stat = try image_file.stat(init.io);
 
     if (image_file_stat.size % @sizeOf(Block) != 0) {
         try stderr.writeAll("Image file does not have a size that is a multiple of 512!\n");
         return 1;
     }
 
-    var block_device = BlockDevice{
+    var block_device: BlockDevice = .{
         .file = image_file,
+        .io = init.io,
         .block_count = std.math.cast(u32, image_file_stat.size / @sizeOf(Block)) orelse return error.DiskTooLarge,
     };
 
@@ -67,7 +64,7 @@ pub fn main() !u8 {
             return try usageError("format <root> only accepts none or a single positional argument!");
         }
 
-        afs.format(block_device.interface(), std.time.nanoTimestamp()) catch |err| {
+        afs.format(block_device.interface(), std.Io.Timestamp.now(init.io, .real).toNanoseconds()) catch |err| {
             try stderr.writeAll(switch (err) {
                 error.DeviceTooSmall => "error: the device does not contain enough blocks.\n",
                 error.OperationTimeout => "error: disk timeout.\n",
@@ -78,11 +75,11 @@ pub fn main() !u8 {
         };
 
         if (cli.positionals.len > 0) {
-            var dir = try std.fs.cwd().openDir(cli.positionals[0], .{ .iterate = true });
-            defer dir.close();
+            var dir = try std.Io.Dir.cwd().openDir(init.io, cli.positionals[0], .{ .iterate = true });
+            defer dir.close(init.io);
 
             var fs = try FileSystem.init(block_device.interface());
-            try copyDirectoryToDisk(&fs, dir, fs.root_directory);
+            try copyDirectoryToDisk(&fs, init.io, dir, fs.root_directory);
         }
 
         return 0;
@@ -185,7 +182,7 @@ pub fn main() !u8 {
             const source_path = cli.positionals[0];
             const dest_path = cli.positionals[1];
 
-            const source_stat = try std.fs.cwd().statFile(source_path);
+            const source_stat = try std.Io.Dir.cwd().statFile(init.io, source_path, .{});
 
             const is_dir = switch (source_stat.kind) {
                 .file => false,
@@ -199,19 +196,19 @@ pub fn main() !u8 {
             if (is_dir) {
                 const target_dir = try resolvePath(&fs, dest_path, .directory);
 
-                var dir = try std.fs.cwd().openDir(source_path, .{ .iterate = true });
-                defer dir.close();
+                var dir = try std.Io.Dir.cwd().openDir(init.io, source_path, .{ .iterate = true });
+                defer dir.close(init.io);
 
-                try copyDirectoryToDisk(&fs, dir, target_dir);
+                try copyDirectoryToDisk(&fs, init.io, dir, target_dir);
             } else {
                 const target_dir = try resolvePath(&fs, std.fs.path.dirname(dest_path) orelse "/", .directory);
 
                 const dest_name = std.fs.path.basename(dest_path);
 
-                var src_file = try std.fs.cwd().openFile(source_path, .{});
-                defer src_file.close();
+                var src_file = try std.Io.Dir.cwd().openFile(init.io, source_path, .{});
+                defer src_file.close(init.io);
 
-                try copyFileToDirectory(&fs, target_dir, src_file, dest_name);
+                try copyFileToDirectory(&fs, target_dir, init.io, src_file, dest_name);
             }
         },
         .get => @panic("get not implemented yet!"),
@@ -459,7 +456,8 @@ const Block = afs.Block;
 const BlockDevice = struct {
     const BD = @This();
 
-    file: std.fs.File,
+    file: std.Io.File,
+    io: std.Io,
     block_count: u32,
 
     pub fn interface(bd: *BD) afs.BlockDevice {
@@ -483,7 +481,7 @@ const BlockDevice = struct {
         // std.debug.print("write block {}:\n", .{offset});
         const bd = fromCtx(ctx);
 
-        var file_writer = bd.file.writer(&.{});
+        var file_writer = bd.file.writer(bd.io, &.{});
         const writer = &file_writer.interface;
 
         file_writer.seekTo(512 * offset) catch |err| {
@@ -500,7 +498,7 @@ const BlockDevice = struct {
         // std.debug.print("read block {}\n", .{offset});
         const bd = fromCtx(ctx);
 
-        var file_reader = bd.file.reader(&.{});
+        var file_reader = bd.file.reader(bd.io, &.{});
         const reader = &file_reader.interface;
 
         file_reader.seekTo(512 * offset) catch |err| {
@@ -520,57 +518,71 @@ const BlockDevice = struct {
     };
 };
 
-fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.Dir, target_dir: afs.DirectoryHandle) !void {
+fn copyDirectoryToDisk(fs: *FileSystem, io: std.Io, src_dir: std.Io.Dir, target_dir: afs.DirectoryHandle) !void {
     var iter = src_dir.iterate();
 
-    while (try iter.next()) |_entry| {
-        const entry: std.fs.Dir.Entry = _entry;
+    while (try iter.next(io)) |_entry| {
+        const entry: std.Io.Dir.Entry = _entry;
 
-        var realpath_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        var realpath_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
 
         if (verbose) {
             std.log.info("copying {s}...", .{
-                try src_dir.realpath(entry.name, &realpath_buffer),
+                blk: {
+                    const len = try src_dir.realPathFile(io, entry.name, &realpath_buffer);
+                    break :blk realpath_buffer[0..len];
+                },
             });
         }
 
         switch (entry.kind) {
             .directory => {
-                var src_child_dir = try src_dir.openDir(entry.name, .{ .iterate = true });
-                defer src_child_dir.close();
+                var src_child_dir = try src_dir.openDir(io, entry.name, .{ .iterate = true });
+                defer src_child_dir.close(io);
 
-                const dst_child_dir = fs.createDirectory(target_dir, entry.name, std.time.nanoTimestamp()) catch |err| switch (err) {
+                const dst_child_dir = fs.createDirectory(
+                    target_dir,
+                    entry.name,
+                    std.Io.Timestamp.now(io, .real).toNanoseconds(),
+                ) catch |err| switch (err) {
                     error.FileAlreadyExists => (try fs.getEntry(target_dir, entry.name)).handle.directory,
                     else => |e| return e,
                 };
 
-                try copyDirectoryToDisk(fs, src_child_dir, dst_child_dir);
+                try copyDirectoryToDisk(fs, io, src_child_dir, dst_child_dir);
             },
             .file => {
-                var src_file = try src_dir.openFile(entry.name, .{});
-                defer src_file.close();
+                var src_file = try src_dir.openFile(io, entry.name, .{});
+                defer src_file.close(io);
 
-                try copyFileToDirectory(fs, target_dir, src_file, entry.name);
+                try copyFileToDirectory(fs, target_dir, io, src_file, entry.name);
             },
 
             else => std.log.err("cannot copy {s}: {s} is not a supported file type!", .{
-                try src_dir.realpath(entry.name, &realpath_buffer),
+                blk: {
+                    const len = try src_dir.realPathFile(io, entry.name, &realpath_buffer);
+                    break :blk realpath_buffer[0..len];
+                },
                 @tagName(entry.kind),
             }),
         }
     }
 }
 
-fn copyFileToDirectory(fs: *FileSystem, target_dir: afs.DirectoryHandle, src: std.fs.File, dst_name: []const u8) !void {
-    const stat = try src.stat();
+fn copyFileToDirectory(fs: *FileSystem, target_dir: afs.DirectoryHandle, io: std.Io, src: std.Io.File, dst_name: []const u8) !void {
+    const stat = try src.stat(io);
 
-    const dst_file = try fs.createFile(target_dir, dst_name, std.time.nanoTimestamp());
+    const dst_file = try fs.createFile(
+        target_dir,
+        dst_name,
+        std.Io.Timestamp.now(io, .real).toNanoseconds(),
+    );
     try fs.resizeFile(dst_file, stat.size);
 
     var block_data: [8192]u8 = undefined;
     var i: u64 = 0;
     while (i < stat.size) {
-        const len = try src.readAll(&block_data);
+        const len = try src.readStreaming(io, &.{&block_data});
         if (len == 0)
             return error.UnexpectedEndOfFile;
         const len2 = try fs.writeData(dst_file, i, block_data[0..len], null);
