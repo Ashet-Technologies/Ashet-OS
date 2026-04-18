@@ -111,7 +111,8 @@ pub fn main() !void {
         desktop,
         .{
             .title = "Shepard",
-            .initial_size = Size.new(200, 150),
+            .initial_size = .new(200, 150),
+            .max_size = .new(800, 480),
         },
     );
     defer window.destroy_now();

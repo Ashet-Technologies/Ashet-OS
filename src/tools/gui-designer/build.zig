@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) void {
     const args_dep = b.dependency("args", .{});
 
     const abi_dep = b.dependency("abi", .{});
+    const libgui_dep = b.dependency("libgui", .{});
 
     const zgui_dep = b.dependency("zgui", .{
         .shared = false,
@@ -42,6 +43,7 @@ pub fn build(b: *std.Build) void {
     editor_mod.addImport("zopengl", zopengl_dep.module("root"));
     editor_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
     editor_mod.addImport("args", args_dep.module("args"));
+    editor_mod.addImport("libgui", libgui_dep.module("gui"));
 
     const editor_exe = b.addExecutable(.{
         .name = "gui-editor",
@@ -60,6 +62,7 @@ pub fn build(b: *std.Build) void {
 
     compiler_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
     compiler_mod.addImport("args", args_dep.module("args"));
+    compiler_mod.addImport("libgui", libgui_dep.module("gui"));
 
     const compiler_exe = b.addExecutable(.{
         .name = "gui-compiler",

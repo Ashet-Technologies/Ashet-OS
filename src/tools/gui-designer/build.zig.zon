@@ -36,6 +36,9 @@
         .widgets = .{
             .path = "../../userland/apps/widgets",
         },
+        .libgui = .{
+            .path = "../../userland/libs/libgui",
+        },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
 }

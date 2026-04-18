@@ -313,7 +313,74 @@ pub const Editor = struct {
             }
         }
 
-        editor.options.grid_size = @max(1, @min(256, editor.options.grid_size));
+        editor.options.grid_size = @max(grid_min, @min(grid_max, editor.options.grid_size));
+
+        zgui.sameLine(.{});
+
+        zgui.textUnformatted("Zoom");
+        zgui.sameLine(.{});
+        zgui.setNextItemWidth(40);
+
+        const zoom_min = 1;
+        const zoom_max = 256;
+
+        _ = zgui.dragInt("##ZoomFactor", .{
+            .v = &editor.options.zoom_factor,
+            .speed = 1,
+            .min = zoom_min,
+            .max = zoom_max,
+        });
+
+        zgui.sameLine(.{});
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.zoom_factor <= zoom_min) });
+            defer zgui.endDisabled();
+            if (zgui.button("-##minus_ZoomFactor", .{})) {
+                editor.options.zoom_factor -|= 1;
+            }
+        }
+        zgui.sameLine(.{});
+
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.zoom_factor >= zoom_max) });
+            defer zgui.endDisabled();
+            if (zgui.button("+##plus_ZoomFactor", .{})) {
+                editor.options.zoom_factor +|= 1;
+            }
+        }
+        editor.options.zoom_factor = @max(zoom_min, @min(zoom_max, editor.options.zoom_factor));
+
+        zgui.sameLine(.{});
+
+        zgui.textUnformatted("Preview Zoom");
+        zgui.sameLine(.{});
+        zgui.setNextItemWidth(40);
+
+        _ = zgui.dragInt("##PreviewZoomFactor", .{
+            .v = &editor.options.preview_zoom_factor,
+            .speed = 1,
+            .min = zoom_min,
+            .max = zoom_max,
+        });
+
+        zgui.sameLine(.{});
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.preview_zoom_factor <= zoom_min) });
+            defer zgui.endDisabled();
+            if (zgui.button("-##minus_PreviewZoomFactor", .{})) {
+                editor.options.preview_zoom_factor -|= 1;
+            }
+        }
+        zgui.sameLine(.{});
+
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.preview_zoom_factor >= zoom_max) });
+            defer zgui.endDisabled();
+            if (zgui.button("+##plus_PreviewZoomFactor", .{})) {
+                editor.options.preview_zoom_factor +|= 1;
+            }
+        }
+        editor.options.preview_zoom_factor = @max(zoom_min, @min(zoom_max, editor.options.preview_zoom_factor));
     }
 
     fn handle_toolbox_gui(editor: *Editor) !void {
@@ -340,6 +407,7 @@ pub const Editor = struct {
             return;
 
         const window = &editor.document.window;
+        const zoom = editor.options.preview_zoom();
 
         zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 0, 0 } });
         defer zgui.popStyleVar(.{});
@@ -351,8 +419,8 @@ pub const Editor = struct {
 
         zgui.setNextWindowSize(.{
             .cond = .appearing,
-            .w = @as(f32, @floatFromInt(window.design_size.width)) + hpad,
-            .h = @as(f32, @floatFromInt(window.design_size.height)) + vpad,
+            .w = @as(f32, @floatFromInt(window.design_size.width)) * zoom + hpad,
+            .h = @as(f32, @floatFromInt(window.design_size.height)) * zoom + vpad,
         });
 
         defer zgui.end();
@@ -369,8 +437,8 @@ pub const Editor = struct {
             const frame: Rectangle = .{
                 .x = 0,
                 .y = 0,
-                .width = @intFromFloat(size[0]),
-                .height = @intFromFloat(size[1]),
+                .width = @intFromFloat(size[0] / zoom),
+                .height = @intFromFloat(size[1] / zoom),
             };
 
             for (window.widgets.items) |widget| {
@@ -398,7 +466,7 @@ pub const Editor = struct {
                     .width = h_align.compute_size(h_bounds),
                     .height = v_align.compute_size(v_bounds),
                 };
-                paintWidget(draw, base, dupe, false);
+                paintWidget(draw, base, dupe, zoom, false);
             }
         }
     }
@@ -444,6 +512,7 @@ pub const Editor = struct {
             return;
 
         const window: *model.Window = &editor.document.window;
+        const zoom = editor.options.designer_zoom();
 
         const base = zgui.getCursorScreenPos();
         const draw = zgui.getWindowDrawList();
@@ -453,20 +522,20 @@ pub const Editor = struct {
 
         const topleft = base;
         const bottomright: [2]f32 = .{
-            topleft[0] + @as(f32, @floatFromInt(window.design_size.width)),
-            topleft[1] + @as(f32, @floatFromInt(window.design_size.height)),
+            topleft[0] + @as(f32, @floatFromInt(window.design_size.width)) * zoom,
+            topleft[1] + @as(f32, @floatFromInt(window.design_size.height)) * zoom,
         };
 
         const pos: model.Point = .new(
-            @intFromFloat(mouse_pos[0] - topleft[0]),
-            @intFromFloat(mouse_pos[1] - topleft[1]),
+            @intFromFloat((mouse_pos[0] - topleft[0]) / zoom),
+            @intFromFloat((mouse_pos[1] - topleft[1]) / zoom),
         );
 
         const maybe_hovered_widget = window.widget_from_pos(pos);
 
         const is_window_clicked_raw = zgui.invisibleButton("Window Preview", .{
-            .w = @floatFromInt(window.design_size.width),
-            .h = @floatFromInt(window.design_size.height),
+            .w = @as(f32, @floatFromInt(window.design_size.width)) * zoom,
+            .h = @as(f32, @floatFromInt(window.design_size.height)) * zoom,
         });
 
         if (maybe_hovered_widget != null or editor.maybe_popup_widget != null) {
@@ -540,8 +609,8 @@ pub const Editor = struct {
 
         const drag_fdx, const drag_fdy = zgui.getMouseDragDelta(.left, .{});
 
-        const drag_dx: i16 = @intFromFloat(drag_fdx);
-        const drag_dy: i16 = @intFromFloat(drag_fdy);
+        const drag_dx: i16 = @intFromFloat(drag_fdx / zoom);
+        const drag_dy: i16 = @intFromFloat(drag_fdy / zoom);
 
         const dragging = (editor.widget_drag != null);
         const is_window_clicked = is_window_clicked_raw and !dragging;
@@ -568,7 +637,7 @@ pub const Editor = struct {
                 }
             } else if (is_window_pressed) {
                 if (maybe_hovered_widget) |hovered_widget| {
-                    if (hovered_widget.index == editor.maybe_selected_widget_index and (drag_dx != 0 or drag_dy != 0)) {
+                    if (hovered_widget.index == editor.maybe_selected_widget_index and (drag_fdx != 0 or drag_fdy != 0)) {
                         editor.widget_drag = .{
                             .widget = hovered_widget.ptr,
                             .start = hovered_widget.ptr.bounds.position(),
@@ -586,8 +655,8 @@ pub const Editor = struct {
 
         if (window.min_size.width > 0 and window.min_size.width < window.max_size.width and window.min_size.height > 0 and window.min_size.height < window.max_size.height) {
             const min_bottomright: [2]f32 = .{
-                topleft[0] + @as(f32, @floatFromInt(window.min_size.width)),
-                topleft[1] + @as(f32, @floatFromInt(window.min_size.height)),
+                topleft[0] + @as(f32, @floatFromInt(window.min_size.width)) * zoom,
+                topleft[1] + @as(f32, @floatFromInt(window.min_size.height)) * zoom,
             };
             draw.addRectFilled(.{
                 .pmin = topleft,
@@ -597,7 +666,7 @@ pub const Editor = struct {
         }
 
         if (editor.options.render_grid and editor.options.grid_size > 1) {
-            const grid_increment: f32 = @floatFromInt(editor.options.grid_size);
+            const grid_increment: f32 = @as(f32, @floatFromInt(editor.options.grid_size)) * zoom;
             std.debug.assert(grid_increment > 0);
 
             var x: f32 = topleft[0];
@@ -621,7 +690,7 @@ pub const Editor = struct {
             }
         }
         for (window.widgets.items, 0..) |widget, index| {
-            paintWidget(draw, base, widget, editor.maybe_selected_widget_index == index);
+            paintWidget(draw, base, widget, zoom, editor.maybe_selected_widget_index == index);
         }
 
         if (zgui.beginDragDropTarget()) {
@@ -629,7 +698,7 @@ pub const Editor = struct {
 
             if (zgui.getDragDropPayload()) |payload| {
                 if (widget_from_payload(editor.metadata, editor.options, payload, pos)) |widget| {
-                    paintWidget(draw, base, widget, false);
+                    paintWidget(draw, base, widget, zoom, false);
                 }
             }
 
@@ -938,15 +1007,15 @@ fn widget_from_payload(
     return new;
 }
 
-fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected: bool) void {
-    const x0: f32 = @floatFromInt(widget.bounds.x);
-    const y0: f32 = @floatFromInt(widget.bounds.y);
+fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, zoom: f32, selected: bool) void {
+    const x0: f32 = @as(f32, @floatFromInt(widget.bounds.x)) * zoom;
+    const y0: f32 = @as(f32, @floatFromInt(widget.bounds.y)) * zoom;
 
     const x = base[0] + x0;
     const y = base[1] + y0;
 
-    const w: f32 = @floatFromInt(widget.bounds.width);
-    const h: f32 = @floatFromInt(widget.bounds.height);
+    const w: f32 = @as(f32, @floatFromInt(widget.bounds.width)) * zoom;
+    const h: f32 = @as(f32, @floatFromInt(widget.bounds.height)) * zoom;
 
     {
         draw.pushClipRect(.{
@@ -1020,6 +1089,8 @@ fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected
 
 const EditorOptions = struct {
     grid_size: i32 = 10,
+    zoom_factor: i32 = 2,
+    preview_zoom_factor: i32 = 1,
 
     render_grid: bool = true,
     snap_to_grid: bool = true,
@@ -1065,5 +1136,13 @@ const EditorOptions = struct {
             .best_fit => gs / 2,
         };
         return gs * @divFloor(value + bias_offset, gs);
+    }
+
+    pub fn designer_zoom(opts: EditorOptions) f32 {
+        return @floatFromInt(@max(1, opts.zoom_factor));
+    }
+
+    pub fn preview_zoom(opts: EditorOptions) f32 {
+        return @floatFromInt(@max(1, opts.preview_zoom_factor));
     }
 };

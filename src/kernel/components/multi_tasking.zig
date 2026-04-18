@@ -157,7 +157,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         ashet.filesystem.File,
         call.resource_owner,
         open_file.outputs.handle.as_resource(),
-    ) catch @panic("unrecoverage resource leak");
+    ) catch @panic("unrecoverable resource leak");
     defer ashet.resources.destroy(&kernel_file_handle.system_resource);
 
     const bg_process = ashet.scheduler.Thread.current().?.get_executing_process();
@@ -253,7 +253,7 @@ pub const Process = struct {
     /// The IO context for scheduling IOPs
     async_context: ashet.overlapped.Context = .{},
 
-    /// unfreeable process allocations
+    /// non-releasable process allocations
     memory_arena: std.heap.ArenaAllocator,
 
     /// All associated threads.
