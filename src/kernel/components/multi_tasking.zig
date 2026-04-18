@@ -160,7 +160,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     ) catch @panic("unrecoverage resource leak");
     defer ashet.resources.destroy(&kernel_file_handle.system_resource);
 
-    const bg_process = ashet.scheduler.Thread.current().?.get_process();
+    const bg_process = ashet.scheduler.Thread.current().?.get_executing_process();
 
     const local_resource_handle = try ashet.resources.add_to_process(bg_process, &kernel_file_handle.system_resource);
     defer ashet.resources.remove_from_process(bg_process, &kernel_file_handle.system_resource);
