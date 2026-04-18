@@ -5,6 +5,9 @@ const glfw = @import("zglfw");
 const zopengl = @import("zopengl");
 const args_parser = @import("args");
 
+const gl = zopengl.bindings;
+
+const Color = @import("ashet-abi").Color;
 const model = @import("model.zig");
 
 const Size = model.Size;
@@ -14,6 +17,195 @@ const Widget = model.Widget;
 const Window = model.Window;
 const Document = model.Document;
 const Alignment = model.Alignment;
+
+const preview_texture_extent = 2048;
+const preview_background_color: Color = .from_rgb(0xCC, 0xCC, 0xCC);
+const preview_widget_color: Color = .from_rgb(0xFF, 0xFF, 0xFF);
+const preview_widget_outline_color: Color = .black;
+
+const preview_palette = blk: {
+    @setEvalBranchQuota(8192);
+    var palette: [256][4]u8 = undefined;
+    for (&palette, 0..) |*entry, index| {
+        const rgb = Color.to_rgb888(Color.from_u8(@intCast(index)));
+        entry.* = .{ rgb.r, rgb.g, rgb.b, 0xFF };
+    }
+    break :blk palette;
+};
+
+const PreviewSurface = struct {
+    texture: gl.Uint = 0,
+    indexed_pixels: []Color = &.{},
+    rgba_pixels: []u8 = &.{},
+    used_size: Size = .new(0, 0),
+    dirty: bool = true,
+
+    fn ensureInitialized(surface: *PreviewSurface, allocator: std.mem.Allocator) !void {
+        const pixel_count = preview_texture_extent * preview_texture_extent;
+
+        if (surface.indexed_pixels.len == 0) {
+            surface.indexed_pixels = try allocator.alloc(Color, pixel_count);
+            @memset(surface.indexed_pixels, preview_background_color);
+        }
+
+        if (surface.rgba_pixels.len == 0) {
+            surface.rgba_pixels = try allocator.alloc(u8, pixel_count * 4);
+            @memset(surface.rgba_pixels, 0);
+        }
+
+        if (surface.texture == 0) {
+            gl.genTextures(1, @ptrCast(&surface.texture));
+            gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(
+                gl.TEXTURE_2D,
+                0,
+                gl.RGBA8,
+                preview_texture_extent,
+                preview_texture_extent,
+                0,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                @ptrCast(surface.rgba_pixels.ptr),
+            );
+        }
+    }
+
+    fn deinit(surface: *PreviewSurface, allocator: std.mem.Allocator) void {
+        if (surface.texture != 0) {
+            gl.deleteTextures(1, @ptrCast(&surface.texture));
+            surface.texture = 0;
+        }
+
+        if (surface.rgba_pixels.len > 0) {
+            allocator.free(surface.rgba_pixels);
+            surface.rgba_pixels = &.{};
+        }
+
+        if (surface.indexed_pixels.len > 0) {
+            allocator.free(surface.indexed_pixels);
+            surface.indexed_pixels = &.{};
+        }
+
+        surface.used_size = .new(0, 0);
+        surface.dirty = true;
+    }
+
+    fn clear(surface: *PreviewSurface, color: Color) void {
+        const width: usize = surface.used_size.width;
+        const height: usize = surface.used_size.height;
+
+        for (0..height) |row| {
+            const row_offset = row * preview_texture_extent;
+            @memset(surface.indexed_pixels[row_offset .. row_offset + width], color);
+        }
+    }
+
+    fn fillRect(surface: *PreviewSurface, rect: Rectangle, color: Color) void {
+        const max_x: i32 = surface.used_size.width;
+        const max_y: i32 = surface.used_size.height;
+        const rect_width: i32 = rect.width;
+        const rect_height: i32 = rect.height;
+
+        const x0: i32 = std.math.clamp(rect.x, 0, max_x);
+        const y0: i32 = std.math.clamp(rect.y, 0, max_y);
+        const x1: i32 = std.math.clamp(rect.x + rect_width, 0, max_x);
+        const y1: i32 = std.math.clamp(rect.y + rect_height, 0, max_y);
+
+        if (x0 >= x1 or y0 >= y1)
+            return;
+
+        for (@as(usize, @intCast(y0))..@as(usize, @intCast(y1))) |row| {
+            const row_offset = row * preview_texture_extent + @as(usize, @intCast(x0));
+            @memset(surface.indexed_pixels[row_offset .. row_offset + @as(usize, @intCast(x1 - x0))], color);
+        }
+    }
+
+    fn outlineRect(surface: *PreviewSurface, rect: Rectangle, color: Color) void {
+        if (rect.width == 0 or rect.height == 0)
+            return;
+
+        surface.fillRect(.{
+            .x = rect.x,
+            .y = rect.y,
+            .width = rect.width,
+            .height = 1,
+        }, color);
+
+        if (rect.height > 1) {
+            surface.fillRect(.{
+                .x = rect.x,
+                .y = rect.y +| @as(i16, @intCast(rect.height - 1)),
+                .width = rect.width,
+                .height = 1,
+            }, color);
+        }
+
+        if (rect.height > 2) {
+            surface.fillRect(.{
+                .x = rect.x,
+                .y = rect.y +| 1,
+                .width = 1,
+                .height = rect.height - 2,
+            }, color);
+
+            if (rect.width > 1) {
+                surface.fillRect(.{
+                    .x = rect.x +| @as(i16, @intCast(rect.width - 1)),
+                    .y = rect.y +| 1,
+                    .width = 1,
+                    .height = rect.height - 2,
+                }, color);
+            }
+        }
+    }
+
+    fn expandToRgba(surface: *PreviewSurface) void {
+        const width: usize = surface.used_size.width;
+        const height: usize = surface.used_size.height;
+
+        for (0..height) |row| {
+            const row_offset = row * preview_texture_extent;
+            for (0..width) |col| {
+                const pixel_offset = row_offset + col;
+                const rgba_offset = pixel_offset * 4;
+                const color = preview_palette[surface.indexed_pixels[pixel_offset].to_u8()];
+
+                surface.rgba_pixels[rgba_offset + 0] = color[0];
+                surface.rgba_pixels[rgba_offset + 1] = color[1];
+                surface.rgba_pixels[rgba_offset + 2] = color[2];
+                surface.rgba_pixels[rgba_offset + 3] = color[3];
+            }
+        }
+    }
+
+    fn upload(surface: *PreviewSurface) void {
+        if (surface.used_size.width == 0 or surface.used_size.height == 0)
+            return;
+
+        surface.expandToRgba();
+
+        gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, preview_texture_extent);
+        gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            @intCast(surface.used_size.width),
+            @intCast(surface.used_size.height),
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            @ptrCast(surface.rgba_pixels.ptr),
+        );
+        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    }
+};
 
 pub const CliOptions = struct {
     help: bool = false,
@@ -104,10 +296,10 @@ pub fn main() !u8 {
 
     try zopengl.loadCoreProfile(glfw.getProcAddress, gl_major, gl_minor);
 
-    const gl = zopengl.bindings;
-
     zgui.init(allocator);
     defer zgui.deinit();
+
+    defer editor.deinit();
 
     zgui.io.setIniFilename(null);
 
@@ -170,7 +362,12 @@ pub const Editor = struct {
 
     widget_drag: ?DragInfo = null,
 
+    preview_surface: PreviewSurface = .{},
     preview_visible: bool = false,
+
+    pub fn deinit(editor: *Editor) void {
+        editor.preview_surface.deinit(editor.document.allocator);
+    }
 
     pub fn handle_gui(editor: *Editor) !void {
         editor.setup_dockspace();
@@ -194,6 +391,15 @@ pub const Editor = struct {
     fn select_by_index(editor: *Editor, index: ?usize) void {
         editor.maybe_selected_widget_index = index;
         editor.widget_drag = null;
+    }
+
+    fn invalidate_preview(editor: *Editor) void {
+        editor.preview_surface.dirty = true;
+    }
+
+    fn touch(editor: *Editor, changed: bool) void {
+        if (changed)
+            editor.invalidate_preview();
     }
 
     fn move_to_index(editor: *Editor, action: struct { from: usize, to: usize }) void {
@@ -238,6 +444,8 @@ pub const Editor = struct {
                 move_range[0] = clone;
             }
         }
+
+        editor.invalidate_preview();
 
         // Fixup selection:
         if (editor.maybe_selected_widget_index == from) {
@@ -428,47 +636,63 @@ pub const Editor = struct {
             .flags = .{ .no_docking = true, .no_collapse = true },
             .popen = &editor.preview_visible,
         })) {
-            const draw = zgui.getWindowDrawList();
-
-            const base: [2]f32 = zgui.getCursorScreenPos();
-
             const size: [2]f32 = zgui.getContentRegionAvail();
 
-            const frame: Rectangle = .{
-                .x = 0,
-                .y = 0,
-                .width = @intFromFloat(size[0] / zoom),
-                .height = @intFromFloat(size[1] / zoom),
+            const frame_size: Size = .new(
+                @intFromFloat(@max(0, size[0] / zoom)),
+                @intFromFloat(@max(0, size[1] / zoom)),
+            );
+
+            if (frame_size.width == 0 or frame_size.height == 0) {
+                zgui.textUnformatted("Preview is too small.");
+                return;
+            }
+
+            if (frame_size.width > preview_texture_extent or frame_size.height > preview_texture_extent) {
+                zgui.text("Preview exceeds {d}x{d}.", .{ preview_texture_extent, preview_texture_extent });
+                return;
+            }
+
+            if (editor.preview_surface.used_size.width != frame_size.width or editor.preview_surface.used_size.height != frame_size.height) {
+                editor.preview_surface.used_size = frame_size;
+                editor.invalidate_preview();
+            }
+
+            if (editor.preview_surface.dirty) {
+                try editor.render_preview(frame_size);
+            }
+
+            const tex_ref: zgui.TextureRef = .{
+                .tex_data = null,
+                .tex_id = @enumFromInt(editor.preview_surface.texture),
             };
 
-            for (window.widgets.items) |widget| {
-                const h_align: Alignment = .from_anchor(widget.anchor.left, widget.anchor.right);
-                const v_align: Alignment = .from_anchor(widget.anchor.top, widget.anchor.bottom);
-
-                const h_bounds: Alignment.Bounds = .{
-                    .near_margin = widget.bounds.x,
-                    .far_margin = @intCast(window.design_size.width -| (@as(i32, widget.bounds.x) +| widget.bounds.width)),
-                    .size = widget.bounds.width,
-                    .limit = frame.width,
-                };
-                const v_bounds: Alignment.Bounds = .{
-                    .near_margin = widget.bounds.y,
-                    .far_margin = @intCast(window.design_size.height -| (@as(i32, widget.bounds.y) +| widget.bounds.height)),
-                    .size = widget.bounds.height,
-                    .limit = frame.height,
-                };
-
-                var dupe: Widget = widget;
-
-                dupe.bounds = .{
-                    .x = h_align.compute_pos(h_bounds),
-                    .y = v_align.compute_pos(v_bounds),
-                    .width = h_align.compute_size(h_bounds),
-                    .height = v_align.compute_size(v_bounds),
-                };
-                paintWidget(draw, base, dupe, zoom, false);
-            }
+            zgui.image(tex_ref, .{
+                .w = @as(f32, @floatFromInt(frame_size.width)) * zoom,
+                .h = @as(f32, @floatFromInt(frame_size.height)) * zoom,
+                .uv1 = .{
+                    @as(f32, @floatFromInt(frame_size.width)) / preview_texture_extent,
+                    @as(f32, @floatFromInt(frame_size.height)) / preview_texture_extent,
+                },
+            });
         }
+    }
+
+    fn render_preview(editor: *Editor, frame_size: Size) !void {
+        const window = &editor.document.window;
+
+        try editor.preview_surface.ensureInitialized(editor.document.allocator);
+        editor.preview_surface.used_size = frame_size;
+        editor.preview_surface.clear(preview_background_color);
+
+        for (window.widgets.items) |widget| {
+            const bounds = resolve_preview_widget_bounds(window, frame_size, widget);
+            editor.preview_surface.fillRect(bounds, preview_widget_color);
+            editor.preview_surface.outlineRect(bounds, preview_widget_outline_color);
+        }
+
+        editor.preview_surface.upload();
+        editor.preview_surface.dirty = false;
     }
 
     fn handle_hierarchy_gui(editor: *Editor) !void {
@@ -561,18 +785,21 @@ pub const Editor = struct {
                         const new_pos = editor.options.snap_pos(target_widget.ptr.bounds.position());
                         target_widget.ptr.bounds.x = new_pos.x;
                         target_widget.ptr.bounds.y = new_pos.y;
+                        editor.invalidate_preview();
                     }
 
                     if (zgui.menuItem("Shrink size to grid", .{})) {
                         const new_size = editor.options.snap_size(target_widget.ptr.bounds.size(), .shrink);
                         target_widget.ptr.bounds.width = new_size.width;
                         target_widget.ptr.bounds.height = new_size.height;
+                        editor.invalidate_preview();
                     }
 
                     if (zgui.menuItem("Grow size to grid", .{})) {
                         const new_size = editor.options.snap_size(target_widget.ptr.bounds.size(), .grow);
                         target_widget.ptr.bounds.width = new_size.width;
                         target_widget.ptr.bounds.height = new_size.height;
+                        editor.invalidate_preview();
                     }
 
                     _ = zgui.separator();
@@ -625,8 +852,11 @@ pub const Editor = struct {
                 drag.start.y +| drag_dy,
             ));
 
-            drag.widget.bounds.x = newpos.x;
-            drag.widget.bounds.y = newpos.y;
+            if (drag.widget.bounds.x != newpos.x or drag.widget.bounds.y != newpos.y) {
+                drag.widget.bounds.x = newpos.x;
+                drag.widget.bounds.y = newpos.y;
+                editor.invalidate_preview();
+            }
         } else {
             // "Not dragging"
             if (is_window_clicked) {
@@ -706,6 +936,7 @@ pub const Editor = struct {
                 if (widget_from_payload(editor.metadata, editor.options, payload, pos)) |widget| {
                     try window.widgets.append(editor.document.allocator, widget);
                     editor.select_by_index(window.widgets.items.len - 1);
+                    editor.invalidate_preview();
                 }
             }
         }
@@ -759,13 +990,14 @@ pub const Editor = struct {
                     _ = zgui.tableNextColumn();
                 }
 
-                pub fn sizeField(self: @This(), comptime display: [:0]const u8, value_ptr: anytype, min: anytype, max: anytype) void {
+                pub fn sizeField(self: @This(), comptime display: [:0]const u8, value_ptr: anytype, min: anytype, max: anytype) bool {
                     self.beginField(display);
 
                     zgui.beginDisabled(.{ .disabled = min >= max });
                     defer zgui.endDisabled();
 
                     var value: i32 = value_ptr.*;
+                    const previous = value;
 
                     _ = zgui.dragInt("##edit_" ++ display, .{ .v = &value, .min = min, .max = max });
 
@@ -782,6 +1014,7 @@ pub const Editor = struct {
                     value = std.math.clamp(value, min, max);
 
                     value_ptr.* = @intCast(value);
+                    return value != previous;
                 }
             };
             var utils: Utils = .{};
@@ -832,11 +1065,11 @@ pub const Editor = struct {
 
                 utils.header("Geometry");
 
-                utils.sizeField("X", &selected_widget.bounds.x, std.math.minInt(i16), std.math.maxInt(i16));
-                utils.sizeField("Y", &selected_widget.bounds.y, std.math.minInt(i16), std.math.maxInt(i16));
+                editor.touch(utils.sizeField("X", &selected_widget.bounds.x, std.math.minInt(i16), std.math.maxInt(i16)));
+                editor.touch(utils.sizeField("Y", &selected_widget.bounds.y, std.math.minInt(i16), std.math.maxInt(i16)));
 
-                utils.sizeField("Width", &selected_widget.bounds.width, selected_widget.class.min_size.width, selected_widget.class.max_size.width);
-                utils.sizeField("Height", &selected_widget.bounds.height, selected_widget.class.min_size.height, selected_widget.class.max_size.height);
+                editor.touch(utils.sizeField("Width", &selected_widget.bounds.width, selected_widget.class.min_size.width, selected_widget.class.max_size.width));
+                editor.touch(utils.sizeField("Height", &selected_widget.bounds.height, selected_widget.class.min_size.height, selected_widget.class.max_size.height));
 
                 utils.beginField("Anchor");
 
@@ -846,25 +1079,25 @@ pub const Editor = struct {
                     zgui.tableNextRow(.{});
 
                     _ = zgui.tableSetColumnIndex(1);
-                    _ = zgui.checkbox("Top", .{ .v = &selected_widget.anchor.top });
+                    editor.touch(zgui.checkbox("Top", .{ .v = &selected_widget.anchor.top }));
 
                     zgui.tableNextRow(.{});
 
                     _ = zgui.tableSetColumnIndex(0);
-                    _ = zgui.checkbox("Left", .{ .v = &selected_widget.anchor.left });
+                    editor.touch(zgui.checkbox("Left", .{ .v = &selected_widget.anchor.left }));
                     _ = zgui.tableSetColumnIndex(2);
-                    _ = zgui.checkbox("Right", .{ .v = &selected_widget.anchor.right });
+                    editor.touch(zgui.checkbox("Right", .{ .v = &selected_widget.anchor.right }));
 
                     zgui.tableNextRow(.{});
 
                     _ = zgui.tableSetColumnIndex(1);
-                    _ = zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom });
+                    editor.touch(zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom }));
                 }
 
                 utils.header("Visuals");
 
                 utils.beginField("Visible");
-                _ = zgui.checkbox("##Visible", .{ .v = &selected_widget.visible });
+                editor.touch(zgui.checkbox("##Visible", .{ .v = &selected_widget.visible }));
 
                 if (selected_widget.class.properties.count() > 0) {
                     utils.header("Widget Properties");
@@ -908,14 +1141,14 @@ pub const Editor = struct {
 
                 utils.header("Geometry");
 
-                utils.sizeField("Min Width", &window.min_size.width, 0, window.max_size.width);
-                utils.sizeField("Min Height", &window.min_size.height, 0, window.max_size.height);
+                editor.touch(utils.sizeField("Min Width", &window.min_size.width, 0, window.max_size.width));
+                editor.touch(utils.sizeField("Min Height", &window.min_size.height, 0, window.max_size.height));
 
-                utils.sizeField("Max Width", &window.max_size.width, window.min_size.width, std.math.maxInt(u15));
-                utils.sizeField("Max Height", &window.max_size.height, window.min_size.height, std.math.maxInt(u15));
+                editor.touch(utils.sizeField("Max Width", &window.max_size.width, window.min_size.width, std.math.maxInt(u15)));
+                editor.touch(utils.sizeField("Max Height", &window.max_size.height, window.min_size.height, std.math.maxInt(u15)));
 
-                utils.sizeField("Design Width", &window.design_size.width, window.min_size.width, window.max_size.width);
-                utils.sizeField("Design Height", &window.design_size.height, window.min_size.height, window.max_size.height);
+                editor.touch(utils.sizeField("Design Width", &window.design_size.width, window.min_size.width, window.max_size.width));
+                editor.touch(utils.sizeField("Design Height", &window.design_size.height, window.min_size.height, window.max_size.height));
             }
         }
     }
@@ -1005,6 +1238,31 @@ fn widget_from_payload(
     };
 
     return new;
+}
+
+fn resolve_preview_widget_bounds(window: *const Window, frame_size: Size, widget: Widget) Rectangle {
+    const h_align: Alignment = .from_anchor(widget.anchor.left, widget.anchor.right);
+    const v_align: Alignment = .from_anchor(widget.anchor.top, widget.anchor.bottom);
+
+    const h_bounds: Alignment.Bounds = .{
+        .near_margin = widget.bounds.x,
+        .far_margin = @intCast(window.design_size.width -| (@as(i32, widget.bounds.x) +| widget.bounds.width)),
+        .size = widget.bounds.width,
+        .limit = frame_size.width,
+    };
+    const v_bounds: Alignment.Bounds = .{
+        .near_margin = widget.bounds.y,
+        .far_margin = @intCast(window.design_size.height -| (@as(i32, widget.bounds.y) +| widget.bounds.height)),
+        .size = widget.bounds.height,
+        .limit = frame_size.height,
+    };
+
+    return .{
+        .x = h_align.compute_pos(h_bounds),
+        .y = v_align.compute_pos(v_bounds),
+        .width = h_align.compute_size(h_bounds),
+        .height = v_align.compute_size(v_bounds),
+    };
 }
 
 fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, zoom: f32, selected: bool) void {
