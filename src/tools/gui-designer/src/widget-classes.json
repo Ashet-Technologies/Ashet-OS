@@ -3,7 +3,25 @@
         "Panel": {},
         "Label": {
             "properties": {
-                "text": "string"
+                "text": "string",
+                "horizontal_alignment": {
+                    "type": "enum",
+                    "default": "middle",
+                    "values": {
+                        "Left": "near",
+                        "Center": "middle",
+                        "Right": "far"
+                    }
+                },
+                "vertical_alignment": {
+                    "type": "enum",
+                    "default": "middle",
+                    "values": {
+                        "Top": "near",
+                        "Middle": "middle",
+                        "Bottom": "far"
+                    }
+                }
             }
         },
         "Button": {

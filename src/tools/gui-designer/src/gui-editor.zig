@@ -1158,12 +1158,26 @@ pub const Editor = struct {
                         const field_key = try std.fmt.bufPrintZ(&key_buf, "##userprop_{s}", .{prop_name});
 
                         switch (gop.value_ptr.*) {
-                            .bool => |*data| _ = zgui.checkbox(field_key, .{ .v = data }),
+                            .bool => |*data| editor.touch(zgui.checkbox(field_key, .{ .v = data })),
 
-                            .int => |*data| _ = zgui.inputInt(field_key, .{ .v = data }),
-                            .float => |*data| _ = zgui.inputFloat(field_key, .{ .v = data }),
+                            .int => |*data| editor.touch(zgui.inputInt(field_key, .{ .v = data })),
+                            .float => |*data| editor.touch(zgui.inputFloat(field_key, .{ .v = data })),
                             .string => |*data| {
-                                _ = zgui.inputText(field_key, .{ .buf = &data.data });
+                                editor.touch(zgui.inputText(field_key, .{ .buf = &data.data }));
+                            },
+                            .@"enum" => |*data| {
+                                const preview_value = prop_desc.get_enum_option_name(data.slice()) orelse data.slice();
+
+                                if (zgui.beginCombo(field_key, .{ .preview_value = preview_value })) {
+                                    defer zgui.endCombo();
+
+                                    for (prop_desc.enum_options) |option| {
+                                        if (zgui.selectable(option.name, .{ .selected = std.mem.eql(u8, option.value.slice(), data.slice()) })) {
+                                            data.* = option.value;
+                                            editor.invalidate_preview();
+                                        }
+                                    }
+                                }
                             },
                             .color => |*data| {
                                 const rgb = data.to_rgb888();
@@ -1172,9 +1186,10 @@ pub const Editor = struct {
                                     @floatFromInt(rgb.g),
                                     @floatFromInt(rgb.b),
                                 };
-                                _ = zgui.colorEdit3(field_key, .{ .col = &rgbf });
+                                const changed = zgui.colorEdit3(field_key, .{ .col = &rgbf });
 
                                 data.* = .from_rgbf(rgbf[0], rgbf[1], rgbf[2]);
+                                editor.touch(changed);
                             },
                         }
                     }
@@ -1192,7 +1207,7 @@ pub const Editor = struct {
                 var icon_changed = zgui.inputText("##WindowIconPath", .{ .buf = &window.icon_path.data });
 
                 zgui.sameLine(.{});
-                if (zgui.button("Browse##WindowIcon", .{})) {
+                if (zgui.button("...##WindowIcon", .{})) {
                     const current_icon_path = window.icon_path.slice();
                     const default_path: ?[:0]const u8 = if (current_icon_path.len > 0)
                         current_icon_path
@@ -1208,7 +1223,7 @@ pub const Editor = struct {
                 }
 
                 zgui.sameLine(.{});
-                if (zgui.button("Clear##WindowIcon", .{})) {
+                if (zgui.button("×##WindowIcon", .{})) {
                     window.icon_path = .empty;
                     icon_changed = true;
                 }
@@ -1522,6 +1537,9 @@ fn encode_preview_widget(queue: *CommandQueue, preview_theme: *const PreviewThem
         var label: standard_widgets.Label = .{
             .text = preview_widget_text(widget),
         };
+        const LabelAlignment = @TypeOf(label.horizontal_alignment);
+        label.horizontal_alignment = preview_widget_enum(LabelAlignment, widget, "horizontal_alignment", label.horizontal_alignment);
+        label.vertical_alignment = preview_widget_enum(LabelAlignment, widget, "vertical_alignment", label.vertical_alignment);
         try standard_widgets.Label.paint(&label, queue, size);
         return;
     }
@@ -1549,7 +1567,22 @@ fn encode_preview_widget(queue: *CommandQueue, preview_theme: *const PreviewThem
     }
 
     if (std.mem.eql(u8, class_name, "ListBox")) {
-        var listbox: standard_widgets.ListBox = .{};
+        const ListBoxData = struct {
+            var buffer: [64]u8 = undefined;
+
+            fn get_item(_: ?*anyopaque, index: usize, item: *standard_widgets.ListBox.Item) callconv(.c) void {
+                item.* = .new(
+                    std.fmt.bufPrint(&buffer, "Item {}", .{index}) catch "Item ???",
+                );
+            }
+        };
+
+        var listbox: standard_widgets.ListBox = .{
+            .get_item_callback = ListBoxData.get_item,
+            .get_item_context = null,
+            .item_count = 30,
+            .selected_index = 3,
+        };
         try standard_widgets.ListBox.paint(&listbox, queue, size);
         return;
     }
@@ -1571,6 +1604,20 @@ fn preview_widget_text(widget: Widget) std.ArrayListUnmanaged(u8) {
     }
 
     return .empty;
+}
+
+fn preview_widget_enum(comptime T: type, widget: Widget, property_name: [:0]const u8, default: T) T {
+    if (widget.properties.getPtr(property_name)) |value| {
+        const raw = switch (value.*) {
+            .string => |string| string.slice(),
+            .@"enum" => |string| string.slice(),
+            else => return default,
+        };
+
+        return std.meta.stringToEnum(T, raw) orelse default;
+    }
+
+    return default;
 }
 
 fn encode_preview_placeholder(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {

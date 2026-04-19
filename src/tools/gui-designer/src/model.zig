@@ -99,8 +99,32 @@ pub const Class = struct {
 };
 
 pub const PropertyDescriptor = struct {
+    pub const EnumOption = struct {
+        name: [:0]const u8,
+        value: Value.String,
+    };
+
     name: [:0]const u8,
     default_value: Value,
+    enum_options: []const EnumOption = &.{},
+
+    pub fn is_valid_enum_value(prop: *const PropertyDescriptor, value: []const u8) bool {
+        for (prop.enum_options) |option| {
+            if (std.mem.eql(u8, option.value.slice(), value))
+                return true;
+        }
+
+        return false;
+    }
+
+    pub fn get_enum_option_name(prop: *const PropertyDescriptor, value: []const u8) ?[:0]const u8 {
+        for (prop.enum_options) |option| {
+            if (std.mem.eql(u8, option.value.slice(), value))
+                return option.name;
+        }
+
+        return null;
+    }
 };
 
 pub const Type = enum {
@@ -109,6 +133,7 @@ pub const Type = enum {
     float,
     bool,
     color,
+    @"enum",
 };
 
 pub const Value = union(Type) {
@@ -117,6 +142,7 @@ pub const Value = union(Type) {
     float: f32,
     bool: bool,
     color: ashet.Color,
+    @"enum": String,
 
     pub const String = struct {
         pub const empty: String = .{ .data = @splat(0) };
@@ -174,6 +200,12 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
         properties: std.json.Value = .null,
     };
 
+    const JEnumProperty = struct {
+        type: []const u8,
+        values: std.json.Value,
+        default: ?[]const u8 = null,
+    };
+
     const arena: *std.heap.ArenaAllocator = blk: {
         const arena = try allocator.create(std.heap.ArenaAllocator);
         arena.* = .init(allocator);
@@ -215,22 +247,54 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
 
             .object => |jprops| {
                 for (jprops.keys(), jprops.values()) |propkey, value| {
-                    if (value != .string)
-                        return error.TypeMismatch;
-
-                    const proptype = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
-
                     const prop = try arena.allocator().create(PropertyDescriptor);
-                    prop.* = .{
-                        .name = try arena.allocator().dupeZ(u8, propkey),
-                        .default_value = switch (proptype) {
-                            .bool => .{ .bool = false },
-                            .color => .{ .color = .white },
-                            .int => .{ .int = 0 },
-                            .float => .{ .float = 0 },
-                            .string => .{ .string = .empty },
+                    prop.* = .{ .name = try arena.allocator().dupeZ(u8, propkey), .default_value = .{ .string = .empty } };
+
+                    switch (value) {
+                        .string => {
+                            const proptype = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
+                            prop.default_value = switch (proptype) {
+                                .bool => .{ .bool = false },
+                                .color => .{ .color = .white },
+                                .int => .{ .int = 0 },
+                                .float => .{ .float = 0 },
+                                .string => .{ .string = .empty },
+                                .@"enum" => return error.InvalidType,
+                            };
                         },
-                    };
+
+                        .object => {
+                            const jenum = try std.json.parseFromValueLeaky(JEnumProperty, arena.allocator(), value, parse_options);
+                            const proptype = std.meta.stringToEnum(Type, jenum.type) orelse return error.InvalidType;
+                            if (proptype != .@"enum")
+                                return error.InvalidType;
+                            if (jenum.values != .object)
+                                return error.TypeMismatch;
+                            if (jenum.values.object.count() == 0)
+                                return error.InvalidData;
+
+                            const options = try arena.allocator().alloc(PropertyDescriptor.EnumOption, jenum.values.object.count());
+                            for (jenum.values.object.keys(), jenum.values.object.values(), 0..) |option_name, option_value, index| {
+                                if (option_value != .string)
+                                    return error.TypeMismatch;
+
+                                options[index] = .{
+                                    .name = try arena.allocator().dupeZ(u8, option_name),
+                                    .value = try .from_slice(option_value.string),
+                                };
+                            }
+
+                            prop.enum_options = options;
+
+                            const default_value = jenum.default orelse options[0].value.slice();
+                            if (!prop.is_valid_enum_value(default_value))
+                                return error.InvalidData;
+
+                            prop.default_value = .{ .@"enum" = try .from_slice(default_value) };
+                        },
+
+                        else => return error.TypeMismatch,
+                    }
 
                     try class.properties.putNoClobber(arena.allocator(), prop.name, prop);
                 }
@@ -339,7 +403,7 @@ pub fn save_design(window: Window, stream: *std.Io.Writer) !void {
             switch (value) {
                 inline .bool, .int, .float => |val| try json.write(val),
 
-                .string => |val| try json.write(val.slice()),
+                .string, .@"enum" => |val| try json.write(val.slice()),
 
                 .color => |color| {
                     const rgb = color.to_rgb888();
@@ -429,6 +493,15 @@ pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadat
                     const value: Value = switch (prop.value_ptr.*.default_value) {
                         .string => .{
                             .string = try .from_slice(try jcast(jvalue, .string)),
+                        },
+
+                        .@"enum" => blk: {
+                            const raw = try jcast(jvalue, .string);
+                            if (!prop.value_ptr.*.is_valid_enum_value(raw))
+                                return error.BadProperty;
+                            break :blk .{
+                                .@"enum" = try .from_slice(raw),
+                            };
                         },
 
                         .int => .{
