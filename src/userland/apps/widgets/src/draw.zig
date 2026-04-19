@@ -99,13 +99,13 @@ pub const Theme = struct {
 };
 
 pub const Draw = struct {
-    enc: agp.Encoder(std.io.FixedBufferStream([]u8).Writer),
+    enc: agp.Encoder,
     theme: Theme,
     icons: IconStack,
 
     pub fn init(
         theme: Theme,
-        enc: agp.Encoder(std.io.FixedBufferStream([]u8).Writer),
+        enc: agp.Encoder,
     ) Draw {
         return .{
             .enc = enc,

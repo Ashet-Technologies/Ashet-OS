@@ -26,6 +26,8 @@ const Alignment = model.Alignment;
 const PreviewTheme = standard_widgets.Theme;
 
 const preview_texture_extent = 2048;
+const preview_window_frame_size = Size.new(6, 18);
+const preview_window_client_offset = Point.new(3, 15);
 
 const preview_sans_6_font: ashet.graphics.Font = embed_preview_font(@embedFile("sans-6.font"), .{});
 const preview_mono_8_font: ashet.graphics.Font = embed_preview_font(@embedFile("mono-8.font"), .{});
@@ -571,24 +573,23 @@ pub const Editor = struct {
 
         const window = &editor.document.window;
         const zoom = editor.options.preview_zoom();
+        const outer_size = preview_window_outer_size(window.design_size);
 
         zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 0, 0 } });
         defer zgui.popStyleVar(.{});
 
         const style = zgui.getStyle();
-
-        const hpad = 2.0 * style.window_border_size;
-        const vpad = 2.0 * style.window_border_size + 2.0 * style.frame_padding[1] + zgui.getFontSize();
+        const host_pad = 2.0 * style.window_border_size;
 
         zgui.setNextWindowSize(.{
             .cond = .appearing,
-            .w = @as(f32, @floatFromInt(window.design_size.width)) * zoom + hpad,
-            .h = @as(f32, @floatFromInt(window.design_size.height)) * zoom + vpad,
+            .w = @as(f32, @floatFromInt(outer_size.width)) * zoom + host_pad,
+            .h = @as(f32, @floatFromInt(outer_size.height)) * zoom + host_pad,
         });
 
         defer zgui.end();
         if (zgui.begin("Preview", .{
-            .flags = .{ .no_docking = true, .no_collapse = true },
+            .flags = .{ .no_docking = true, .no_collapse = true, .no_title_bar = true, .no_background = true, .no_scrollbar = true },
             .popen = &editor.preview_visible,
         })) {
             const size: [2]f32 = zgui.getContentRegionAvail();
@@ -635,27 +636,30 @@ pub const Editor = struct {
 
     fn render_preview(editor: *Editor, frame_size: Size) !void {
         const window = &editor.document.window;
+        const client_rect = preview_window_client_rect(frame_size);
 
         try editor.preview_surface.ensureInitialized(editor.document.allocator);
         editor.preview_surface.used_size = frame_size;
-        editor.preview_surface.clear(editor.preview_theme.window_active.background);
+        editor.preview_surface.clear(.black);
 
         var queue = try CommandQueue.init(editor.document.allocator);
         defer queue.deinit();
 
+        for (window.widgets.items) |widget| {
+            var bounds = resolve_preview_widget_bounds(window, Size.new(client_rect.width, client_rect.height), widget);
+            bounds.x +|= client_rect.x;
+            bounds.y +|= client_rect.y;
+            try render_preview_widget(editor, &queue, widget, bounds);
+        }
+
         queue.reset();
-        try encode_preview_window_border(&queue, editor.preview_theme, frame_size);
         try rasterize_preview_queue(editor.document.allocator, queue.data.written(), .{
             .pixels = editor.preview_surface.indexed_pixels.ptr,
             .width = frame_size.width,
             .height = frame_size.height,
             .stride = preview_texture_extent,
         });
-
-        for (window.widgets.items) |widget| {
-            const bounds = resolve_preview_widget_bounds(window, frame_size, widget);
-            try render_preview_widget(editor, &queue, widget, bounds);
-        }
+        try encode_preview_window_frame(&queue, editor.preview_theme, frame_size);
 
         editor.preview_surface.upload();
         editor.preview_surface.dirty = false;
@@ -1231,6 +1235,22 @@ fn resolve_preview_widget_bounds(window: *const Window, frame_size: Size, widget
     };
 }
 
+fn preview_window_outer_size(client_size: Size) Size {
+    return .new(
+        client_size.width +| preview_window_frame_size.width,
+        client_size.height +| preview_window_frame_size.height,
+    );
+}
+
+fn preview_window_client_rect(frame_size: Size) Rectangle {
+    return .{
+        .x = preview_window_client_offset.x,
+        .y = preview_window_client_offset.y,
+        .width = frame_size.width -| preview_window_frame_size.width,
+        .height = frame_size.height -| preview_window_frame_size.height,
+    };
+}
+
 fn embed_preview_font(data: []const u8, hint: agp_swrast.fonts.FontHint) ashet.graphics.Font {
     @setEvalBranchQuota(10_000);
     return @ptrCast(@constCast(&(agp_swrast.fonts.FontInstance.load(data, hint) catch unreachable)));
@@ -1350,43 +1370,18 @@ fn encode_preview_placeholder(queue: *CommandQueue, preview_theme: *const Previe
     try queue.draw_rect(rect, preview_theme.border_normal);
 }
 
-fn encode_preview_window_border(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {
-    const rect: Rectangle = .new(.zero, size);
-    const window_theme = preview_theme.window_active;
+fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {
+    var draw = standard_widgets.draw.Draw.init(
+        preview_theme.*,
+        agp.encoder(&queue.data.writer),
+    );
 
-    if (rect.width == 0 or rect.height == 0)
-        return;
-
-    try queue.draw_rect(rect, window_theme.border_normal);
-
-    if (rect.width > 2) {
-        try queue.draw_line(
-            .new(rect.left() +| 1, rect.top() +| 1),
-            .new(rect.right() -| 2, rect.top() +| 1),
-            window_theme.border_bright,
-        );
-    }
-
-    if (rect.height > 2) {
-        try queue.draw_line(
-            .new(rect.left() +| 1, rect.top() +| 1),
-            .new(rect.left() +| 1, rect.bottom() -| 2),
-            window_theme.border_bright,
-        );
-        try queue.draw_line(
-            .new(rect.right() -| 1, rect.top() +| 1),
-            .new(rect.right() -| 1, rect.bottom() -| 2),
-            window_theme.border_dark,
-        );
-    }
-
-    if (rect.width > 2) {
-        try queue.draw_line(
-            .new(rect.left() +| 1, rect.bottom() -| 1),
-            .new(rect.right() -| 1, rect.bottom() -| 1),
-            window_theme.border_dark,
-        );
-    }
+    try draw.window(.{
+        .bounds = .new(.zero, size),
+        .title = "",
+        .icon = null,
+        .active = true,
+    });
 }
 
 fn rasterize_preview_queue(allocator: std.mem.Allocator, command_stream: []const u8, target: agp_swrast.RenderTarget) !void {
