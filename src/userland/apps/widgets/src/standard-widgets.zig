@@ -29,16 +29,7 @@ pub fn main() !void {
 
     // TODO: Load theme from disk via common implementation shared between desktop server and
     //       widget server.
-    theme = .create_default(.{
-        .hue = .purple,
-        .saturation = 2,
-        .value = 4,
-        .border = .yellow,
-        .menu_font = try ashet.graphics.get_system_font("sans-6"),
-        .item_font = try ashet.graphics.get_system_font("sans-6"),
-        .title_font = try ashet.graphics.get_system_font("sans-6"),
-        .widget_font = try ashet.graphics.get_system_font("mono-8"),
-    });
+    try initialize_default_theme(ashet.graphics.get_system_font);
 
     const button_type = try register_widget_type(Button);
     defer button_type.destroy_now();
@@ -59,6 +50,21 @@ pub fn main() !void {
     while (true) {
         ashet.abi.process.thread.yield();
     }
+}
+
+const FontLoader = fn ([]const u8) error{ Unexpected, FileNotFound, SystemResources }!ashet.graphics.Font;
+
+pub fn initialize_default_theme(comptime get_system_font: FontLoader) !void {
+    theme = .create_default(.{
+        .hue = .purple,
+        .saturation = 2,
+        .value = 4,
+        .border = .yellow,
+        .menu_font = try get_system_font("sans-6"),
+        .item_font = try get_system_font("sans-6"),
+        .title_font = try get_system_font("sans-6"),
+        .widget_font = try get_system_font("mono-8"),
+    });
 }
 
 fn register_widget_type(comptime WidgetImpl: type) !ashet.gui.WidgetType {
@@ -212,7 +218,7 @@ pub const Label = struct {
         label.* = undefined;
     }
 
-    fn paint(label: *Label, cq: *CommandQueue, size: Size) !void {
+    pub fn paint(label: *Label, cq: *CommandQueue, size: Size) !void {
         try cq.clear(theme.window_active.background);
 
         try draw_aligned_text(
@@ -339,7 +345,7 @@ pub const Button = struct {
         }
     }
 
-    fn paint(button: *Button, cq: *CommandQueue, size: Size) !void {
+    pub fn paint(button: *Button, cq: *CommandQueue, size: Size) !void {
         const rect: Rectangle = .new(.zero, size);
 
         try cq.draw_line(
@@ -464,7 +470,7 @@ pub const ToolButton = struct {
         }
     }
 
-    fn paint(button: *ToolButton, cq: *CommandQueue, size: Size) !void {
+    pub fn paint(button: *ToolButton, cq: *CommandQueue, size: Size) !void {
         _ = button;
         const rect: Rectangle = .new(.zero, size);
         try cq.draw_line(
@@ -636,7 +642,7 @@ pub const TextBox = struct {
         }
     }
 
-    fn paint(button: *TextBox, cq: *CommandQueue, size: Size) !void {
+    pub fn paint(textbox: *TextBox, cq: *CommandQueue, size: Size) !void {
         const rect: Rectangle = .new(.zero, size);
 
         try draw_panel(cq, .{
@@ -649,7 +655,7 @@ pub const TextBox = struct {
             theme.widget_background,
         );
 
-        const text = rstrip(button.text.items);
+        const text = rstrip(textbox.text.items);
         if (text.len > 0) {
             try cq.draw_text(
                 .new(rect.left() +| 4, rect.top() +| 4),
@@ -875,7 +881,7 @@ pub const ListBox = struct {
         }
     }
 
-    fn paint(listbox: *ListBox, cq: *CommandQueue, size: Size) !void {
+    pub fn paint(listbox: *ListBox, cq: *CommandQueue, size: Size) !void {
         const rect: Rectangle = .new(.zero, size);
 
         try draw_panel(cq, .{

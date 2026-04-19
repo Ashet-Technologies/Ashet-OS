@@ -4,12 +4,17 @@ const zgui = @import("zgui");
 const glfw = @import("zglfw");
 const zopengl = @import("zopengl");
 const args_parser = @import("args");
+const agp = @import("agp");
+const ashet = @import("ashet");
+const agp_swrast = @import("agp-swrast");
+const standard_widgets = @import("standard-widgets");
 
 const gl = zopengl.bindings;
 
 const Color = @import("ashet-abi").Color;
 const model = @import("model.zig");
 
+const CommandQueue = ashet.graphics.CommandQueue;
 const Size = model.Size;
 const Point = model.Point;
 const Rectangle = model.Rectangle;
@@ -22,6 +27,9 @@ const preview_texture_extent = 2048;
 const preview_background_color: Color = .from_rgb(0xCC, 0xCC, 0xCC);
 const preview_widget_color: Color = .from_rgb(0xFF, 0xFF, 0xFF);
 const preview_widget_outline_color: Color = .black;
+
+const preview_sans_6_font: ashet.graphics.Font = embed_preview_font(@embedFile("sans-6.font"), .{});
+const preview_mono_8_font: ashet.graphics.Font = embed_preview_font(@embedFile("mono-8.font"), .{});
 
 const preview_palette = blk: {
     @setEvalBranchQuota(8192);
@@ -104,65 +112,6 @@ const PreviewSurface = struct {
         }
     }
 
-    fn fillRect(surface: *PreviewSurface, rect: Rectangle, color: Color) void {
-        const max_x: i32 = surface.used_size.width;
-        const max_y: i32 = surface.used_size.height;
-        const rect_width: i32 = rect.width;
-        const rect_height: i32 = rect.height;
-
-        const x0: i32 = std.math.clamp(rect.x, 0, max_x);
-        const y0: i32 = std.math.clamp(rect.y, 0, max_y);
-        const x1: i32 = std.math.clamp(rect.x + rect_width, 0, max_x);
-        const y1: i32 = std.math.clamp(rect.y + rect_height, 0, max_y);
-
-        if (x0 >= x1 or y0 >= y1)
-            return;
-
-        for (@as(usize, @intCast(y0))..@as(usize, @intCast(y1))) |row| {
-            const row_offset = row * preview_texture_extent + @as(usize, @intCast(x0));
-            @memset(surface.indexed_pixels[row_offset .. row_offset + @as(usize, @intCast(x1 - x0))], color);
-        }
-    }
-
-    fn outlineRect(surface: *PreviewSurface, rect: Rectangle, color: Color) void {
-        if (rect.width == 0 or rect.height == 0)
-            return;
-
-        surface.fillRect(.{
-            .x = rect.x,
-            .y = rect.y,
-            .width = rect.width,
-            .height = 1,
-        }, color);
-
-        if (rect.height > 1) {
-            surface.fillRect(.{
-                .x = rect.x,
-                .y = rect.y +| @as(i16, @intCast(rect.height - 1)),
-                .width = rect.width,
-                .height = 1,
-            }, color);
-        }
-
-        if (rect.height > 2) {
-            surface.fillRect(.{
-                .x = rect.x,
-                .y = rect.y +| 1,
-                .width = 1,
-                .height = rect.height - 2,
-            }, color);
-
-            if (rect.width > 1) {
-                surface.fillRect(.{
-                    .x = rect.x +| @as(i16, @intCast(rect.width - 1)),
-                    .y = rect.y +| 1,
-                    .width = 1,
-                    .height = rect.height - 2,
-                }, color);
-            }
-        }
-    }
-
     fn expandToRgba(surface: *PreviewSurface) void {
         const width: usize = surface.used_size.width;
         const height: usize = surface.used_size.height;
@@ -235,6 +184,8 @@ pub fn main() !u8 {
     const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
     defer metadata.deinit();
 
+    try standard_widgets.initialize_default_theme(load_preview_font);
+
     var document: Document = .{
         .allocator = allocator,
         .window = .{},
@@ -269,6 +220,7 @@ pub fn main() !u8 {
     var editor: Editor = .{
         .document = &document,
         .metadata = metadata,
+        .allocator = allocator,
     };
 
     _ = maybe_save_file_name;
@@ -345,6 +297,8 @@ pub const Editor = struct {
         widget: *model.Widget,
         start: model.Point,
     };
+
+    allocator: std.mem.Allocator,
 
     // Editor Configuration
     options: EditorOptions = .{},
@@ -685,10 +639,12 @@ pub const Editor = struct {
         editor.preview_surface.used_size = frame_size;
         editor.preview_surface.clear(preview_background_color);
 
+        var queue = try CommandQueue.init(editor.document.allocator);
+        defer queue.deinit();
+
         for (window.widgets.items) |widget| {
             const bounds = resolve_preview_widget_bounds(window, frame_size, widget);
-            editor.preview_surface.fillRect(bounds, preview_widget_color);
-            editor.preview_surface.outlineRect(bounds, preview_widget_outline_color);
+            try render_preview_widget(editor, &queue, widget, bounds);
         }
 
         editor.preview_surface.upload();
@@ -1263,6 +1219,155 @@ fn resolve_preview_widget_bounds(window: *const Window, frame_size: Size, widget
         .width = h_align.compute_size(h_bounds),
         .height = v_align.compute_size(v_bounds),
     };
+}
+
+fn embed_preview_font(data: []const u8, hint: agp_swrast.fonts.FontHint) ashet.graphics.Font {
+    @setEvalBranchQuota(10_000);
+    return @ptrCast(@constCast(&(agp_swrast.fonts.FontInstance.load(data, hint) catch unreachable)));
+}
+
+fn load_preview_font(name: []const u8) error{ Unexpected, FileNotFound, SystemResources }!ashet.graphics.Font {
+    if (std.mem.eql(u8, name, "sans-6"))
+        return preview_sans_6_font;
+    if (std.mem.eql(u8, name, "mono-8"))
+        return preview_mono_8_font;
+
+    return error.FileNotFound;
+}
+
+/// Mock implementation of the system call for Ashet OS font measurement:
+export fn ashet_syscalls_draw_measure_text_size(font_ptr: ashet.abi.Font, text_ptr: [*]const u8, text_len: usize, size: *Size) callconv(.c) u16 {
+    const text = text_ptr[0..text_len];
+    const font: *const agp_swrast.fonts.FontInstance = @ptrCast(@alignCast(font_ptr));
+
+    const width = font.measure_width(text);
+
+    size.* = .new(width, font.line_height());
+
+    return 0;
+}
+
+fn render_preview_widget(editor: *Editor, queue: *CommandQueue, widget: Widget, bounds: Rectangle) !void {
+    const target = get_preview_target(editor, bounds) orelse return;
+
+    queue.reset();
+    try encode_preview_widget(queue, widget, Size.new(bounds.width, bounds.height));
+    try rasterize_preview_queue(editor.document.allocator, queue.data.written(), target);
+}
+
+fn get_preview_target(editor: *Editor, bounds: Rectangle) ?agp_swrast.RenderTarget {
+    if (bounds.width == 0 or bounds.height == 0 or bounds.x < 0 or bounds.y < 0)
+        return null;
+
+    const x: usize = @intCast(bounds.x);
+    const y: usize = @intCast(bounds.y);
+
+    if (x >= editor.preview_surface.used_size.width or y >= editor.preview_surface.used_size.height)
+        return null;
+
+    const visible_width = @min(bounds.width, editor.preview_surface.used_size.width - x);
+    const visible_height = @min(bounds.height, editor.preview_surface.used_size.height - y);
+
+    return .{
+        .pixels = editor.preview_surface.indexed_pixels.ptr + y * preview_texture_extent + x,
+        .width = visible_width,
+        .height = visible_height,
+        .stride = preview_texture_extent,
+    };
+}
+
+fn encode_preview_widget(queue: *CommandQueue, widget: Widget, size: Size) !void {
+    const class_name = widget.class.name;
+
+    if (std.mem.eql(u8, class_name, "Label")) {
+        var label: standard_widgets.Label = .{
+            .text = preview_widget_text(widget),
+        };
+        try standard_widgets.Label.paint(&label, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "Button")) {
+        var button: standard_widgets.Button = .{
+            .text = preview_widget_text(widget),
+        };
+        try standard_widgets.Button.paint(&button, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "ToolButton")) {
+        var button: standard_widgets.ToolButton = .{};
+        try standard_widgets.ToolButton.paint(&button, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "TextBox")) {
+        var textbox: standard_widgets.TextBox = .{
+            .text = preview_widget_text(widget),
+        };
+        try standard_widgets.TextBox.paint(&textbox, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "ListBox")) {
+        var listbox: standard_widgets.ListBox = .{};
+        try standard_widgets.ListBox.paint(&listbox, queue, size);
+        return;
+    }
+
+    try encode_preview_placeholder(queue, size);
+}
+
+fn preview_widget_text(widget: Widget) std.ArrayListUnmanaged(u8) {
+    // We have to capture by-ref as `string` is an *owning* value, not
+    // a reference value.
+    if (widget.properties.getPtr("text")) |value| {
+        if (value.* == .string) {
+            const str = value.string.slice();
+            return .{
+                .items = @constCast(str),
+                .capacity = undefined,
+            };
+        }
+    }
+
+    return .empty;
+}
+
+fn encode_preview_placeholder(queue: *CommandQueue, size: Size) !void {
+    const rect: Rectangle = .new(.zero, size);
+    try queue.fill_rect(rect, preview_widget_color);
+    try queue.draw_rect(rect, preview_widget_outline_color);
+}
+
+fn rasterize_preview_queue(allocator: std.mem.Allocator, command_stream: []const u8, target: agp_swrast.RenderTarget) !void {
+    var rasterizer = agp_swrast.Rasterizer.init(target);
+
+    var stream = std.io.fixedBufferStream(command_stream);
+    var decoder = agp.streamDecoder(allocator, stream.reader());
+    defer decoder.deinit();
+
+    var resolver_cookie: u8 = 0;
+    const resolver: agp_swrast.Rasterizer.Resolver = .{
+        .ctx = @ptrCast(&resolver_cookie),
+        .resolve_font_fn = resolve_preview_font,
+        .resolve_framebuffer_fn = resolve_preview_framebuffer,
+    };
+
+    while (try decoder.next()) |cmd| {
+        rasterizer.execute(cmd, resolver);
+    }
+}
+
+fn resolve_preview_font(_: *anyopaque, font: agp.Font) ?*const agp_swrast.fonts.FontInstance {
+    if (@intFromPtr(font) == 0)
+        return null;
+
+    return @ptrCast(@alignCast(font));
+}
+
+fn resolve_preview_framebuffer(_: *anyopaque, _: agp.Framebuffer) ?agp_swrast.Image {
+    return null;
 }
 
 fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, zoom: f32, selected: bool) void {

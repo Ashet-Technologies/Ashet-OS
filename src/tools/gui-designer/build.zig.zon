@@ -38,6 +38,12 @@
         .agp_swrast = .{
             .path = "../../userland/libs/agp-swrast",
         },
+        .AshetOS = .{
+            .path = "../../userland/libs/libAshetOS",
+        },
+        .os_assets = .{
+            .path = "../../os-assets",
+        },
         .widgets = .{
             .path = "../../userland/apps/widgets",
         },
