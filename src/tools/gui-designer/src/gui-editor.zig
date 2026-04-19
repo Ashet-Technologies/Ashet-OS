@@ -4,6 +4,7 @@ const zgui = @import("zgui");
 const glfw = @import("zglfw");
 const zopengl = @import("zopengl");
 const args_parser = @import("args");
+const nfd = @import("nfd");
 const agp = @import("agp");
 const ashet = @import("ashet");
 const agp_swrast = @import("agp-swrast");
@@ -223,9 +224,8 @@ pub fn main() !u8 {
         .metadata = metadata,
         .allocator = allocator,
         .preview_theme = preview_theme,
+        .current_file_path = if (maybe_save_file_name) |path| try allocator.dupeZ(u8, path) else null,
     };
-
-    _ = maybe_save_file_name;
 
     try glfw.init();
     defer glfw.terminate();
@@ -310,6 +310,7 @@ pub const Editor = struct {
     metadata: *const model.Metadata,
     document: *Document,
     preview_theme: *const PreviewTheme,
+    current_file_path: ?[:0]u8 = null,
 
     // Current Editing State
     maybe_selected_widget_index: ?usize = null,
@@ -323,6 +324,10 @@ pub const Editor = struct {
     preview_visible: bool = false,
 
     pub fn deinit(editor: *Editor) void {
+        if (editor.current_file_path) |path| {
+            editor.allocator.free(path);
+            editor.current_file_path = null;
+        }
         editor.preview_surface.deinit(editor.document.allocator);
     }
 
@@ -645,21 +650,33 @@ pub const Editor = struct {
         var queue = try CommandQueue.init(editor.document.allocator);
         defer queue.deinit();
 
-        for (window.widgets.items) |widget| {
-            var bounds = resolve_preview_widget_bounds(window, Size.new(client_rect.width, client_rect.height), widget);
-            bounds.x +|= client_rect.x;
-            bounds.y +|= client_rect.y;
-            try render_preview_widget(editor, &queue, widget, bounds);
-        }
-
         queue.reset();
+        try encode_preview_window_frame(&queue, editor.preview_theme, frame_size, .{
+            .buttons = .{
+                .maximize = .disabled,
+                .minimize = .visible,
+                .close = .disabled,
+                .resize = if (editor.document.window.min_size.eql(editor.document.window.max_size))
+                    .hidden
+                else
+                    .visible,
+            },
+            .icon = null,
+            .title = "Preview",
+        });
         try rasterize_preview_queue(editor.document.allocator, queue.data.written(), .{
             .pixels = editor.preview_surface.indexed_pixels.ptr,
             .width = frame_size.width,
             .height = frame_size.height,
             .stride = preview_texture_extent,
         });
-        try encode_preview_window_frame(&queue, editor.preview_theme, frame_size);
+
+        for (window.widgets.items) |widget| {
+            var bounds = resolve_preview_widget_bounds(window, Size.new(client_rect.width, client_rect.height), widget);
+            bounds.x +|= client_rect.x;
+            bounds.y +|= client_rect.y;
+            try render_preview_widget(editor, &queue, widget, bounds);
+        }
 
         editor.preview_surface.upload();
         editor.preview_surface.dirty = false;
@@ -1156,17 +1173,12 @@ pub const Editor = struct {
         if (zgui.beginMenu("File", true)) {
             defer zgui.endMenu();
 
-            _ = zgui.menuItem("Restore", .{});
+            if (zgui.menuItem("Load", .{})) {
+                try editor.load_document_with_dialog();
+            }
 
             if (zgui.menuItem("Save", .{})) {
-                var file_buffer: [2048]u8 = undefined;
-
-                var result_file = try std.fs.cwd().atomicFile("current.gui.json", .{ .write_buffer = &file_buffer });
-                defer result_file.deinit();
-
-                try model.save_design(editor.document.window, &result_file.file_writer.interface);
-
-                try result_file.finish();
+                try editor.save_document_with_dialog();
             }
 
             zgui.separator();
@@ -1174,6 +1186,82 @@ pub const Editor = struct {
                 return error.AppExit;
             }
         }
+    }
+
+    fn load_document_with_dialog(editor: *Editor) !void {
+        const selected_path = try nfd.openFileDialog("json", editor.current_file_path);
+        if (selected_path) |path| {
+            defer nfd.freePath(path);
+            try editor.load_document(path);
+        }
+    }
+
+    fn save_document_with_dialog(editor: *Editor) !void {
+        const path = if (editor.current_file_path) |current_path|
+            current_path
+        else {
+            const selected_path = try nfd.saveFileDialog("json", null);
+            if (selected_path) |path| {
+                defer nfd.freePath(path);
+                try editor.save_document(path);
+            }
+            return;
+        };
+
+        try editor.save_document(path);
+    }
+
+    fn load_document(editor: *Editor, path: []const u8) !void {
+        const file = if (std.fs.path.isAbsolute(path))
+            try std.fs.openFileAbsolute(path, .{})
+        else
+            try std.fs.cwd().openFile(path, .{});
+        defer file.close();
+
+        var file_buffer: [2048]u8 = undefined;
+        var file_reader = file.reader(&file_buffer);
+
+        var document = try model.load_design(
+            &file_reader.interface,
+            editor.document.allocator,
+            editor.metadata,
+        );
+        errdefer document.deinit();
+
+        editor.document.deinit();
+        editor.document.* = document;
+
+        try editor.set_current_file_path(path);
+
+        editor.select_by_index(null);
+        editor.maybe_popup_widget = null;
+        editor.widget_drag = null;
+        editor.invalidate_preview();
+    }
+
+    fn save_document(editor: *Editor, path: []const u8) !void {
+        const file = if (std.fs.path.isAbsolute(path))
+            try std.fs.createFileAbsolute(path, .{ .truncate = true })
+        else
+            try std.fs.cwd().createFile(path, .{ .truncate = true });
+        defer file.close();
+
+        var file_buffer: [2048]u8 = undefined;
+        var file_writer = file.writer(&file_buffer);
+
+        try model.save_design(editor.document.window, &file_writer.interface);
+        try editor.set_current_file_path(path);
+    }
+
+    fn set_current_file_path(editor: *Editor, path: []const u8) !void {
+        const owned_path = try editor.allocator.dupeZ(u8, path);
+        errdefer editor.allocator.free(owned_path);
+
+        if (editor.current_file_path) |current_path| {
+            editor.allocator.free(current_path);
+        }
+
+        editor.current_file_path = owned_path;
     }
 };
 
@@ -1370,7 +1458,11 @@ fn encode_preview_placeholder(queue: *CommandQueue, preview_theme: *const Previe
     try queue.draw_rect(rect, preview_theme.border_normal);
 }
 
-fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {
+fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size, options: struct {
+    title: []const u8,
+    icon: ?*const agp.Bitmap,
+    buttons: standard_widgets.draw.Draw.ButtonMask,
+}) !void {
     var draw = standard_widgets.draw.Draw.init(
         preview_theme.*,
         agp.encoder(&queue.data.writer),
@@ -1378,9 +1470,10 @@ fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const Previ
 
     try draw.window(.{
         .bounds = .new(.zero, size),
-        .title = "",
-        .icon = null,
+        .title = options.title,
+        .icon = options.icon,
         .active = true,
+        .buttons = options.buttons,
     });
 }
 
