@@ -22,14 +22,18 @@ const CommandQueue = ashet.graphics.CommandQueue;
 
 var render_queue: CommandQueue = CommandQueue.init(ashet.process.mem.allocator()) catch unreachable;
 
-var theme: draw_lib.Theme = undefined;
+pub const Theme = draw_lib.Theme;
+
+pub const draw = draw_lib;
+
+var theme: Theme = undefined;
 
 pub fn main() !void {
     errdefer |err| std.log.err("Failed to setup standard widgets: {s}", .{@errorName(err)});
 
     // TODO: Load theme from disk via common implementation shared between desktop server and
     //       widget server.
-    try initialize_default_theme(ashet.graphics.get_system_font);
+    _ = try initialize_default_theme(ashet.graphics.get_system_font);
 
     const button_type = try register_widget_type(Button);
     defer button_type.destroy_now();
@@ -54,7 +58,7 @@ pub fn main() !void {
 
 const FontLoader = fn ([]const u8) error{ Unexpected, FileNotFound, SystemResources }!ashet.graphics.Font;
 
-pub fn initialize_default_theme(comptime get_system_font: FontLoader) !void {
+pub fn initialize_default_theme(comptime get_system_font: FontLoader) !*const Theme {
     theme = .create_default(.{
         .hue = .purple,
         .saturation = 2,
@@ -65,6 +69,7 @@ pub fn initialize_default_theme(comptime get_system_font: FontLoader) !void {
         .title_font = try get_system_font("sans-6"),
         .widget_font = try get_system_font("mono-8"),
     });
+    return &theme;
 }
 
 fn register_widget_type(comptime WidgetImpl: type) !ashet.gui.WidgetType {

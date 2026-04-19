@@ -23,10 +23,9 @@ const Window = model.Window;
 const Document = model.Document;
 const Alignment = model.Alignment;
 
+const PreviewTheme = standard_widgets.Theme;
+
 const preview_texture_extent = 2048;
-const preview_background_color: Color = .from_rgb(0xCC, 0xCC, 0xCC);
-const preview_widget_color: Color = .from_rgb(0xFF, 0xFF, 0xFF);
-const preview_widget_outline_color: Color = .black;
 
 const preview_sans_6_font: ashet.graphics.Font = embed_preview_font(@embedFile("sans-6.font"), .{});
 const preview_mono_8_font: ashet.graphics.Font = embed_preview_font(@embedFile("mono-8.font"), .{});
@@ -53,7 +52,7 @@ const PreviewSurface = struct {
 
         if (surface.indexed_pixels.len == 0) {
             surface.indexed_pixels = try allocator.alloc(Color, pixel_count);
-            @memset(surface.indexed_pixels, preview_background_color);
+            @memset(surface.indexed_pixels, .black);
         }
 
         if (surface.rgba_pixels.len == 0) {
@@ -184,7 +183,7 @@ pub fn main() !u8 {
     const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
     defer metadata.deinit();
 
-    try standard_widgets.initialize_default_theme(load_preview_font);
+    const preview_theme = try standard_widgets.initialize_default_theme(load_preview_font);
 
     var document: Document = .{
         .allocator = allocator,
@@ -221,6 +220,7 @@ pub fn main() !u8 {
         .document = &document,
         .metadata = metadata,
         .allocator = allocator,
+        .preview_theme = preview_theme,
     };
 
     _ = maybe_save_file_name;
@@ -307,6 +307,7 @@ pub const Editor = struct {
     // Current Document
     metadata: *const model.Metadata,
     document: *Document,
+    preview_theme: *const PreviewTheme,
 
     // Current Editing State
     maybe_selected_widget_index: ?usize = null,
@@ -637,10 +638,19 @@ pub const Editor = struct {
 
         try editor.preview_surface.ensureInitialized(editor.document.allocator);
         editor.preview_surface.used_size = frame_size;
-        editor.preview_surface.clear(preview_background_color);
+        editor.preview_surface.clear(editor.preview_theme.window_active.background);
 
         var queue = try CommandQueue.init(editor.document.allocator);
         defer queue.deinit();
+
+        queue.reset();
+        try encode_preview_window_border(&queue, editor.preview_theme, frame_size);
+        try rasterize_preview_queue(editor.document.allocator, queue.data.written(), .{
+            .pixels = editor.preview_surface.indexed_pixels.ptr,
+            .width = frame_size.width,
+            .height = frame_size.height,
+            .stride = preview_texture_extent,
+        });
 
         for (window.widgets.items) |widget| {
             const bounds = resolve_preview_widget_bounds(window, frame_size, widget);
@@ -1251,7 +1261,7 @@ fn render_preview_widget(editor: *Editor, queue: *CommandQueue, widget: Widget, 
     const target = get_preview_target(editor, bounds) orelse return;
 
     queue.reset();
-    try encode_preview_widget(queue, widget, Size.new(bounds.width, bounds.height));
+    try encode_preview_widget(queue, editor.preview_theme, widget, Size.new(bounds.width, bounds.height));
     try rasterize_preview_queue(editor.document.allocator, queue.data.written(), target);
 }
 
@@ -1276,7 +1286,7 @@ fn get_preview_target(editor: *Editor, bounds: Rectangle) ?agp_swrast.RenderTarg
     };
 }
 
-fn encode_preview_widget(queue: *CommandQueue, widget: Widget, size: Size) !void {
+fn encode_preview_widget(queue: *CommandQueue, preview_theme: *const PreviewTheme, widget: Widget, size: Size) !void {
     const class_name = widget.class.name;
 
     if (std.mem.eql(u8, class_name, "Label")) {
@@ -1315,7 +1325,7 @@ fn encode_preview_widget(queue: *CommandQueue, widget: Widget, size: Size) !void
         return;
     }
 
-    try encode_preview_placeholder(queue, size);
+    try encode_preview_placeholder(queue, preview_theme, size);
 }
 
 fn preview_widget_text(widget: Widget) std.ArrayListUnmanaged(u8) {
@@ -1334,10 +1344,49 @@ fn preview_widget_text(widget: Widget) std.ArrayListUnmanaged(u8) {
     return .empty;
 }
 
-fn encode_preview_placeholder(queue: *CommandQueue, size: Size) !void {
+fn encode_preview_placeholder(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {
     const rect: Rectangle = .new(.zero, size);
-    try queue.fill_rect(rect, preview_widget_color);
-    try queue.draw_rect(rect, preview_widget_outline_color);
+    try queue.fill_rect(rect, preview_theme.widget_background);
+    try queue.draw_rect(rect, preview_theme.border_normal);
+}
+
+fn encode_preview_window_border(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {
+    const rect: Rectangle = .new(.zero, size);
+    const window_theme = preview_theme.window_active;
+
+    if (rect.width == 0 or rect.height == 0)
+        return;
+
+    try queue.draw_rect(rect, window_theme.border_normal);
+
+    if (rect.width > 2) {
+        try queue.draw_line(
+            .new(rect.left() +| 1, rect.top() +| 1),
+            .new(rect.right() -| 2, rect.top() +| 1),
+            window_theme.border_bright,
+        );
+    }
+
+    if (rect.height > 2) {
+        try queue.draw_line(
+            .new(rect.left() +| 1, rect.top() +| 1),
+            .new(rect.left() +| 1, rect.bottom() -| 2),
+            window_theme.border_bright,
+        );
+        try queue.draw_line(
+            .new(rect.right() -| 1, rect.top() +| 1),
+            .new(rect.right() -| 1, rect.bottom() -| 2),
+            window_theme.border_dark,
+        );
+    }
+
+    if (rect.width > 2) {
+        try queue.draw_line(
+            .new(rect.left() +| 1, rect.bottom() -| 1),
+            .new(rect.right() -| 1, rect.bottom() -| 1),
+            window_theme.border_dark,
+        );
+    }
 }
 
 fn rasterize_preview_queue(allocator: std.mem.Allocator, command_stream: []const u8, target: agp_swrast.RenderTarget) !void {
