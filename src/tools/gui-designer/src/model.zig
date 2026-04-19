@@ -17,6 +17,9 @@ pub const Window = struct {
     min_size: Size = .new(0, 0),
     max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
 
+    title: Value.String = .empty,
+    icon_path: Value.String = .empty,
+
     widgets: std.ArrayListUnmanaged(Widget) = .empty,
 
     pub fn deinit(window: *Window, allocator: std.mem.Allocator) void {
@@ -302,6 +305,12 @@ pub fn save_design(window: Window, stream: *std.Io.Writer) !void {
     try json.objectField("max_size");
     try json.write(window.max_size);
 
+    try json.objectField("title");
+    try json.write(window.title.slice());
+
+    try json.objectField("icon");
+    try json.write(window.icon_path.slice());
+
     try json.objectField("widgets");
     try json.beginArray();
 
@@ -378,6 +387,9 @@ pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadat
         min_size: Size = .new(0, 0),
         max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
 
+        title: []const u8 = "",
+        icon: []const u8 = "",
+
         widgets: []const JWidget,
     };
 
@@ -391,6 +403,8 @@ pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadat
         .design_size = jdesign.value.design_size,
         .min_size = jdesign.value.min_size,
         .max_size = jdesign.value.max_size,
+        .title = try .from_slice(jdesign.value.title),
+        .icon_path = try .from_slice(jdesign.value.icon),
     };
     errdefer window.deinit(allocator);
 

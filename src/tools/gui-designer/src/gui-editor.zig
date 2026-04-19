@@ -30,6 +30,34 @@ const preview_texture_extent = 2048;
 const preview_window_frame_size = Size.new(6, 18);
 const preview_window_client_offset = Point.new(3, 15);
 
+const OwnedBitmap = struct {
+    pixels: []Color,
+    bitmap: agp.Bitmap,
+
+    fn deinit(owned_bitmap: *OwnedBitmap, allocator: std.mem.Allocator) void {
+        allocator.free(owned_bitmap.pixels);
+        owned_bitmap.* = undefined;
+    }
+};
+
+const AbmHeader = extern struct {
+    const magic_number: u32 = 0x48198b74;
+
+    magic: u32,
+    width: u16,
+    height: u16,
+    flags: packed struct(u16) {
+        use_transparent: bool,
+        _padding: u15 = 0,
+    },
+    palette_size: u8,
+    transparency_key: Color,
+
+    comptime {
+        std.debug.assert(@sizeOf(@This()) == 12);
+    }
+};
+
 const preview_sans_6_font: ashet.graphics.Font = embed_preview_font(@embedFile("sans-6.font"), .{});
 const preview_mono_8_font: ashet.graphics.Font = embed_preview_font(@embedFile("mono-8.font"), .{});
 
@@ -311,6 +339,9 @@ pub const Editor = struct {
     document: *Document,
     preview_theme: *const PreviewTheme,
     current_file_path: ?[:0]u8 = null,
+    preview_window_size_override: ?Size = null,
+    preview_icon: ?OwnedBitmap = null,
+    preview_icon_dirty: bool = true,
 
     // Current Editing State
     maybe_selected_widget_index: ?usize = null,
@@ -327,6 +358,10 @@ pub const Editor = struct {
         if (editor.current_file_path) |path| {
             editor.allocator.free(path);
             editor.current_file_path = null;
+        }
+        if (editor.preview_icon) |*bitmap| {
+            bitmap.deinit(editor.allocator);
+            editor.preview_icon = null;
         }
         editor.preview_surface.deinit(editor.document.allocator);
     }
@@ -357,6 +392,11 @@ pub const Editor = struct {
 
     fn invalidate_preview(editor: *Editor) void {
         editor.preview_surface.dirty = true;
+    }
+
+    fn invalidate_preview_icon(editor: *Editor) void {
+        editor.preview_icon_dirty = true;
+        editor.invalidate_preview();
     }
 
     fn touch(editor: *Editor, changed: bool) void {
@@ -578,7 +618,7 @@ pub const Editor = struct {
 
         const window = &editor.document.window;
         const zoom = editor.options.preview_zoom();
-        const outer_size = preview_window_outer_size(window.design_size);
+        const default_outer_size = preview_window_outer_size(window.design_size);
 
         zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 0, 0 } });
         defer zgui.popStyleVar(.{});
@@ -586,11 +626,20 @@ pub const Editor = struct {
         const style = zgui.getStyle();
         const host_pad = 2.0 * style.window_border_size;
 
-        zgui.setNextWindowSize(.{
-            .cond = .appearing,
-            .w = @as(f32, @floatFromInt(outer_size.width)) * zoom + host_pad,
-            .h = @as(f32, @floatFromInt(outer_size.height)) * zoom + host_pad,
-        });
+        if (editor.preview_window_size_override) |forced_outer_size| {
+            zgui.setNextWindowSize(.{
+                .cond = .always,
+                .w = @as(f32, @floatFromInt(forced_outer_size.width)) * zoom + host_pad,
+                .h = @as(f32, @floatFromInt(forced_outer_size.height)) * zoom + host_pad,
+            });
+            editor.preview_window_size_override = null;
+        } else {
+            zgui.setNextWindowSize(.{
+                .cond = .appearing,
+                .w = @as(f32, @floatFromInt(default_outer_size.width)) * zoom + host_pad,
+                .h = @as(f32, @floatFromInt(default_outer_size.height)) * zoom + host_pad,
+            });
+        }
 
         defer zgui.end();
         if (zgui.begin("Preview", .{
@@ -599,10 +648,16 @@ pub const Editor = struct {
         })) {
             const size: [2]f32 = zgui.getContentRegionAvail();
 
-            const frame_size: Size = .new(
+            var frame_size: Size = .new(
                 @intFromFloat(@max(0, size[0] / zoom)),
                 @intFromFloat(@max(0, size[1] / zoom)),
             );
+
+            const clamped_frame_size = clamp_preview_window_size(window, frame_size);
+            if (clamped_frame_size.width != frame_size.width or clamped_frame_size.height != frame_size.height) {
+                frame_size = clamped_frame_size;
+                editor.preview_window_size_override = clamped_frame_size;
+            }
 
             if (frame_size.width == 0 or frame_size.height == 0) {
                 zgui.textUnformatted("Preview is too small.");
@@ -647,6 +702,8 @@ pub const Editor = struct {
         editor.preview_surface.used_size = frame_size;
         editor.preview_surface.clear(.black);
 
+        ensure_preview_icon_loaded(editor);
+
         var queue = try CommandQueue.init(editor.document.allocator);
         defer queue.deinit();
 
@@ -661,8 +718,8 @@ pub const Editor = struct {
                 else
                     .visible,
             },
-            .icon = null,
-            .title = "Preview",
+            .icon = preview_window_icon(editor),
+            .title = preview_window_title(window),
         });
         try rasterize_preview_queue(editor.document.allocator, queue.data.written(), .{
             .pixels = editor.preview_surface.indexed_pixels.ptr,
@@ -1126,6 +1183,40 @@ pub const Editor = struct {
                 // Window/Design Properties
                 utils.header("Window");
 
+                utils.header("General");
+
+                utils.beginField("Title");
+                editor.touch(zgui.inputText("##WindowTitle", .{ .buf = &window.title.data }));
+
+                utils.beginField("Icon");
+                var icon_changed = zgui.inputText("##WindowIconPath", .{ .buf = &window.icon_path.data });
+
+                zgui.sameLine(.{});
+                if (zgui.button("Browse##WindowIcon", .{})) {
+                    const current_icon_path = window.icon_path.slice();
+                    const default_path: ?[:0]const u8 = if (current_icon_path.len > 0)
+                        current_icon_path
+                    else
+                        editor.current_file_path;
+
+                    const selected_path = try nfd.openFileDialog("abm", default_path);
+                    if (selected_path) |path| {
+                        defer nfd.freePath(path);
+                        window.icon_path = try model.Value.String.from_slice(path);
+                        icon_changed = true;
+                    }
+                }
+
+                zgui.sameLine(.{});
+                if (zgui.button("Clear##WindowIcon", .{})) {
+                    window.icon_path = .empty;
+                    icon_changed = true;
+                }
+
+                if (icon_changed) {
+                    editor.invalidate_preview_icon();
+                }
+
                 utils.header("Geometry");
 
                 editor.touch(utils.sizeField("Min Width", &window.min_size.width, 0, window.max_size.width));
@@ -1236,7 +1327,8 @@ pub const Editor = struct {
         editor.select_by_index(null);
         editor.maybe_popup_widget = null;
         editor.widget_drag = null;
-        editor.invalidate_preview();
+        editor.preview_window_size_override = preview_window_outer_size(editor.document.window.design_size);
+        editor.invalidate_preview_icon();
     }
 
     fn save_document(editor: *Editor, path: []const u8) !void {
@@ -1330,6 +1422,30 @@ fn preview_window_outer_size(client_size: Size) Size {
     );
 }
 
+fn clamp_preview_window_size(window: *const Window, requested_outer_size: Size) Size {
+    const texture_max_client_size = Size.new(
+        preview_texture_extent -| preview_window_frame_size.width,
+        preview_texture_extent -| preview_window_frame_size.height,
+    );
+
+    const max_client_size = Size.new(
+        @min(window.max_size.width, texture_max_client_size.width),
+        @min(window.max_size.height, texture_max_client_size.height),
+    );
+    const min_client_size = Size.new(
+        @min(window.min_size.width, max_client_size.width),
+        @min(window.min_size.height, max_client_size.height),
+    );
+
+    const min_outer_size = preview_window_outer_size(min_client_size);
+    const max_outer_size = preview_window_outer_size(max_client_size);
+
+    return .new(
+        std.math.clamp(requested_outer_size.width, min_outer_size.width, max_outer_size.width),
+        std.math.clamp(requested_outer_size.height, min_outer_size.height, max_outer_size.height),
+    );
+}
+
 fn preview_window_client_rect(frame_size: Size) Rectangle {
     return .{
         .x = preview_window_client_offset.x,
@@ -1337,6 +1453,11 @@ fn preview_window_client_rect(frame_size: Size) Rectangle {
         .width = frame_size.width -| preview_window_frame_size.width,
         .height = frame_size.height -| preview_window_frame_size.height,
     };
+}
+
+fn preview_window_title(window: *const Window) []const u8 {
+    const title = window.title.slice();
+    return if (title.len > 0) title else "Preview";
 }
 
 fn embed_preview_font(data: []const u8, hint: agp_swrast.fonts.FontHint) ashet.graphics.Font {
@@ -1475,6 +1596,84 @@ fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const Previ
         .active = true,
         .buttons = options.buttons,
     });
+}
+
+fn load_abm_bitmap_from_path(allocator: std.mem.Allocator, path: []const u8) !OwnedBitmap {
+    const file = if (std.fs.path.isAbsolute(path))
+        try std.fs.openFileAbsolute(path, .{})
+    else
+        try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    const stat = try file.stat();
+    const file_size = std.math.cast(usize, stat.size) orelse return error.OutOfMemory;
+    if (file_size < @sizeOf(AbmHeader))
+        return error.InvalidFile;
+
+    const data = try allocator.alloc(u8, file_size);
+    defer allocator.free(data);
+
+    const len = try file.readAll(data);
+    if (len != data.len)
+        return error.InvalidFile;
+
+    var header = std.mem.bytesAsValue(AbmHeader, data[0..@sizeOf(AbmHeader)]).*;
+    inline for (comptime std.meta.fields(AbmHeader)) |field| {
+        @field(header, field.name) = std.mem.littleToNative(field.type, @field(header, field.name));
+    }
+
+    if (header.magic != AbmHeader.magic_number)
+        return error.InvalidFile;
+
+    const pixel_count: usize = @as(usize, header.width) * @as(usize, header.height);
+    if (data.len != @sizeOf(AbmHeader) + pixel_count)
+        return error.InvalidFile;
+
+    const pixels = try allocator.alignedAlloc(Color, .@"4", pixel_count);
+    errdefer allocator.free(pixels);
+
+    @memcpy(std.mem.sliceAsBytes(pixels), data[@sizeOf(AbmHeader)..]);
+
+    return .{
+        .pixels = pixels,
+        .bitmap = .{
+            .pixels = pixels.ptr,
+            .width = header.width,
+            .height = header.height,
+            .stride = header.width,
+            .transparency_key = header.transparency_key,
+            .has_transparency = header.flags.use_transparent,
+        },
+    };
+}
+
+fn preview_window_icon(editor: *Editor) ?*const agp.Bitmap {
+    if (editor.preview_icon) |*bitmap| {
+        if (bitmap.bitmap.height <= 7)
+            return &bitmap.bitmap;
+    }
+
+    return null;
+}
+
+fn ensure_preview_icon_loaded(editor: *Editor) void {
+    if (!editor.preview_icon_dirty)
+        return;
+
+    if (editor.preview_icon) |*bitmap| {
+        bitmap.deinit(editor.allocator);
+        editor.preview_icon = null;
+    }
+
+    const path = editor.document.window.icon_path.slice();
+    if (path.len > 0) {
+        editor.preview_icon = load_abm_bitmap_from_path(editor.allocator, path) catch |err| blk: {
+            std.log.err("failed to load preview icon '{s}': {s}", .{ path, @errorName(err) });
+            break :blk null;
+        };
+    }
+
+    editor.preview_icon_dirty = false;
 }
 
 fn rasterize_preview_queue(allocator: std.mem.Allocator, command_stream: []const u8, target: agp_swrast.RenderTarget) !void {

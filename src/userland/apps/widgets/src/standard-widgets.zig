@@ -213,6 +213,9 @@ pub const Label = struct {
 
     text: std.ArrayListUnmanaged(u8) = .empty,
 
+    horizontal_alignment: Alignment = .middle,
+    vertical_alignment: Alignment = .middle,
+
     fn init(widget: Widget) Label {
         _ = widget;
         return .{};
@@ -233,8 +236,8 @@ pub const Label = struct {
             theme.text_color,
             label.text.items,
             .{
-                .vertical = .middle,
-                .horizontal = .middle,
+                .horizontal = label.horizontal_alignment,
+                .vertical = label.vertical_alignment,
             },
         );
     }
@@ -1173,10 +1176,10 @@ fn rstrip(text: []const u8) []const u8 {
     return std.mem.trimRight(u8, text, " \r\n\t");
 }
 
-const Alignment = enum {
-    near,
-    middle,
-    far,
+const Alignment = enum(u8) {
+    near = 0,
+    middle = 1,
+    far = 2,
 
     fn compute(al: Alignment, aligned_size: u16, available_size: u16) i16 {
         return @intCast(switch (al) {
