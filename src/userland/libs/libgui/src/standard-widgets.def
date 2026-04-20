@@ -1,0 +1,281 @@
+#
+# This file contains a tiny DSL that defines our widget types in an easy-to-author format.
+#
+# The DSL uses '#'-based line comments, everything before a '#' is regular text, everything
+# beyond is a comment.
+#
+# The DSL is indentation based, and enforces a correct 4-space based indentation. Deeper indentation
+# levels apply to the previous element that has N-4 spaces indentation.
+#
+# Empty lines are ignored in the file and do not contribute to parent/child relations.
+#
+# A line can be continued by adding a `|` value in the next line. This pipe can be placed anywhere and does not
+# contribute to indentation evaluation. This way, multi-line values can be easily written.
+#
+# Top-level constructs are:
+#
+# Widget Definition:
+#   widget <ClassName> = "<UUID>"
+#
+# Widgets can contain:
+#
+#   Widget documentation string:
+#       docs: <text>
+#
+#   A control message definition:
+#       control <name>(<param list>) <optional return type>
+#
+#   A event message definition:
+#       event <name>(<param list>)
+#
+# Event and control message definitions can contain the following elements:
+#
+#   A documentation string:
+#       docs: <text>
+#
+# A type declaration can appear either at top-level or inside a `widget` and looks like this:
+#
+#   type <TypeName> = <zig type decl>
+#
+# "<zig type decl>" is treated as an opaque string and will be interpreted by the Zig compiler.
+#
+# A parameter list is a comma-separated list of "<name>: <type>" values,
+# where "<name>" is a valid zig identifier, and "<type>" is one of these values:
+#   - bool, i8, i16, i32, u8, u16, u32, isize, usize: The natural Zig type.
+#   - str: A constant slice of text characters, maps to "[]const u8" in Zig.
+#   - strbuf: A mutable slice of text characters, maps to "[]u8" in Zig.
+#   - contextptr: A pointer to an unknown data structure, maps to `?*anyopaque` in Zig.
+#   - Any type declared with `type` in the top-level scope or the current widget.
+#
+# Both parameter lists can contain up to 4 "raw elements". A "raw element" is a single `usize` Zig value,
+# and the natural Zig types can be converted from/to the usize trivially.
+# Slice types decay into two `usize` values: `(slice.ptr, slice.len)`. This means each slice value is taking
+# two slots of a parameter list.
+#
+# The return type uses the same type list, except for types that map to two Zig `usize` values.
+#
+
+widget Label = "53b8be36-969a-46a3-bdf5-e3d197890219"
+
+    control set_text(text: str)
+
+    control set_alignment(horizontal: Alignment, vertical: Alignment)
+
+    type Alignment = enum(u8) {
+    |   near = 0,
+    |   middle = 1,
+    |   far = 2,
+    |   _, // invalid
+    |}
+
+
+widget Button = "782ccd0e-bae4-4093-93fe-12c1f86ff43c"
+
+    control set_text(text: str)
+        docs: Changes the displayed text on the button to `text`.
+
+    event clicked()
+        docs: Fired when the button was clicked.
+
+
+widget ToolButton = "8698ffe7-7768-4681-a5f4-57d9da69d6d8"
+
+    control set_icon(icon: framebuf)
+        docs: Changes the icon of the tool button. Should be 9x9 pixels.
+
+    event clicked()
+        docs: Fired when the button was clicked.
+
+
+widget Panel = "1fa5b237-0bda-48d1-b95a-fcf80616318b"
+
+
+widget PictureBox = "bb33e7a1-74ad-4040-a248-0015ba6b9dac"
+
+    control set_image(image: framebuf)
+
+    control set_mode(mode: Mode)
+
+    type Mode = enum(u8) {
+    |   /// The image is displayed on the top-left without scaling.
+    |   normal = 0,
+    |   /// The image is centered inside the widget.
+    |   center = 1,
+    |   /// The image is stretched to fit the widget bounds. 
+    |   stretch = 2,
+    |   /// The image is scaled such that it fully covers the widget bounds, retaining aspect ratio.
+    |   cover = 3,
+    |   /// The image is scaled such that it is fully contained in the widget bounds, retaining aspect ratio.
+    |   contain = 4,
+    |   _, // invalid
+    |}
+
+
+widget GroupBox = "b96bc6a2-6df0-4f76-962a-4af18fdf3548"
+
+
+
+widget ProgressBar = "b96290a9-542f-45f5-9e37-1ce9084fc0e3"
+
+    control set_limits(low: i16, high: i16)
+        docs: Sets the limits of the progress bar. `low` is 0%, `high` is 100%.
+            |
+            | Default is `low` = 0 and `high` = 100.
+
+    control set_value(value: i16)
+        docs: Sets the new displayed value.
+            | 
+            | Uses the limits of the latest `set_limits` invocation.
+
+
+widget VerticalScrollBar = "d1c52f74-e9b8-4067-8bb6-fe01c49d97ae"
+
+    control set_limits(top: i16, bottom: i16)
+        docs: Sets the two end points of the scroll bar.
+            | - `top` is the limiting value when the scroll knob is at the top of the bar.
+            | - `bottom` is the limiting value when the scroll knob is at the bottom of the bar.
+            |
+            | `top` and `bottom` have no particular order, but the position is always between
+            | `min(top, bottom)` and `max(top, bottom)`.
+
+    control set_value(value: i16)
+        docs: Sets the value where the scroll knob is positioned.
+            | 
+            | Uses the limits of the latest `set_limits` invocation.
+    
+    control get_value() i16
+        docs: Returns the current knob position.
+            |
+            | Returned value will always be bounded between the `top` and `bottom` limits.
+    
+    event value_changed(new_value: i16)
+        docs: Fired when the position of the knob has changed.
+
+
+widget HorizontalScrollBar = "2899397f-ede2-46e9-8458-1eea29c81fa1"
+
+    control set_limits(left: i16, right: i16)
+        docs: Sets the two end points of the scroll bar.
+            | - `left` is the limiting value when the scroll knob is at the left of the bar.
+            | - `right` is the limiting value when the scroll knob is at the right of the bar.
+            |
+            | `left` and `right` have no particular order, but the position is always between
+            | `min(left, right)` and `max(left, right)`.
+
+    control set_value(value: i16)
+        docs: Sets the value where the scroll knob is positioned.
+            | 
+            | Uses the limits of the latest `set_limits` invocation.
+    
+    control get_value() i16
+        docs: Returns the current knob position.
+            |
+            | Returned value will always be bounded between the `left` and `right` limits.
+    
+    event value_changed(new_value: i16)
+        docs: Fired when the position of the knob has changed.
+
+
+widget CheckBox = "051c6bff-d491-4e5a-8b77-6f4244da52ee"
+
+    control set_checked(checked: bool)
+        docs: Updates the check state to `checked`.
+    
+    control is_checked() bool
+        docs: Returns if the widget is checked or not.
+
+    control toggle()    
+        docs: Toggles the current check state.
+
+    event changed(now_checked: bool)
+        docs: Fired when the check state of the widget changes.
+
+
+widget RadioButton = "4f18fde6-944c-494f-a55c-ba11f45fcfa3"
+
+    control set_group(group: Group)
+
+    control activate()
+        docs: Effectively acts as if the radio button was clicked.
+    
+    control is_checked() bool
+        docs: Returns if the widget is checked or not.
+    
+    event activated()
+
+    type Group = enum(u32) { _ }
+
+
+widget TextBox = "02eddbc3-b882-41e9-8aba-10d12b451e11"
+    docs: A text box is the basic text input widget and allows single-line text editing.
+
+    control set_readonly(readonly: bool)
+        docs: If `readonly` is true, the user won't be able to edit the text anymore, but
+            | can still copy the text and change the cursor.
+
+    control set_text(text: str)
+        docs: Replaces the current text.
+
+    control get_text(buffer: strbuf) usize
+        docs: Writes the current text into `buffer`, and returns the number of bytes written.
+
+    # TODO: control get_cursor()
+    # TODO: control set_cursor()
+
+    # TODO: copy
+    # TODO: cut
+    # TODO: paste
+
+    event text_changed()
+        docs: User typed text and get
+
+    event accepted()
+        docs: User pressed "return" inside the text box
+
+    event cancelled()
+        docs: User pressed "escape" inside the text box
+
+    # TODO: event cursor_position_changed()
+    # TODO: event selection_changed()
+
+widget MultiLineTextBox = "84d40a1a-04ab-4e00-ae93-6e91e6b3d10a"
+
+
+widget ListBox = "92dacfe5-9f1c-484d-aefe-b5fa4eb6636b"
+    docs: The ListBox is a widget that shows a vertically arranged list of named items, each item has the same height.
+        | Items can be selected with the mouse or the keyboard and can be activated by clicking or pressing enter.
+
+    control set_list(count: u32, get_item_callback: GetItemCallback, ctx: contextptr, new_selected: i32)
+        docs: Changes the currently displayed list.
+            | - `count` is the new number of elements in the list.
+            | - `get_item_callback` will be invoked when the list box requires the display text of an item.
+            | - `ctx` is passed to the `get_item_callback` as a user-defined context.
+            | - `new_selected` is the new selected item in the list box. Pass `-1` to select nothing, `-2` to keep the current selection if possible.
+            |
+            | - `get_item_callback` and `ctx` must stay valid until either the widget is destroyed or a new call to `set_list` is done.
+
+    control set_selected_item(index: i32)
+        docs: Sets the selected item. If -1 is passed, no item will be selected.
+
+    control get_selected_item() i32
+        docs: Returns the index of the currently selected item or `-1` if no item is selected.
+
+    event item_clicked(index: u32)
+        docs: The item at `index` was clicked with the keyboard or mouse.
+
+    event selected_item_changed(index: i32)
+        docs: The currently selected item is now at `index`. `index` is the index of the selected item or `-1` if no item is selected anymore.
+
+    type GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void
+
+    type Item = extern struct {
+    |   pub fn new(slice: []const u8) Item {
+    |       return .{
+    |           .text_ptr = slice.ptr,
+    |           .text_len = slice.len,
+    |      };
+    |   }
+    |
+    |   text_ptr: [*]const u8,
+    |   text_len: usize,
+    |}

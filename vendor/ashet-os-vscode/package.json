@@ -21,6 +21,20 @@
           ".abi"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "ashetwidgets",
+        "aliases": [
+          "Ashet Widget Definition",
+          "ashetwidgets"
+        ],
+        "filenames": [
+          "standard-widgets.def"
+        ],
+        "filenamePatterns": [
+          "*-widgets.def"
+        ],
+        "configuration": "./widgets-language-configuration.json"
       }
     ],
     "grammars": [
@@ -28,6 +42,11 @@
         "language": "ashetabi",
         "scopeName": "source.abi",
         "path": "./syntaxes/ashetabi.tmLanguage.json"
+      },
+      {
+        "language": "ashetwidgets",
+        "scopeName": "source.ashetwidgets",
+        "path": "./syntaxes/ashetwidgets.tmLanguage.json"
       }
     ]
   },
