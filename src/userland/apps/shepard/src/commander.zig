@@ -88,7 +88,7 @@ fn change_dir(new_path: []const u8) !void {
     }
 
     // Setup the new list:
-    _ = try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list, .{
+    _ = try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list_msg, .{
         current_directory_list.items.len + 2,
         @intFromPtr(&get_item_callback),
         0,
@@ -118,7 +118,7 @@ pub fn main() !void {
     defer window.destroy_now();
 
     const path_box = try ashet.gui.widgets.TextBox.create(window);
-    defer path_box.release();
+    defer path_box.destroy();
 
     const go_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
     defer go_button.release();
@@ -130,7 +130,7 @@ pub fn main() !void {
     _ = try ashet.gui.place_widget(go_button, .{ .x = 180, .y = 5, .width = 15, .height = 15 });
     _ = try ashet.gui.place_widget(list_box, .{ .x = 5, .y = 25, .width = 190, .height = 120 });
 
-    _ = try ashet.gui.control_widget(go_button, ashet.gui.widgets.Button.set_text, .{
+    _ = try ashet.gui.control_widget(go_button, ashet.gui.widgets.Button.set_text_msg, .{
         @intFromPtr("→"),
         "→".len,
         0,
@@ -194,7 +194,7 @@ pub fn main() !void {
                         ashet.gui.widgets.ListBox.selected_item_changed => {
                             const index = try ashet.gui.control_widget(
                                 list_box,
-                                ashet.gui.widgets.ListBox.get_selected_item,
+                                ashet.gui.widgets.ListBox.get_selected_item_msg,
                                 .{ 0, 0, 0, 0 },
                             );
 

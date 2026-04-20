@@ -45,6 +45,7 @@
 #   - str: A constant slice of text characters, maps to "[]const u8" in Zig.
 #   - strbuf: A mutable slice of text characters, maps to "[]u8" in Zig.
 #   - contextptr: A pointer to an unknown data structure, maps to `?*anyopaque` in Zig.
+#   - framebuf: A framebuffer system resource.
 #   - Any type declared with `type` in the top-level scope or the current widget.
 #
 # Both parameter lists can contain up to 4 "raw elements". A "raw element" is a single `usize` Zig value,

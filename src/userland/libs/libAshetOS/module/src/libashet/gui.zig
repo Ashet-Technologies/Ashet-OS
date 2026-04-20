@@ -7,6 +7,9 @@ const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
 
+// The widget definitions are auto-generated:
+pub const widgets = @import("widgets");
+
 pub const UUID = ashet.abi.UUID;
 
 pub const Desktop = ashet.abi.Desktop;
@@ -159,140 +162,183 @@ pub fn register_widget_type(desc: WidgetDescriptor) !WidgetType {
     return try ashet.abi.gui.register_widget_type(&desc);
 }
 
-pub const widgets = struct {
-    pub const Label = opaque {
-        pub const uuid = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
+/// Helper function that converts a marshallable type into a `usize`.
+///
+/// NOTE: Use this to convert NotifyEvent/ControlMessage parameter values to `usize`.
+pub fn usize_from_type(comptime T: type, value: T) usize {
+    const info = @typeInfo(T);
+    switch (info) {
+        .@"enum" => return @intFromEnum(value),
+        .int => |int| switch (int.signedness) {
+            .unsigned => return value,
+            .signed => return @bitCast(@as(isize, value)),
+        },
+        .float => |flt| {
+            const ival: std.meta.Int(.unsigned, flt.bits) = @bitCast(value);
+            return ival;
+        },
 
-        pub const set_text: ControlMessage = .from_int(1);
-        pub const set_alignment: ControlMessage = .from_int(2);
-    };
+        .optional, .pointer => return @intFromPtr(value),
 
-    pub const Button = opaque {
-        pub const uuid = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
+        else => @compileError(std.fmt.comptimePrint("{} is not a type that can be passed through usize", .{T})),
+    }
+}
 
-        pub const set_text: ControlMessage = .from_int(1);
+/// Helper function that converts a `usize` into a marshallable type.
+///
+/// NOTE: Use this to convert NotifyEvent/ControlMessage parameter values from the `usize`.
+pub fn type_from_usize(comptime T: type, value: usize) T {
+    const info = @typeInfo(T);
+    switch (info) {
+        .@"enum" => |enumeration| return @enumFromInt(@as(enumeration.tag_type, @truncate(value))),
+        .int => |int| switch (int.signedness) {
+            .unsigned => return @truncate(value),
+            .signed => return @truncate(@as(isize, @bitCast(value))),
+        },
+        .float => {
+            const fcal: std.meta.Float(@bitSizeOf(usize)) = @bitCast(value);
+            return @floatCast(fcal);
+        },
+        .optional, .pointer => return @ptrFromInt(value),
 
-        pub const clicked: NotifyEvent = .from_int(1);
-    };
+        else => @compileError(std.fmt.comptimePrint("{} is not a type that can be passed through usize", .{T})),
+    }
+}
 
-    pub const ToolButton = opaque {
-        pub const uuid = UUID.constant("8698ffe7-7768-4681-a5f4-57d9da69d6d8");
+// pub const widgets = struct {
+//     pub const Label = opaque {
+//         pub const uuid = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
 
-        pub const clicked: NotifyEvent = .from_int(1);
+//         pub const set_text: ControlMessage = .from_int(1);
+//         pub const set_alignment: ControlMessage = .from_int(2);
+//     };
 
-        // set_icon(Framebuffer)
-    };
+//     pub const Button = opaque {
+//         pub const uuid = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
 
-    pub const Panel = opaque {
-        pub const uuid = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
-    };
+//         pub const set_text: ControlMessage = .from_int(1);
 
-    pub const PictureBox = opaque {
-        pub const uuid = UUID.constant("bb33e7a1-74ad-4040-a248-0015ba6b9dac");
-    };
+//         pub const clicked: NotifyEvent = .from_int(1);
+//     };
 
-    pub const ProgressBar = opaque {
-        pub const uuid = UUID.constant("b96290a9-542f-45f5-9e37-1ce9084fc0e3");
-    };
+//     pub const ToolButton = opaque {
+//         pub const uuid = UUID.constant("8698ffe7-7768-4681-a5f4-57d9da69d6d8");
 
-    pub const GroupBox = opaque {
-        pub const uuid = UUID.constant("b96bc6a2-6df0-4f76-962a-4af18fdf3548");
-    };
+//         pub const clicked: NotifyEvent = .from_int(1);
 
-    pub const TextBox = opaque {
-        pub const uuid = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
+//         // set_icon(Framebuffer)
+//     };
 
-        pub const set_text_msg: ControlMessage = .from_int(1); // (ptr, length)
+//     pub const Panel = opaque {
+//         pub const uuid = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
+//     };
 
-        pub const get_text: ControlMessage = .from_int(2); // (buffer, max_length, *length)
+//     pub const PictureBox = opaque {
+//         pub const uuid = UUID.constant("bb33e7a1-74ad-4040-a248-0015ba6b9dac");
+//     };
 
-        /// User typed text and get
-        pub const text_changed: NotifyEvent = .from_int(1);
+//     pub const ProgressBar = opaque {
+//         pub const uuid = UUID.constant("b96290a9-542f-45f5-9e37-1ce9084fc0e3");
+//     };
 
-        /// User clicked "return" inside the text box
-        pub const accepted: NotifyEvent = .from_int(2);
+//     pub const GroupBox = opaque {
+//         pub const uuid = UUID.constant("b96bc6a2-6df0-4f76-962a-4af18fdf3548");
+//     };
 
-        /// User clicked "escape" inside the text box
-        pub const cancelled: NotifyEvent = .from_int(3);
+//     pub const TextBox = opaque {
+//         pub const uuid = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
 
-        pub fn create(window: Window) !*TextBox {
-            const widget = try create_widget(window, uuid);
-            return @ptrCast(widget);
-        }
+//         pub const set_text_msg: ControlMessage = .from_int(1); // (ptr, length)
 
-        pub fn release(tb: *TextBox) void {
-            ashet.abi.resources.release(.from_ptr(tb));
-        }
+//         pub const get_text: ControlMessage = .from_int(2); // (buffer, max_length, *length)
 
-        pub fn eql(tb: *TextBox, widget: Widget) bool {
-            const other: *TextBox = @ptrCast(widget);
-            return tb == other;
-        }
+//         /// User typed text and get
+//         pub const text_changed: NotifyEvent = .from_int(1);
 
-        pub fn place(tb: *TextBox, rect: Rectangle) !Rectangle {
-            return try place_widget(@ptrCast(tb), rect);
-        }
+//         /// User clicked "return" inside the text box
+//         pub const accepted: NotifyEvent = .from_int(2);
 
-        pub fn set_text(tb: *TextBox, text: []const u8) !void {
-            _ = try control_widget(@ptrCast(tb), set_text_msg, .{
-                @intFromPtr(text.ptr),
-                text.len,
-                0,
-                0,
-            });
-        }
-    };
+//         /// User clicked "escape" inside the text box
+//         pub const cancelled: NotifyEvent = .from_int(3);
 
-    pub const MultiLineTextBox = opaque {
-        pub const uuid = UUID.constant("84d40a1a-04ab-4e00-ae93-6e91e6b3d10a");
-    };
+//         pub fn create(window: Window) !*TextBox {
+//             const widget = try create_widget(window, uuid);
+//             return @ptrCast(widget);
+//         }
 
-    pub const VerticalScrollBar = opaque {
-        pub const uuid = UUID.constant("d1c52f74-e9b8-4067-8bb6-fe01c49d97ae");
-    };
+//         pub fn release(tb: *TextBox) void {
+//             ashet.abi.resources.release(.from_ptr(tb));
+//         }
 
-    pub const HorizontalScrollBar = opaque {
-        pub const uuid = UUID.constant("2899397f-ede2-46e9-8458-1eea29c81fa1");
-    };
+//         pub fn eql(tb: *TextBox, widget: Widget) bool {
+//             const other: *TextBox = @ptrCast(widget);
+//             return tb == other;
+//         }
 
-    pub const CheckBox = opaque {
-        pub const uuid = UUID.constant("051c6bff-d491-4e5a-8b77-6f4244da52ee");
-    };
+//         pub fn place(tb: *TextBox, rect: Rectangle) !Rectangle {
+//             return try place_widget(@ptrCast(tb), rect);
+//         }
 
-    pub const RadioButton = opaque {
-        pub const uuid = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
-    };
+//         pub fn set_text(tb: *TextBox, text: []const u8) !void {
+//             _ = try control_widget(@ptrCast(tb), set_text_msg, .{
+//                 @intFromPtr(text.ptr),
+//                 text.len,
+//                 0,
+//                 0,
+//             });
+//         }
+//     };
 
-    pub const ListBox = opaque {
-        pub const uuid = UUID.constant("92dacfe5-9f1c-484d-aefe-b5fa4eb6636b");
+//     pub const MultiLineTextBox = opaque {
+//         pub const uuid = UUID.constant("84d40a1a-04ab-4e00-ae93-6e91e6b3d10a");
+//     };
 
-        pub const set_list: ControlMessage = .from_int(1); // (count, get_item_callback, ctx, new_selected)
-        pub const set_selected_item: ControlMessage = .from_int(2); // (i32)
-        pub const get_selected_item: ControlMessage = .from_int(3); // () i32
+//     pub const VerticalScrollBar = opaque {
+//         pub const uuid = UUID.constant("d1c52f74-e9b8-4067-8bb6-fe01c49d97ae");
+//     };
 
-        pub const item_clicked: NotifyEvent = .from_int(1); // [ item index ]
+//     pub const HorizontalScrollBar = opaque {
+//         pub const uuid = UUID.constant("2899397f-ede2-46e9-8458-1eea29c81fa1");
+//     };
 
-        pub const selected_item_changed: NotifyEvent = .from_int(2); // [ item index ]
+//     pub const CheckBox = opaque {
+//         pub const uuid = UUID.constant("051c6bff-d491-4e5a-8b77-6f4244da52ee");
+//     };
 
-        pub const GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void;
+//     pub const RadioButton = opaque {
+//         pub const uuid = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
+//     };
 
-        pub const set_list_keep_selection = std.math.maxInt(usize) - 1;
-        pub const set_list_clear_selection = std.math.maxInt(usize) - 0;
+//     pub const ListBox = opaque {
+//         pub const uuid = UUID.constant("92dacfe5-9f1c-484d-aefe-b5fa4eb6636b");
 
-        /// The index used by `set_selected_item`, `get_selected_item` and the `selected_item_changed` event
-        /// that signals that no item is selected
-        pub const empty_selection_index: usize = @bitCast(@as(isize, -1));
+//         pub const set_list: ControlMessage = .from_int(1); // (count, get_item_callback, ctx, new_selected)
+//         pub const set_selected_item: ControlMessage = .from_int(2); // (i32)
+//         pub const get_selected_item: ControlMessage = .from_int(3); // () i32
 
-        pub const Item = extern struct {
-            pub fn new(slice: []const u8) Item {
-                return .{
-                    .text_ptr = slice.ptr,
-                    .text_len = slice.len,
-                };
-            }
+//         pub const item_clicked: NotifyEvent = .from_int(1); // [ item index ]
 
-            text_ptr: [*]const u8,
-            text_len: usize,
-        };
-    };
-};
+//         pub const selected_item_changed: NotifyEvent = .from_int(2); // [ item index ]
+
+//         pub const GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void;
+
+//         pub const set_list_keep_selection = std.math.maxInt(usize) - 1;
+//         pub const set_list_clear_selection = std.math.maxInt(usize) - 0;
+
+//         /// The index used by `set_selected_item`, `get_selected_item` and the `selected_item_changed` event
+//         /// that signals that no item is selected
+//         pub const empty_selection_index: usize = @bitCast(@as(isize, -1));
+
+//         pub const Item = extern struct {
+//             pub fn new(slice: []const u8) Item {
+//                 return .{
+//                     .text_ptr = slice.ptr,
+//                     .text_len = slice.len,
+//                 };
+//             }
+
+//             text_ptr: [*]const u8,
+//             text_len: usize,
+//         };
+//     };
+// };

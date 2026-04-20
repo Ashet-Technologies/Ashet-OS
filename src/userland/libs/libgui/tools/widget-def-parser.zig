@@ -1,5 +1,5 @@
 const std = @import("std");
-const model = @import("widget-def-model.zig");
+const model = @import("widget-model");
 
 const Allocator = std.mem.Allocator;
 const ParserError = error{ParseFailed} || Allocator.Error;

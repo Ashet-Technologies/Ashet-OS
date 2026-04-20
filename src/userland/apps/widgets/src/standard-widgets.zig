@@ -244,7 +244,7 @@ pub const Label = struct {
 
     fn control(label: *Label, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
-            ashet.gui.widgets.Label.set_text => {
+            ashet.gui.widgets.Label.set_text_msg => {
                 const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
                 const text = ptr[0..msg.params[1]];
 
@@ -255,7 +255,7 @@ pub const Label = struct {
 
                 try WidgetWrapper(Label).from_impl(label).invalidate();
             },
-            ashet.gui.widgets.Label.set_alignment => {
+            ashet.gui.widgets.Label.set_alignment_msg => {
                 return error.Unimplemented;
             },
 
@@ -292,7 +292,7 @@ pub const Button = struct {
 
     fn control(button: *Button, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
-            ashet.gui.widgets.Button.set_text => {
+            ashet.gui.widgets.Button.set_text_msg => {
                 const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
                 const text = ptr[0..msg.params[1]];
 
@@ -691,6 +691,10 @@ pub const ListBox = struct {
 
     const wrapper = WidgetWrapper(@This()).from_impl;
 
+    const empty_selection_index: usize = @bitCast(@as(isize, -1));
+    const keep_selection_index: usize = @bitCast(@as(isize, -1));
+    const clear_selection_index: usize = @bitCast(@as(isize, -2));
+
     item_count: usize = 9,
     selected_index: ?usize = null,
 
@@ -722,13 +726,13 @@ pub const ListBox = struct {
 
         try listbox.wrapper().notify_owner(
             ashet.gui.widgets.ListBox.selected_item_changed,
-            .{ listbox.selected_index orelse ashet.gui.widgets.ListBox.empty_selection_index, 0, 0, 0 },
+            .{ listbox.selected_index orelse empty_selection_index, 0, 0, 0 },
         );
     }
 
     fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
-            ashet.gui.widgets.ListBox.set_list => {
+            ashet.gui.widgets.ListBox.set_list_msg => {
                 const count: usize = msg.params[0];
                 const callback: ?GetItemCallback = @ptrFromInt(msg.params[1]);
                 const context: usize = msg.params[2];
@@ -738,7 +742,7 @@ pub const ListBox = struct {
                     // If we got a new list callback provided:
 
                     switch (selection) {
-                        ashet.gui.widgets.ListBox.set_list_keep_selection => {
+                        keep_selection_index => {
                             if (listbox.selected_index) |index| {
                                 // If we currently have a selected index, reset it to
                                 // null if it can't be retained.
@@ -748,7 +752,7 @@ pub const ListBox = struct {
                             }
                         },
 
-                        ashet.gui.widgets.ListBox.set_list_clear_selection => listbox.selected_index = null,
+                        clear_selection_index => listbox.selected_index = null,
 
                         else => listbox.selected_index = @min(selection, count -| 1),
                     }
@@ -766,15 +770,14 @@ pub const ListBox = struct {
                 return 0;
             },
 
-            ashet.gui.widgets.ListBox.get_selected_item => {
-                return listbox.selected_index orelse ashet.gui.widgets.ListBox.empty_selection_index;
+            ashet.gui.widgets.ListBox.get_selected_item_msg => {
+                return listbox.selected_index orelse empty_selection_index;
             },
 
-            ashet.gui.widgets.ListBox.set_selected_item => {
+            ashet.gui.widgets.ListBox.set_selected_item_msg => {
                 const raw_index = msg.params[0];
 
-                const index = if (raw_index !=
-                    ashet.gui.widgets.ListBox.empty_selection_index)
+                const index = if (raw_index != empty_selection_index)
                     raw_index
                 else
                     null;
