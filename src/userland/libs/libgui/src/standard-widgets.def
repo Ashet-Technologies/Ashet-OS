@@ -56,19 +56,18 @@
 # The return type uses the same type list, except for types that map to two Zig `usize` values.
 #
 
+type Alignment = enum(u8) {
+|   near = 0,
+|   middle = 1,
+|   far = 2,
+|   _, // invalid
+|}
+
 widget Label = "53b8be36-969a-46a3-bdf5-e3d197890219"
 
     control set_text(text: str)
 
     control set_alignment(horizontal: Alignment, vertical: Alignment)
-
-    type Alignment = enum(u8) {
-    |   near = 0,
-    |   middle = 1,
-    |   far = 2,
-    |   _, // invalid
-    |}
-
 
 widget Button = "782ccd0e-bae4-4093-93fe-12c1f86ff43c"
 
@@ -267,7 +266,7 @@ widget ListBox = "92dacfe5-9f1c-484d-aefe-b5fa4eb6636b"
     event selected_item_changed(index: i32)
         docs: The currently selected item is now at `index`. `index` is the index of the selected item or `-1` if no item is selected anymore.
 
-    type GetItemCallback = *const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void
+    type GetItemCallback = ?*const fn (ctx: ?*anyopaque, index: usize, item: *Item) callconv(.c) void
 
     type Item = extern struct {
     |   pub fn new(slice: []const u8) Item {

@@ -180,6 +180,8 @@ pub fn usize_from_type(comptime T: type, value: T) usize {
 
         .optional, .pointer => return @intFromPtr(value),
 
+        .bool => return @intFromBool(value),
+
         else => @compileError(std.fmt.comptimePrint("{} is not a type that can be passed through usize", .{T})),
     }
 }
@@ -200,6 +202,8 @@ pub fn type_from_usize(comptime T: type, value: usize) T {
             return @floatCast(fcal);
         },
         .optional, .pointer => return @ptrFromInt(value),
+
+        .bool => return (value != 0),
 
         else => @compileError(std.fmt.comptimePrint("{} is not a type that can be passed through usize", .{T})),
     }

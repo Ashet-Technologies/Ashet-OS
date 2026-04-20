@@ -59,6 +59,13 @@ fn renderDocument(allocator: Allocator, writer: *std.Io.Writer, document: model.
         }
         try renderWidget(allocator, writer, document, widget);
     }
+
+    if (document.types.len != 0) {
+        for (document.types) |type_decl| {
+            try writer.writeAll("\n");
+            try renderTypeDeclaration(writer, type_decl);
+        }
+    }
 }
 
 fn renderWidget(allocator: Allocator, writer: *std.Io.Writer, document: model.Document, widget: model.Widget) !void {

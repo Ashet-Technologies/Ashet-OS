@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("ashet");
+const generated_widgets = @import("generated_widgets");
 
 const draw_lib = @import("draw.zig");
 
@@ -86,6 +87,8 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
     return struct {
         const Wrapper = @This();
 
+        const Dispatcher: type = WidgetImpl.Dispatcher;
+
         pub const uuid: *const UUID = WidgetImpl.uuid;
         pub const flags: ashet.gui.WidgetDescriptor.Flags = WidgetImpl.flags;
 
@@ -123,8 +126,7 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
         }
 
         fn control(wrapper: *Wrapper, message: ashet.gui.WidgetControlMessage) !usize {
-            // TODO: Implement auto-magic control functions with parameter unwrapping
-            return try wrapper.impl.control(message);
+            return try Dispatcher.control(&wrapper.impl, message);
         }
 
         fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) usize {
@@ -199,6 +201,8 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
 }
 
 pub const Label = struct {
+    pub const Dispatcher = generated_widgets.LabelDispatcher(@This());
+
     pub const uuid = ashet.gui.widgets.Label.uuid;
 
     pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
@@ -208,6 +212,8 @@ pub const Label = struct {
         .allow_drop = false,
         .clipboard_sensitive = false,
     };
+
+    pub const Alignment = ashet.gui.widgets.Alignment;
 
     const wrapper = WidgetWrapper(@This()).from_impl;
 
@@ -242,30 +248,29 @@ pub const Label = struct {
         );
     }
 
-    fn control(label: *Label, msg: ashet.abi.WidgetControlMessage) !usize {
-        switch (msg.type) {
-            ashet.gui.widgets.Label.set_text_msg => {
-                const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
-                const text = ptr[0..msg.params[1]];
+    pub fn set_text(label: *Label, text: []const u8) !void {
+        try label.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
 
-                try label.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
+        label.text.clearRetainingCapacity();
+        label.text.appendSliceAssumeCapacity(text);
 
-                label.text.clearRetainingCapacity();
-                label.text.appendSliceAssumeCapacity(text);
+        try WidgetWrapper(Label).from_impl(label).invalidate();
+    }
 
-                try WidgetWrapper(Label).from_impl(label).invalidate();
-            },
-            ashet.gui.widgets.Label.set_alignment_msg => {
-                return error.Unimplemented;
-            },
-
-            else => return error.UnknownControl,
+    pub fn set_alignment(label: *Label, horiz: Alignment, vert: Alignment) !void {
+        switch (horiz) {
+            .near, .middle, .far => label.horizontal_alignment = horiz,
+            _ => {},
         }
-        return 0;
+        switch (vert) {
+            .near, .middle, .far => label.vertical_alignment = vert,
+            _ => {},
+        }
     }
 };
 
 pub const Button = struct {
+    pub const Dispatcher = generated_widgets.ButtonDispatcher(@This());
     pub const uuid = ashet.gui.widgets.Button.uuid;
 
     pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
@@ -290,23 +295,13 @@ pub const Button = struct {
         button.* = undefined;
     }
 
-    fn control(button: *Button, msg: ashet.abi.WidgetControlMessage) !usize {
-        switch (msg.type) {
-            ashet.gui.widgets.Button.set_text_msg => {
-                const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
-                const text = ptr[0..msg.params[1]];
+    pub fn set_text(button: *Button, text: []const u8) !void {
+        try button.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
 
-                try button.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
+        button.text.clearRetainingCapacity();
+        button.text.appendSliceAssumeCapacity(text);
 
-                button.text.clearRetainingCapacity();
-                button.text.appendSliceAssumeCapacity(text);
-
-                try WidgetWrapper(Button).from_impl(button).invalidate();
-                return 0;
-            },
-
-            else => return error.UnknownControl,
-        }
+        try WidgetWrapper(Button).from_impl(button).invalidate();
     }
 
     fn handle_event(button: *Button, event: ashet.gui.WidgetEvent) !void {
@@ -403,6 +398,7 @@ pub const Button = struct {
 };
 
 pub const ToolButton = struct {
+    pub const Dispatcher = generated_widgets.ToolButtonDispatcher(@This());
     pub const uuid = ashet.gui.widgets.ToolButton.uuid;
 
     pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
@@ -427,11 +423,11 @@ pub const ToolButton = struct {
         button.* = undefined;
     }
 
-    fn control(button: *ToolButton, msg: ashet.abi.WidgetControlMessage) !usize {
+    pub fn set_icon(button: *ToolButton, fb: ashet.graphics.Framebuffer) !void {
+        // TODO: Implement this function!
         _ = button;
-        switch (msg.type) {
-            else => return error.UnknownControl,
-        }
+        _ = fb;
+        std.log.warn("ToolButton.set_icon not implemented yet!", .{});
     }
 
     fn handle_event(button: *ToolButton, event: ashet.gui.WidgetEvent) !void {
@@ -518,6 +514,7 @@ pub const ToolButton = struct {
 };
 
 pub const TextBox = struct {
+    pub const Dispatcher = generated_widgets.TextBoxDispatcher(@This());
     pub const uuid = ashet.gui.widgets.TextBox.uuid;
 
     pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
@@ -542,23 +539,28 @@ pub const TextBox = struct {
         button.* = undefined;
     }
 
-    fn control(textbox: *TextBox, msg: ashet.abi.WidgetControlMessage) !usize {
-        switch (msg.type) {
-            ashet.gui.widgets.TextBox.set_text_msg => {
-                const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
-                const text = ptr[0..msg.params[1]];
+    pub fn set_text(textbox: *TextBox, text: []const u8) !void {
+        try textbox.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
 
-                try textbox.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
+        textbox.text.clearRetainingCapacity();
+        textbox.text.appendSliceAssumeCapacity(text);
 
-                textbox.text.clearRetainingCapacity();
-                textbox.text.appendSliceAssumeCapacity(text);
+        try WidgetWrapper(TextBox).from_impl(textbox).invalidate();
+    }
 
-                try WidgetWrapper(TextBox).from_impl(textbox).invalidate();
-                return 0;
-            },
+    pub fn get_text(textbox: *TextBox, buffer: []u8) !usize {
+        const len = @min(buffer.len, textbox.text.items.len);
 
-            else => return error.UnknownControl,
-        }
+        @memcpy(buffer[0..len], textbox.text.items[0..len]);
+        @memset(buffer[len..], 0);
+
+        return textbox.text.items.len;
+    }
+
+    pub fn set_readonly(textbox: *TextBox, readonly: bool) !void {
+        _ = textbox;
+        _ = readonly;
+        std.log.warn("TextBox.set_readonly() not implemented yet!", .{}); // TODO: implement TextBox.set_readonly!
     }
 
     fn handle_event(textbox: *TextBox, event: ashet.gui.WidgetEvent) !void {
@@ -676,8 +678,9 @@ pub const TextBox = struct {
 };
 
 pub const ListBox = struct {
+    pub const Dispatcher = generated_widgets.ListBoxDispatcher(@This());
     pub const Item = ashet.gui.widgets.ListBox.Item;
-    pub const GetItemCallback = ashet.gui.widgets.ListBox.GetItemCallback;
+    pub const GetItemCallback = @typeInfo(ashet.gui.widgets.ListBox.GetItemCallback).optional.child;
 
     pub const uuid = ashet.gui.widgets.ListBox.uuid;
 
@@ -730,70 +733,53 @@ pub const ListBox = struct {
         );
     }
 
-    fn control(listbox: *ListBox, msg: ashet.abi.WidgetControlMessage) !usize {
-        switch (msg.type) {
-            ashet.gui.widgets.ListBox.set_list_msg => {
-                const count: usize = msg.params[0];
-                const callback: ?GetItemCallback = @ptrFromInt(msg.params[1]);
-                const context: usize = msg.params[2];
-                const selection: usize = msg.params[3];
-
-                if (count > 0 and callback != null) {
-                    // If we got a new list callback provided:
-
-                    switch (selection) {
-                        keep_selection_index => {
-                            if (listbox.selected_index) |index| {
-                                // If we currently have a selected index, reset it to
-                                // null if it can't be retained.
-                                if (index >= count) {
-                                    listbox.selected_index = null;
-                                }
-                            }
-                        },
-
-                        clear_selection_index => listbox.selected_index = null,
-
-                        else => listbox.selected_index = @min(selection, count -| 1),
+    pub fn set_list(listbox: *ListBox, count: usize, callback: ?GetItemCallback, ctx: ?*anyopaque, new_index: i32) !void {
+        if (count > 0 and callback != null) {
+            // If we got a new list callback provided:
+            if (new_index >= 0) {
+                listbox.selected_index = @intCast(@min(new_index, count -| 1));
+            } else {
+                if (new_index == -2) {
+                    if (listbox.selected_index) |index| {
+                        // If we currently have a selected index, reset it to
+                        // null if it can't be retained.
+                        if (index >= count) {
+                            listbox.selected_index = null;
+                        }
                     }
-
-                    listbox.item_count = count;
-                    listbox.get_item_callback = callback;
-                    listbox.get_item_context = @ptrFromInt(context);
                 } else {
-                    listbox.item_count = 0;
-                    listbox.get_item_callback = null;
-                    listbox.get_item_context = null;
+                    listbox.selected_index = null;
                 }
+            }
 
-                try listbox.wrapper().invalidate();
-                return 0;
-            },
-
-            ashet.gui.widgets.ListBox.get_selected_item_msg => {
-                return listbox.selected_index orelse empty_selection_index;
-            },
-
-            ashet.gui.widgets.ListBox.set_selected_item_msg => {
-                const raw_index = msg.params[0];
-
-                const index = if (raw_index != empty_selection_index)
-                    raw_index
-                else
-                    null;
-
-                if (index) |i| {
-                    if (i >= listbox.item_count)
-                        return 0;
-                }
-
-                try listbox.select_item(index);
-
-                return 0;
-            },
-
-            else => return error.UnknownControl,
+            listbox.item_count = count;
+            listbox.get_item_callback = callback;
+            listbox.get_item_context = ctx;
+        } else {
+            listbox.item_count = 0;
+            listbox.get_item_callback = null;
+            listbox.get_item_context = null;
         }
+
+        try listbox.wrapper().invalidate();
+    }
+
+    pub fn get_selected_item(listbox: *ListBox) !i32 {
+        return if (listbox.selected_index) |index|
+            @intCast(index)
+        else
+            -1;
+    }
+
+    pub fn set_selected_item(listbox: *ListBox, new_index: i32) !void {
+        const index: ?usize = std.math.cast(usize, new_index);
+
+        if (index) |i| {
+            if (i >= listbox.item_count)
+                return;
+        }
+
+        try listbox.select_item(index);
     }
 
     fn handle_event(listbox: *ListBox, event: ashet.gui.WidgetEvent) !void {
@@ -1179,19 +1165,14 @@ fn rstrip(text: []const u8) []const u8 {
     return std.mem.trimRight(u8, text, " \r\n\t");
 }
 
-const Alignment = enum(u8) {
-    near = 0,
-    middle = 1,
-    far = 2,
-
-    fn compute(al: Alignment, aligned_size: u16, available_size: u16) i16 {
-        return @intCast(switch (al) {
-            .near => 0,
-            .middle => (available_size -| aligned_size) / 2,
-            .far => available_size -| aligned_size,
-        });
-    }
-};
+fn compute_align(al: ashet.gui.widgets.Alignment, aligned_size: u16, available_size: u16) i16 {
+    return @intCast(switch (al) {
+        .near => 0,
+        .middle => (available_size -| aligned_size) / 2,
+        .far => available_size -| aligned_size,
+        _ => 0,
+    });
+}
 
 fn draw_aligned_text(
     cq: *CommandQueue,
@@ -1200,15 +1181,15 @@ fn draw_aligned_text(
     color: ashet.graphics.Color,
     text: []const u8,
     options: struct {
-        vertical: Alignment,
-        horizontal: Alignment,
+        vertical: ashet.gui.widgets.Alignment,
+        horizontal: ashet.gui.widgets.Alignment,
     },
 ) !void {
     const size = try ashet.graphics.measure_text_size(font, text);
     try cq.draw_text(
         .new(
-            bounds.x + options.horizontal.compute(size.width, bounds.width),
-            bounds.y + options.vertical.compute(size.height, bounds.height),
+            bounds.x + compute_align(options.horizontal, size.width, bounds.width),
+            bounds.y + compute_align(options.vertical, size.height, bounds.height),
         ),
         font,
         color,
