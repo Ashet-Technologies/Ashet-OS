@@ -544,7 +544,7 @@ pub const TextBox = struct {
 
     fn control(textbox: *TextBox, msg: ashet.abi.WidgetControlMessage) !usize {
         switch (msg.type) {
-            ashet.gui.widgets.TextBox.set_text => {
+            ashet.gui.widgets.TextBox.set_text_msg => {
                 const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
                 const text = ptr[0..msg.params[1]];
 

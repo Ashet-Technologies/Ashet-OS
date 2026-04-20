@@ -117,7 +117,7 @@ pub fn main() !void {
     );
     defer window.destroy_now();
 
-    const path_box = try ashet.gui.create_widget(window, ashet.gui.widgets.TextBox.uuid);
+    const path_box = try ashet.gui.widgets.TextBox.create(window);
     defer path_box.release();
 
     const go_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
@@ -126,7 +126,7 @@ pub fn main() !void {
     list_box = try ashet.gui.create_widget(window, ashet.gui.widgets.ListBox.uuid);
     defer list_box.release();
 
-    _ = try ashet.gui.place_widget(path_box, .{ .x = 5, .y = 5, .width = 170, .height = 15 });
+    _ = try path_box.place(.{ .x = 5, .y = 5, .width = 170, .height = 15 });
     _ = try ashet.gui.place_widget(go_button, .{ .x = 180, .y = 5, .width = 15, .height = 15 });
     _ = try ashet.gui.place_widget(list_box, .{ .x = 5, .y = 25, .width = 190, .height = 120 });
 
@@ -137,12 +137,7 @@ pub fn main() !void {
         0,
     });
 
-    _ = try ashet.gui.control_widget(path_box, ashet.gui.widgets.TextBox.set_text, .{
-        @intFromPtr("SYS:/"),
-        "SYS:/".len,
-        0,
-        0,
-    });
+    try path_box.set_text("SYS:/");
 
     current_dir = try .openDrive(.system, ".");
     defer current_dir.close();
@@ -167,7 +162,7 @@ pub fn main() !void {
 
                 if (notify.widget == go_button) {
                     //
-                } else if (notify.widget == path_box) {
+                } else if (path_box.eql(notify.widget)) {
                     //
                 } else if (notify.widget == list_box) {
                     switch (notify.type) {

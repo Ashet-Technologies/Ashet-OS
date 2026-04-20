@@ -202,7 +202,7 @@ pub const widgets = struct {
     pub const TextBox = opaque {
         pub const uuid = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
 
-        pub const set_text: ControlMessage = .from_int(1); // (ptr, length)
+        pub const set_text_msg: ControlMessage = .from_int(1); // (ptr, length)
 
         pub const get_text: ControlMessage = .from_int(2); // (buffer, max_length, *length)
 
@@ -214,6 +214,33 @@ pub const widgets = struct {
 
         /// User clicked "escape" inside the text box
         pub const cancelled: NotifyEvent = .from_int(3);
+
+        pub fn create(window: Window) !*TextBox {
+            const widget = try create_widget(window, uuid);
+            return @ptrCast(widget);
+        }
+
+        pub fn release(tb: *TextBox) void {
+            ashet.abi.resources.release(.from_ptr(tb));
+        }
+
+        pub fn eql(tb: *TextBox, widget: Widget) bool {
+            const other: *TextBox = @ptrCast(widget);
+            return tb == other;
+        }
+
+        pub fn place(tb: *TextBox, rect: Rectangle) !Rectangle {
+            return try place_widget(@ptrCast(tb), rect);
+        }
+
+        pub fn set_text(tb: *TextBox, text: []const u8) !void {
+            _ = try control_widget(@ptrCast(tb), set_text_msg, .{
+                @intFromPtr(text.ptr),
+                text.len,
+                0,
+                0,
+            });
+        }
     };
 
     pub const MultiLineTextBox = opaque {
