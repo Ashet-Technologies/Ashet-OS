@@ -33,32 +33,21 @@ pub fn main() !void {
     defer window.destroy_now();
     std.log.info("created window: {f}", .{window});
 
-    const inc_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
-    defer inc_button.release();
+    const inc_button = try ashet.gui.widgets.Button.create(window);
+    defer inc_button.destroy();
 
-    const count_label = try ashet.gui.create_widget(window, ashet.gui.widgets.Label.uuid);
-    defer count_label.release();
+    const count_label = try ashet.gui.widgets.Label.create(window);
+    defer count_label.destroy();
 
-    const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
-    defer dec_button.release();
+    const dec_button = try ashet.gui.widgets.Button.create(window);
+    defer dec_button.destroy();
 
-    _ = try ashet.gui.place_widget(inc_button, .{ .x = 42, .y = 22, .width = 30, .height = 18 });
-    _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 10, .width = 62, .height = 8 });
-    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 22, .width = 30, .height = 18 });
+    _ = try inc_button.place(.{ .x = 42, .y = 22, .width = 30, .height = 18 });
+    _ = try count_label.place(.{ .x = 10, .y = 10, .width = 62, .height = 8 });
+    _ = try dec_button.place(.{ .x = 10, .y = 22, .width = 30, .height = 18 });
 
-    _ = try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text_msg, .{
-        @intFromPtr("+"),
-        "+".len,
-        0,
-        0,
-    });
-
-    _ = try ashet.gui.control_widget(dec_button, ashet.gui.widgets.Button.set_text_msg, .{
-        @intFromPtr("-"),
-        "-".len,
-        0,
-        0,
-    });
+    try inc_button.set_text("+");
+    try dec_button.set_text("-");
 
     try set_label_int(count_label, 0);
 
@@ -86,10 +75,10 @@ pub fn main() !void {
                     notify.data[3],
                 });
 
-                if (notify.widget == inc_button) {
+                if (inc_button.eql(notify.widget)) {
                     counter +|= 1;
                     try set_label_int(count_label, counter);
-                } else if (notify.widget == dec_button) {
+                } else if (dec_button.eql(notify.widget)) {
                     counter -|= 1;
                     try set_label_int(count_label, counter);
                 } else {
@@ -102,14 +91,8 @@ pub fn main() !void {
     }
 }
 
-fn set_label_int(label: ashet.gui.Widget, number: i32) !void {
+fn set_label_int(label: *ashet.gui.widgets.Label, number: i32) !void {
     var buffer: [32]u8 = undefined;
     const text = std.fmt.bufPrint(&buffer, "{}", .{number}) catch unreachable;
-
-    _ = try ashet.gui.control_widget(label, ashet.gui.widgets.Label.set_text_msg, .{
-        @intFromPtr(text.ptr),
-        text.len,
-        0,
-        0,
-    });
+    try label.set_text(text);
 }

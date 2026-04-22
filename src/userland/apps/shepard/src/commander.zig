@@ -35,7 +35,7 @@ fn get_item_callback(ctx: ?*anyopaque, index: usize, item: *ashet.gui.widgets.Li
     item.* = .new(current_directory_list.items[list_index].getName());
 }
 
-var list_box: ashet.gui.Widget = undefined;
+var list_box: *ashet.gui.widgets.ListBox = undefined;
 var current_dir: ashet.fs.Directory = undefined;
 
 fn change_dir(new_path: []const u8) !void {
@@ -88,12 +88,12 @@ fn change_dir(new_path: []const u8) !void {
     }
 
     // Setup the new list:
-    _ = try ashet.gui.control_widget(list_box, ashet.gui.widgets.ListBox.set_list_msg, .{
+    try list_box.set_list(
         current_directory_list.items.len + 2,
-        @intFromPtr(&get_item_callback),
-        0,
-        0, // ashet.gui.widgets.ListBox.set_list_clear_selection,
-    });
+        &get_item_callback,
+        null,
+        -1,
+    );
 }
 
 pub fn main() !void {
@@ -120,23 +120,17 @@ pub fn main() !void {
     const path_box = try ashet.gui.widgets.TextBox.create(window);
     defer path_box.destroy();
 
-    const go_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
-    defer go_button.release();
+    const go_button = try ashet.gui.widgets.Button.create(window);
+    defer go_button.destroy();
 
-    list_box = try ashet.gui.create_widget(window, ashet.gui.widgets.ListBox.uuid);
-    defer list_box.release();
+    list_box = try ashet.gui.widgets.ListBox.create(window);
+    defer list_box.destroy();
 
     _ = try path_box.place(.{ .x = 5, .y = 5, .width = 170, .height = 15 });
-    _ = try ashet.gui.place_widget(go_button, .{ .x = 180, .y = 5, .width = 15, .height = 15 });
-    _ = try ashet.gui.place_widget(list_box, .{ .x = 5, .y = 25, .width = 190, .height = 120 });
+    _ = try go_button.place(.{ .x = 180, .y = 5, .width = 15, .height = 15 });
+    _ = try list_box.place(.{ .x = 5, .y = 25, .width = 190, .height = 120 });
 
-    _ = try ashet.gui.control_widget(go_button, ashet.gui.widgets.Button.set_text_msg, .{
-        @intFromPtr("→"),
-        "→".len,
-        0,
-        0,
-    });
-
+    try go_button.set_text("→");
     try path_box.set_text("SYS:/");
 
     current_dir = try .openDrive(.system, ".");
@@ -160,11 +154,11 @@ pub fn main() !void {
                     notify.data[3],
                 });
 
-                if (notify.widget == go_button) {
+                if (go_button.eql(notify.widget)) {
                     //
                 } else if (path_box.eql(notify.widget)) {
                     //
-                } else if (notify.widget == list_box) {
+                } else if (list_box.eql(notify.widget)) {
                     switch (notify.type) {
                         ashet.gui.widgets.ListBox.item_clicked => {
                             const index = notify.data[0];
@@ -192,11 +186,7 @@ pub fn main() !void {
                             }
                         },
                         ashet.gui.widgets.ListBox.selected_item_changed => {
-                            const index = try ashet.gui.control_widget(
-                                list_box,
-                                ashet.gui.widgets.ListBox.get_selected_item_msg,
-                                .{ 0, 0, 0, 0 },
-                            );
+                            const index = try list_box.get_selected_item();
 
                             std.log.info("selected from event: {}", .{notify.data[0]});
                             std.log.info("selected from control: {}", .{index});
