@@ -189,14 +189,6 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
             }
             return 0;
         }
-
-        fn notify_owner(wrapper: *Wrapper, event: ashet.gui.NotifyEvent, params: [4]usize) !void {
-            try ashet.gui.notify_owner(
-                wrapper.widget,
-                event,
-                params,
-            );
-        }
     };
 }
 
@@ -215,7 +207,7 @@ pub const Label = struct {
 
     pub const Alignment = ashet.gui.widgets.Alignment;
 
-    const wrapper = WidgetWrapper(@This()).from_impl;
+    pub const wrapper = WidgetWrapper(@This()).from_impl;
 
     text: std.ArrayListUnmanaged(u8) = .empty,
 
@@ -281,7 +273,8 @@ pub const Button = struct {
         .clipboard_sensitive = false,
     };
 
-    const wrapper = WidgetWrapper(@This()).from_impl;
+    pub const wrapper = WidgetWrapper(@This()).from_impl;
+    const notify_owner = Dispatcher.notify_owner;
 
     text: std.ArrayListUnmanaged(u8) = .empty,
 
@@ -311,10 +304,7 @@ pub const Button = struct {
             },
 
             .click => {
-                try button.wrapper().notify_owner(
-                    ashet.gui.widgets.Button.clicked,
-                    .{ 0, 0, 0, 0 },
-                );
+                try button.notify_owner(.clicked);
             },
 
             // Ignore standard mouse events:
@@ -409,7 +399,8 @@ pub const ToolButton = struct {
         .clipboard_sensitive = false,
     };
 
-    const wrapper = WidgetWrapper(@This()).from_impl;
+    pub const wrapper = WidgetWrapper(@This()).from_impl;
+    const notify_owner = Dispatcher.notify_owner;
 
     _dummy: u32 = 0,
 
@@ -437,13 +428,7 @@ pub const ToolButton = struct {
                 event.resize_requested.requested_size.* = .new(9, 9);
             },
 
-            .click => {
-                try ashet.gui.notify_owner(
-                    WidgetWrapper(ToolButton).from_impl(button).widget,
-                    ashet.gui.widgets.ToolButton.clicked,
-                    .{ 0, 0, 0, 0 },
-                );
-            },
+            .click => try button.notify_owner(.clicked),
 
             // Ignore standard mouse events:
             .mouse_enter,
@@ -525,7 +510,8 @@ pub const TextBox = struct {
         .clipboard_sensitive = false,
     };
 
-    const wrapper = WidgetWrapper(@This()).from_impl;
+    pub const wrapper = WidgetWrapper(@This()).from_impl;
+    const notify_owner = Dispatcher.notify_owner;
 
     text: std.ArrayListUnmanaged(u8) = .empty,
 
@@ -590,19 +576,11 @@ pub const TextBox = struct {
                     },
 
                     .enter, .kp_enter => {
-                        try ashet.gui.notify_owner(
-                            WidgetWrapper(TextBox).from_impl(textbox).widget,
-                            ashet.gui.widgets.TextBox.accepted,
-                            .{ 0, 0, 0, 0 },
-                        );
+                        try textbox.notify_owner(.accepted);
                     },
 
                     .escape => {
-                        try ashet.gui.notify_owner(
-                            WidgetWrapper(TextBox).from_impl(textbox).widget,
-                            ashet.gui.widgets.TextBox.accepted,
-                            .{ 0, 0, 0, 0 },
-                        );
+                        try textbox.notify_owner(.cancelled);
                     },
 
                     else => if (kbd.text_ptr != null and kbd.text_len > 0) {
@@ -613,11 +591,7 @@ pub const TextBox = struct {
                 if (textbox.text.items.len != prevlen) {
                     try WidgetWrapper(TextBox).from_impl(textbox).invalidate();
 
-                    try ashet.gui.notify_owner(
-                        WidgetWrapper(TextBox).from_impl(textbox).widget,
-                        ashet.gui.widgets.TextBox.text_changed,
-                        .{ 0, 0, 0, 0 },
-                    );
+                    try textbox.notify_owner(.text_changed);
                 }
             },
             .key_release => {},
@@ -692,7 +666,8 @@ pub const ListBox = struct {
         .clipboard_sensitive = false,
     };
 
-    const wrapper = WidgetWrapper(@This()).from_impl;
+    pub const wrapper = WidgetWrapper(@This()).from_impl;
+    const notify_owner = Dispatcher.notify_owner;
 
     const empty_selection_index: usize = @bitCast(@as(isize, -1));
     const keep_selection_index: usize = @bitCast(@as(isize, -1));
@@ -727,10 +702,12 @@ pub const ListBox = struct {
 
         try listbox.wrapper().invalidate();
 
-        try listbox.wrapper().notify_owner(
-            ashet.gui.widgets.ListBox.selected_item_changed,
-            .{ listbox.selected_index orelse empty_selection_index, 0, 0, 0 },
-        );
+        try listbox.notify_owner(.{ .selected_item_changed = .{
+            .index = if (listbox.selected_index) |index|
+                @intCast(index)
+            else
+                -1,
+        } });
     }
 
     pub fn set_list(listbox: *ListBox, count: usize, callback: ?GetItemCallback, ctx: ?*anyopaque, new_index: i32) !void {
@@ -813,10 +790,9 @@ pub const ListBox = struct {
                 }
 
                 if (listbox.selected_index) |index| {
-                    try listbox.wrapper().notify_owner(
-                        ashet.gui.widgets.ListBox.item_clicked,
-                        .{ index, 0, 0, 0 },
-                    );
+                    try listbox.notify_owner(.{ .item_clicked = .{
+                        .index = index,
+                    } });
                 }
             },
 

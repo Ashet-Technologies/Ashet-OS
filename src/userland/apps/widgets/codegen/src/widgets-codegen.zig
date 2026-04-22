@@ -146,6 +146,116 @@ pub fn main() !u8 {
             \\
         );
 
+        if (widget.events.len > 0) {
+            try writer.writeAll(
+                \\        pub const NotifyEvent = union(enum) {
+                \\
+            );
+
+            for (widget.events) |event| {
+                try writer.print("            {f}", .{std.zig.fmtId(event.name)});
+
+                if (event.parameters.len > 0) {
+                    try writer.writeAll(": struct {\n");
+                    for (event.parameters) |param| {
+                        try writer.print("                {f}: {f},\n", .{
+                            std.zig.fmtId(param.name),
+                            FmtDispatcherTypeRef{ .data = param.type },
+                        });
+                    }
+                    try writer.writeAll("            },\n");
+                } else {
+                    try writer.writeAll(",\n");
+                }
+            }
+
+            try writer.writeAll(
+                \\        };
+                \\
+            );
+
+            try writer.writeAll(
+                \\        pub fn notify_owner(impl: *Impl, event: NotifyEvent) !void {
+                \\            switch(event) {
+                \\
+            );
+
+            for (widget.events) |event| {
+                if (event.parameter_raw_slots > 0) {
+                    try writer.print("            .{f} => |event_args| {{\n", .{
+                        std.zig.fmtId(event.name),
+                    });
+                    try writer.writeAll("            const args: [4]usize = .{\n");
+
+                    var slot_index: usize = 0;
+                    for (event.parameters) |param| {
+                        switch (param.type.raw_slot_width) {
+                            1 => {
+                                try writer.print("ashet.gui.usize_from_type({f}, event_args.{f}),\n", .{
+                                    FmtDispatcherTypeRef{ .data = param.type },
+                                    std.zig.fmtId(param.name),
+                                });
+                            },
+                            2 => {
+                                try writer.print(
+                                    \\ashet.gui.usize_from_type({[0]s}, event_args.{[1]f}.ptr),
+                                    \\event_args.{[1]f}.len,
+                                    \\
+                                , .{
+                                    zigTypeNameFirstPart(param.type),
+                                    std.zig.fmtId(param.name),
+                                });
+                            },
+                            else => unreachable,
+                        }
+
+                        slot_index += param.type.raw_slot_width;
+                    }
+
+                    for (slot_index..4) |_| {
+                        try writer.writeAll("                0,\n");
+                    }
+
+                    try writer.writeAll("            };\n");
+                } else {
+                    try writer.print("            .{f} => {{\n", .{
+                        std.zig.fmtId(event.name),
+                    });
+                    try writer.writeAll("            const args: [4]usize = @splat(0);\n");
+                }
+
+                try writer.print(
+                    \\            try ashet.gui.notify_owner(
+                    \\                impl.wrapper().widget,
+                    \\                Data.{f},
+                    \\                args,
+                    \\            );
+                    \\
+                ,
+                    .{
+                        std.zig.fmtId(event.name),
+                    },
+                );
+
+                // if (event.parameters.len > 0) {
+                //     try writer.writeAll(": struct {\n");
+                //     for (event.parameters) |param| {
+                //         try writer.print("                {f}: {f},\n", .{
+                //             std.zig.fmtId(param.name),
+                //             FmtDispatcherTypeRef{ .data = param.type },
+                //         });
+                //     }
+                // }
+                try writer.writeAll("            },\n");
+            }
+
+            try writer.writeAll(
+                \\            }
+                \\        }
+                \\
+            );
+        }
+
         try writer.writeAll(
             \\    };
             \\}
