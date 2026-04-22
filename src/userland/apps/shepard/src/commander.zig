@@ -154,14 +154,14 @@ pub fn main() !void {
                     notify.data[3],
                 });
 
-                if (go_button.eql(notify.widget)) {
-                    //
-                } else if (path_box.eql(notify.widget)) {
-                    //
-                } else if (list_box.eql(notify.widget)) {
-                    switch (notify.type) {
-                        ashet.gui.widgets.ListBox.item_clicked => {
-                            const index = notify.data[0];
+                if (go_button.match_event(&notify)) |evt| {
+                    _ = evt;
+                } else if (path_box.match_event(&notify)) |evt| {
+                    _ = evt;
+                } else if (list_box.match_event(&notify)) |evt| {
+                    switch (evt) {
+                        .item_clicked => |clicked| {
+                            const index = clicked.index;
                             std.log.info("clicked item: {}", .{index});
 
                             switch (index) {
@@ -185,15 +185,14 @@ pub fn main() !void {
                                 },
                             }
                         },
-                        ashet.gui.widgets.ListBox.selected_item_changed => {
+                        .selected_item_changed => |data| {
                             const index = try list_box.get_selected_item();
 
-                            std.log.info("selected from event: {}", .{notify.data[0]});
+                            std.log.info("selected from event: {}", .{data.index});
                             std.log.info("selected from control: {}", .{index});
 
                             // TODO: Render the cached file info
                         },
-                        else => {},
                     }
                 }
             },

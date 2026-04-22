@@ -75,12 +75,20 @@ pub fn main() !void {
                     notify.data[3],
                 });
 
-                if (inc_button.eql(notify.widget)) {
-                    counter +|= 1;
-                    try set_label_int(count_label, counter);
-                } else if (dec_button.eql(notify.widget)) {
-                    counter -|= 1;
-                    try set_label_int(count_label, counter);
+                if (inc_button.match_event(&notify)) |evt| {
+                    switch (evt) {
+                        .clicked => {
+                            counter +|= 1;
+                            try set_label_int(count_label, counter);
+                        },
+                    }
+                } else if (dec_button.match_event(&notify)) |evt| {
+                    switch (evt) {
+                        .clicked => {
+                            counter -|= 1;
+                            try set_label_int(count_label, counter);
+                        },
+                    }
                 } else {
                     std.log.err("unknown widget!?", .{});
                 }

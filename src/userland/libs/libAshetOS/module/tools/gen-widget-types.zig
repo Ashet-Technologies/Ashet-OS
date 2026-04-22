@@ -72,7 +72,9 @@ fn renderDocument(allocator: Allocator, writer: *std.Io.Writer, document: model.
 fn renderWidget(allocator: Allocator, writer: *std.Io.Writer, document: model.Document, widget: model.Widget) !void {
     try writeDocComments(writer, "", widget.docs);
     try writer.print("pub const {s} = opaque {{\n", .{widget.name});
+    try writer.print("    const logger = std.log.scoped(.@\"ashet.widget.{f}\");\n", .{std.zig.fmtString(widget.name)});
     try writer.print("    pub const uuid = UUID.constant(\"{s}\");\n", .{widget.uuid});
+    try writer.print("    pub const widget_name = \"{f}\";\n", .{std.zig.fmtString(widget.name)});
 
     if (widget.controls.len != 0) {
         try writer.writeAll("\n");
@@ -96,6 +98,141 @@ fn renderWidget(allocator: Allocator, writer: *std.Io.Writer, document: model.Do
                 try writer.writeAll("\n");
             }
         }
+
+        try writer.writeAll("\n\npub const Event = union(enum) {\n");
+
+        for (widget.events) |event| {
+            try writer.print("            {f}", .{std.zig.fmtId(event.name)});
+
+            if (event.parameters.len > 0) {
+                try writer.writeAll(": struct {\n");
+                for (event.parameters) |param| {
+                    try writer.print("                {f}: {s},\n", .{
+                        std.zig.fmtId(param.name),
+                        zigTypeName(param.type),
+                    });
+                }
+                try writer.writeAll("            },\n");
+            } else {
+                try writer.writeAll(",\n");
+            }
+        }
+        try writer.writeAll("\n");
+
+        try writer.writeAll("pub fn marshal(evt: Event) struct { NotifyEvent, [4]usize } {\n");
+        try writer.writeAll("    switch(evt) {\n");
+
+        for (widget.events) |event| {
+            if (event.parameter_raw_slots > 0) {
+                try writer.print("            .{f} => |event_args| {{\n", .{
+                    std.zig.fmtId(event.name),
+                });
+                try writer.writeAll("            const args: [4]usize = .{\n");
+
+                var slot_index: usize = 0;
+                for (event.parameters) |param| {
+                    switch (param.type.raw_slot_width) {
+                        1 => {
+                            try writer.print("ashet.gui.usize_from_type({s}, event_args.{f}),\n", .{
+                                zigTypeName(param.type),
+                                std.zig.fmtId(param.name),
+                            });
+                        },
+                        2 => {
+                            try writer.print(
+                                \\ashet.gui.usize_from_type({[0]s}, event_args.{[1]f}.ptr),
+                                \\event_args.{[1]f}.len,
+                                \\
+                            , .{
+                                zigTypeNameFirstPart(param.type),
+                                std.zig.fmtId(param.name),
+                            });
+                        },
+                        else => unreachable,
+                    }
+
+                    slot_index += param.type.raw_slot_width;
+                }
+
+                for (slot_index..4) |_| {
+                    try writer.writeAll("                0,\n");
+                }
+
+                try writer.writeAll("            };\n");
+            } else {
+                try writer.print("            .{f} => {{\n", .{
+                    std.zig.fmtId(event.name),
+                });
+                try writer.writeAll("            const args: [4]usize = @splat(0);\n");
+            }
+
+            try writer.print("return .{{ {f}, args }};\n", .{
+                std.zig.fmtId(event.name),
+            });
+
+            try writer.writeAll("            },\n");
+        }
+
+        try writer.writeAll("    }\n");
+        try writer.writeAll("}\n");
+        try writer.writeAll("\n");
+
+        try writer.writeAll("pub fn unmarshal(evt: NotifyEvent, args: [4]usize) error{UnknownEvent}!Event {\n");
+        const consumes_args = for (widget.events) |event| {
+            if (event.parameters.len > 0) break true;
+        } else false;
+        if (!consumes_args) {
+            try writer.writeAll("    _ = args;\n");
+        }
+
+        try writer.writeAll("    return switch(evt) {\n");
+
+        for (widget.events) |event| {
+            if (event.parameter_raw_slots > 0) {
+                try writer.print("            {[0]f} => .{{ .{[0]f} = .{{\n", .{
+                    std.zig.fmtId(event.name),
+                });
+
+                var slot_index: usize = 0;
+                for (event.parameters) |param| {
+                    switch (param.type.raw_slot_width) {
+                        1 => {
+                            try writer.print("            .{f} = ashet.gui.type_from_usize({s}, args[{d}]),\n", .{
+                                std.zig.fmtId(param.name),
+                                zigTypeName(param.type),
+                                slot_index,
+                            });
+                        },
+                        2 => {
+                            try writer.print(
+                                \\            .{[0]f} = ashet.gui.type_from_usize({[1]s}, args[{[2]d}])[0...args[{[3]d}]),
+                                \\
+                            , .{
+                                std.zig.fmtId(param.name),
+                                zigTypeNameFirstPart(param.type),
+                                slot_index + 0,
+                                slot_index + 1,
+                            });
+                        },
+                        else => unreachable,
+                    }
+
+                    slot_index += param.type.raw_slot_width;
+                }
+
+                try writer.writeAll("            }},\n");
+            } else {
+                try writer.print("            {f} => .{[0]f},\n", .{
+                    std.zig.fmtId(event.name),
+                });
+            }
+        }
+
+        try writer.writeAll("            else => return error.UnknownEvent,\n");
+        try writer.writeAll("        };\n");
+        try writer.writeAll("    }\n");
+
+        try writer.writeAll("};\n");
     }
 
     if (widget.types.len != 0) {
@@ -110,6 +247,24 @@ fn renderWidget(allocator: Allocator, writer: *std.Io.Writer, document: model.Do
 
     try writer.writeAll("\n\n");
     try renderCommonMethods(writer, widget.name);
+
+    if (widget.events.len > 0) {
+        try writer.writeAll(
+            \\
+            \\pub fn match_event(widget: *@This(), event: *const ashet.abi.WidgetNotifyEvent) ?Event {
+            \\    if(!widget.eql(event.widget))
+            \\        return null;
+            \\    return Event.unmarshal(event.type, event.data) catch |err| switch(err) {
+            \\        error.UnknownEvent => {
+            \\            logger.err("unknown widget notify event NotifyEvent({d}) for {s}", .{ @intFromEnum(event.type), widget_name });
+            \\            return null;
+            \\        }
+            \\    };
+            \\}
+            \\
+            \\
+        );
+    }
 
     for (widget.controls) |control| {
         try writer.writeAll("\n");
@@ -311,6 +466,29 @@ fn zigTypeName(type_ref: model.TypeRef) []const u8 {
             .strbuf => "[]u8",
             .contextptr => "?*anyopaque",
             .framebuf => "Framebuffer",
+        },
+        .named => type_ref.name,
+    };
+}
+
+fn zigTypeNameFirstPart(type_ref: model.TypeRef) []const u8 {
+    return switch (type_ref.kind) {
+        .builtin => switch (type_ref.builtin.?) {
+            .str => "[*]const u8",
+            .strbuf => "[*]u8",
+
+            .bool,
+            .i8,
+            .i16,
+            .i32,
+            .u8,
+            .u16,
+            .u32,
+            .isize,
+            .usize,
+            .contextptr,
+            .framebuf,
+            => @panic("implementation bug"),
         },
         .named => type_ref.name,
     };
