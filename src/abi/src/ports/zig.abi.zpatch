@@ -13,6 +13,13 @@
         return @ptrFromInt(@intFromEnum(resource));
     }
 
+    pub fn from_ptr(ptr: anytype) SystemResource {
+        const T = @TypeOf(ptr);
+        if(@typeInfo( @typeInfo(T).pointer.child) != .@"opaque")
+            @compileError("ptr must be a pointer to an opaque type!");
+        return @enumFromInt(@intFromPtr(ptr));
+    }
+
     pub fn formatType(src: SystemResource, writer: *std.Io.Writer) !void {
         if (resources.get_type(src)) |src_type| {
             try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });

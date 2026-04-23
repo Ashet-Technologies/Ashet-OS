@@ -226,12 +226,18 @@ const Instance = struct {
                 for (root[0..index]) |c| {
                     std.debug.assert(c >= '0' or c <= '9');
                 }
-                writer.print("{s}/", .{root}) catch return error.SystemResources;
+
+                writer.writeAll(root) catch return error.SystemResources;
             } else {
-                writer.print("{d}:", .{instance.disk_index}) catch return error.SystemResources;
+                writer.print("{d}:/", .{instance.disk_index}) catch return error.SystemResources;
             }
 
-            writer.writeAll(path) catch return error.SystemResources;
+            if (path.len > 0 and !std.mem.eql(u8, path, ".")) {
+                if (root.len > 0 and !std.mem.endsWith(u8, root, "/")) {
+                    writer.writeByte('/') catch return error.SystemResources;
+                }
+                writer.writeAll(path) catch return error.SystemResources;
+            }
         }
         @memset(buf.buffer[stream.pos..], 0); // add NUL termination
         return buf;
@@ -244,6 +250,10 @@ const Instance = struct {
 
         const handle = try instance.dir_handles.alloc();
         errdefer instance.dir_handles.free(handle);
+
+        logger.info("attempt to open \"{f}\"", .{
+            std.zig.fmtString(full_path.str()),
+        });
 
         var dir = fatfs.Dir.open(full_path.str()) catch |err| switch (err) {
             error.DiskErr => return error.DiskError,
@@ -272,14 +282,6 @@ const Instance = struct {
 
     fn openDirFromRoot(generic: *GenericInstance, path: []const u8) FileSystemDriver.OpenDirAbsError!DirectoryHandle {
         return openDirInternal(generic, "", path);
-    }
-
-    fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirRelError!DirectoryHandle {
-        const instance = getPtr(generic);
-
-        const ctx = instance.dir_handles.resolve(base_dir) catch return error.SystemResources;
-
-        return openDirInternal(generic, ctx.full_path.str(), path);
     }
 
     fn closeDir(generic: *GenericInstance, dir: DirectoryHandle) void {
@@ -451,7 +453,6 @@ const Instance = struct {
 
     const vtable = GenericInstance.VTable{
         .openDirFromRootFn = openDirFromRoot,
-        .openDirRelativeFn = openDirRelative,
         .closeDirFn = closeDir,
 
         .deleteFn = undefined, // TODO: Fix later
@@ -474,6 +475,42 @@ const Instance = struct {
 
     };
 };
+
+test "buildPath keeps root canonical" {
+    var instance = Instance{
+        .disk_index = 0,
+        .generic = undefined,
+        .filesystem = undefined,
+        .block_device = undefined,
+        .enumerator_pool = undefined,
+        .file_handles = .{},
+        .dir_handles = .{},
+    };
+
+    const root = try instance.buildPath("", "");
+    try std.testing.expectEqualStrings("0:/", root.str());
+
+    const current = try instance.buildPath("0:/", ".");
+    try std.testing.expectEqualStrings("0:/", current.str());
+}
+
+test "buildPath avoids duplicate separators" {
+    var instance = Instance{
+        .disk_index = 0,
+        .generic = undefined,
+        .filesystem = undefined,
+        .block_device = undefined,
+        .enumerator_pool = undefined,
+        .file_handles = .{},
+        .dir_handles = .{},
+    };
+
+    const nested = try instance.buildPath("0:/", "etc");
+    try std.testing.expectEqualStrings("0:/etc", nested.str());
+
+    const deeper = try instance.buildPath("0:/etc", "desktop");
+    try std.testing.expectEqualStrings("0:/etc/desktop", deeper.str());
+}
 
 const Enumerator = struct {
     generic: GenericEnumerator,

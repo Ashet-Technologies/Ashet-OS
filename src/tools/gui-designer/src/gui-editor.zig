@@ -4,9 +4,18 @@ const zgui = @import("zgui");
 const glfw = @import("zglfw");
 const zopengl = @import("zopengl");
 const args_parser = @import("args");
+const nfd = @import("nfd");
+const agp = @import("agp");
+const ashet = @import("ashet");
+const agp_swrast = @import("agp-swrast");
+const standard_widgets = @import("standard-widgets");
 
+const gl = zopengl.bindings;
+
+const Color = @import("ashet-abi").Color;
 const model = @import("model.zig");
 
+const CommandQueue = ashet.graphics.CommandQueue;
 const Size = model.Size;
 const Point = model.Point;
 const Rectangle = model.Rectangle;
@@ -14,6 +23,168 @@ const Widget = model.Widget;
 const Window = model.Window;
 const Document = model.Document;
 const Alignment = model.Alignment;
+
+const PreviewTheme = standard_widgets.Theme;
+
+const preview_texture_extent = 2048;
+const preview_window_frame_size = Size.new(6, 18);
+const preview_window_client_offset = Point.new(3, 15);
+
+const OwnedBitmap = struct {
+    pixels: []Color,
+    bitmap: agp.Bitmap,
+
+    fn deinit(owned_bitmap: *OwnedBitmap, allocator: std.mem.Allocator) void {
+        allocator.free(owned_bitmap.pixels);
+        owned_bitmap.* = undefined;
+    }
+};
+
+const AbmHeader = extern struct {
+    const magic_number: u32 = 0x48198b74;
+
+    magic: u32,
+    width: u16,
+    height: u16,
+    flags: packed struct(u16) {
+        use_transparent: bool,
+        _padding: u15 = 0,
+    },
+    palette_size: u8,
+    transparency_key: Color,
+
+    comptime {
+        std.debug.assert(@sizeOf(@This()) == 12);
+    }
+};
+
+const preview_sans_6_font: ashet.graphics.Font = embed_preview_font(@embedFile("sans-6.font"), .{});
+const preview_mono_8_font: ashet.graphics.Font = embed_preview_font(@embedFile("mono-8.font"), .{});
+
+const preview_palette = blk: {
+    @setEvalBranchQuota(8192);
+    var palette: [256][4]u8 = undefined;
+    for (&palette, 0..) |*entry, index| {
+        const rgb = Color.to_rgb888(Color.from_u8(@intCast(index)));
+        entry.* = .{ rgb.r, rgb.g, rgb.b, 0xFF };
+    }
+    break :blk palette;
+};
+
+const PreviewSurface = struct {
+    texture: gl.Uint = 0,
+    indexed_pixels: []Color = &.{},
+    rgba_pixels: []u8 = &.{},
+    used_size: Size = .new(0, 0),
+    dirty: bool = true,
+
+    fn ensureInitialized(surface: *PreviewSurface, allocator: std.mem.Allocator) !void {
+        const pixel_count = preview_texture_extent * preview_texture_extent;
+
+        if (surface.indexed_pixels.len == 0) {
+            surface.indexed_pixels = try allocator.alloc(Color, pixel_count);
+            @memset(surface.indexed_pixels, .black);
+        }
+
+        if (surface.rgba_pixels.len == 0) {
+            surface.rgba_pixels = try allocator.alloc(u8, pixel_count * 4);
+            @memset(surface.rgba_pixels, 0);
+        }
+
+        if (surface.texture == 0) {
+            gl.genTextures(1, @ptrCast(&surface.texture));
+            gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(
+                gl.TEXTURE_2D,
+                0,
+                gl.RGBA8,
+                preview_texture_extent,
+                preview_texture_extent,
+                0,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                @ptrCast(surface.rgba_pixels.ptr),
+            );
+        }
+    }
+
+    fn deinit(surface: *PreviewSurface, allocator: std.mem.Allocator) void {
+        if (surface.texture != 0) {
+            gl.deleteTextures(1, @ptrCast(&surface.texture));
+            surface.texture = 0;
+        }
+
+        if (surface.rgba_pixels.len > 0) {
+            allocator.free(surface.rgba_pixels);
+            surface.rgba_pixels = &.{};
+        }
+
+        if (surface.indexed_pixels.len > 0) {
+            allocator.free(surface.indexed_pixels);
+            surface.indexed_pixels = &.{};
+        }
+
+        surface.used_size = .new(0, 0);
+        surface.dirty = true;
+    }
+
+    fn clear(surface: *PreviewSurface, color: Color) void {
+        const width: usize = surface.used_size.width;
+        const height: usize = surface.used_size.height;
+
+        for (0..height) |row| {
+            const row_offset = row * preview_texture_extent;
+            @memset(surface.indexed_pixels[row_offset .. row_offset + width], color);
+        }
+    }
+
+    fn expandToRgba(surface: *PreviewSurface) void {
+        const width: usize = surface.used_size.width;
+        const height: usize = surface.used_size.height;
+
+        for (0..height) |row| {
+            const row_offset = row * preview_texture_extent;
+            for (0..width) |col| {
+                const pixel_offset = row_offset + col;
+                const rgba_offset = pixel_offset * 4;
+                const color = preview_palette[surface.indexed_pixels[pixel_offset].to_u8()];
+
+                surface.rgba_pixels[rgba_offset + 0] = color[0];
+                surface.rgba_pixels[rgba_offset + 1] = color[1];
+                surface.rgba_pixels[rgba_offset + 2] = color[2];
+                surface.rgba_pixels[rgba_offset + 3] = color[3];
+            }
+        }
+    }
+
+    fn upload(surface: *PreviewSurface) void {
+        if (surface.used_size.width == 0 or surface.used_size.height == 0)
+            return;
+
+        surface.expandToRgba();
+
+        gl.bindTexture(gl.TEXTURE_2D, surface.texture);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, preview_texture_extent);
+        gl.texSubImage2D(
+            gl.TEXTURE_2D,
+            0,
+            0,
+            0,
+            @intCast(surface.used_size.width),
+            @intCast(surface.used_size.height),
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            @ptrCast(surface.rgba_pixels.ptr),
+        );
+        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    }
+};
 
 pub const CliOptions = struct {
     help: bool = false,
@@ -42,6 +213,8 @@ pub fn main() !u8 {
 
     const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
     defer metadata.deinit();
+
+    const preview_theme = try standard_widgets.initialize_default_theme(load_preview_font);
 
     var document: Document = .{
         .allocator = allocator,
@@ -77,9 +250,10 @@ pub fn main() !u8 {
     var editor: Editor = .{
         .document = &document,
         .metadata = metadata,
+        .allocator = allocator,
+        .preview_theme = preview_theme,
+        .current_file_path = if (maybe_save_file_name) |path| try allocator.dupeZ(u8, path) else null,
     };
-
-    _ = maybe_save_file_name;
 
     try glfw.init();
     defer glfw.terminate();
@@ -104,10 +278,10 @@ pub fn main() !u8 {
 
     try zopengl.loadCoreProfile(glfw.getProcAddress, gl_major, gl_minor);
 
-    const gl = zopengl.bindings;
-
     zgui.init(allocator);
     defer zgui.deinit();
+
+    defer editor.deinit();
 
     zgui.io.setIniFilename(null);
 
@@ -154,6 +328,8 @@ pub const Editor = struct {
         start: model.Point,
     };
 
+    allocator: std.mem.Allocator,
+
     // Editor Configuration
     options: EditorOptions = .{},
     dock_layout_setup_done: bool = false,
@@ -161,6 +337,11 @@ pub const Editor = struct {
     // Current Document
     metadata: *const model.Metadata,
     document: *Document,
+    preview_theme: *const PreviewTheme,
+    current_file_path: ?[:0]u8 = null,
+    preview_window_size_override: ?Size = null,
+    preview_icon: ?OwnedBitmap = null,
+    preview_icon_dirty: bool = true,
 
     // Current Editing State
     maybe_selected_widget_index: ?usize = null,
@@ -170,7 +351,20 @@ pub const Editor = struct {
 
     widget_drag: ?DragInfo = null,
 
+    preview_surface: PreviewSurface = .{},
     preview_visible: bool = false,
+
+    pub fn deinit(editor: *Editor) void {
+        if (editor.current_file_path) |path| {
+            editor.allocator.free(path);
+            editor.current_file_path = null;
+        }
+        if (editor.preview_icon) |*bitmap| {
+            bitmap.deinit(editor.allocator);
+            editor.preview_icon = null;
+        }
+        editor.preview_surface.deinit(editor.document.allocator);
+    }
 
     pub fn handle_gui(editor: *Editor) !void {
         editor.setup_dockspace();
@@ -194,6 +388,20 @@ pub const Editor = struct {
     fn select_by_index(editor: *Editor, index: ?usize) void {
         editor.maybe_selected_widget_index = index;
         editor.widget_drag = null;
+    }
+
+    fn invalidate_preview(editor: *Editor) void {
+        editor.preview_surface.dirty = true;
+    }
+
+    fn invalidate_preview_icon(editor: *Editor) void {
+        editor.preview_icon_dirty = true;
+        editor.invalidate_preview();
+    }
+
+    fn touch(editor: *Editor, changed: bool) void {
+        if (changed)
+            editor.invalidate_preview();
     }
 
     fn move_to_index(editor: *Editor, action: struct { from: usize, to: usize }) void {
@@ -238,6 +446,8 @@ pub const Editor = struct {
                 move_range[0] = clone;
             }
         }
+
+        editor.invalidate_preview();
 
         // Fixup selection:
         if (editor.maybe_selected_widget_index == from) {
@@ -313,7 +523,74 @@ pub const Editor = struct {
             }
         }
 
-        editor.options.grid_size = @max(1, @min(256, editor.options.grid_size));
+        editor.options.grid_size = @max(grid_min, @min(grid_max, editor.options.grid_size));
+
+        zgui.sameLine(.{});
+
+        zgui.textUnformatted("Zoom");
+        zgui.sameLine(.{});
+        zgui.setNextItemWidth(40);
+
+        const zoom_min = 1;
+        const zoom_max = 256;
+
+        _ = zgui.dragInt("##ZoomFactor", .{
+            .v = &editor.options.zoom_factor,
+            .speed = 1,
+            .min = zoom_min,
+            .max = zoom_max,
+        });
+
+        zgui.sameLine(.{});
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.zoom_factor <= zoom_min) });
+            defer zgui.endDisabled();
+            if (zgui.button("-##minus_ZoomFactor", .{})) {
+                editor.options.zoom_factor -|= 1;
+            }
+        }
+        zgui.sameLine(.{});
+
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.zoom_factor >= zoom_max) });
+            defer zgui.endDisabled();
+            if (zgui.button("+##plus_ZoomFactor", .{})) {
+                editor.options.zoom_factor +|= 1;
+            }
+        }
+        editor.options.zoom_factor = @max(zoom_min, @min(zoom_max, editor.options.zoom_factor));
+
+        zgui.sameLine(.{});
+
+        zgui.textUnformatted("Preview Zoom");
+        zgui.sameLine(.{});
+        zgui.setNextItemWidth(40);
+
+        _ = zgui.dragInt("##PreviewZoomFactor", .{
+            .v = &editor.options.preview_zoom_factor,
+            .speed = 1,
+            .min = zoom_min,
+            .max = zoom_max,
+        });
+
+        zgui.sameLine(.{});
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.preview_zoom_factor <= zoom_min) });
+            defer zgui.endDisabled();
+            if (zgui.button("-##minus_PreviewZoomFactor", .{})) {
+                editor.options.preview_zoom_factor -|= 1;
+            }
+        }
+        zgui.sameLine(.{});
+
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.preview_zoom_factor >= zoom_max) });
+            defer zgui.endDisabled();
+            if (zgui.button("+##plus_PreviewZoomFactor", .{})) {
+                editor.options.preview_zoom_factor +|= 1;
+            }
+        }
+        editor.options.preview_zoom_factor = @max(zoom_min, @min(zoom_max, editor.options.preview_zoom_factor));
     }
 
     fn handle_toolbox_gui(editor: *Editor) !void {
@@ -340,67 +617,126 @@ pub const Editor = struct {
             return;
 
         const window = &editor.document.window;
+        const zoom = editor.options.preview_zoom();
+        const default_outer_size = preview_window_outer_size(window.design_size);
 
         zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 0, 0 } });
         defer zgui.popStyleVar(.{});
 
         const style = zgui.getStyle();
+        const host_pad = 2.0 * style.window_border_size;
 
-        const hpad = 2.0 * style.window_border_size;
-        const vpad = 2.0 * style.window_border_size + 2.0 * style.frame_padding[1] + zgui.getFontSize();
-
-        zgui.setNextWindowSize(.{
-            .cond = .appearing,
-            .w = @as(f32, @floatFromInt(window.design_size.width)) + hpad,
-            .h = @as(f32, @floatFromInt(window.design_size.height)) + vpad,
-        });
+        if (editor.preview_window_size_override) |forced_outer_size| {
+            zgui.setNextWindowSize(.{
+                .cond = .always,
+                .w = @as(f32, @floatFromInt(forced_outer_size.width)) * zoom + host_pad,
+                .h = @as(f32, @floatFromInt(forced_outer_size.height)) * zoom + host_pad,
+            });
+            editor.preview_window_size_override = null;
+        } else {
+            zgui.setNextWindowSize(.{
+                .cond = .appearing,
+                .w = @as(f32, @floatFromInt(default_outer_size.width)) * zoom + host_pad,
+                .h = @as(f32, @floatFromInt(default_outer_size.height)) * zoom + host_pad,
+            });
+        }
 
         defer zgui.end();
         if (zgui.begin("Preview", .{
-            .flags = .{ .no_docking = true, .no_collapse = true },
+            .flags = .{ .no_docking = true, .no_collapse = true, .no_title_bar = true, .no_background = true, .no_scrollbar = true },
             .popen = &editor.preview_visible,
         })) {
-            const draw = zgui.getWindowDrawList();
-
-            const base: [2]f32 = zgui.getCursorScreenPos();
-
             const size: [2]f32 = zgui.getContentRegionAvail();
 
-            const frame: Rectangle = .{
-                .x = 0,
-                .y = 0,
-                .width = @intFromFloat(size[0]),
-                .height = @intFromFloat(size[1]),
+            var frame_size: Size = .new(
+                @intFromFloat(@max(0, size[0] / zoom)),
+                @intFromFloat(@max(0, size[1] / zoom)),
+            );
+
+            const clamped_frame_size = clamp_preview_window_size(window, frame_size);
+            if (clamped_frame_size.width != frame_size.width or clamped_frame_size.height != frame_size.height) {
+                frame_size = clamped_frame_size;
+                editor.preview_window_size_override = clamped_frame_size;
+            }
+
+            if (frame_size.width == 0 or frame_size.height == 0) {
+                zgui.textUnformatted("Preview is too small.");
+                return;
+            }
+
+            if (frame_size.width > preview_texture_extent or frame_size.height > preview_texture_extent) {
+                zgui.text("Preview exceeds {d}x{d}.", .{ preview_texture_extent, preview_texture_extent });
+                return;
+            }
+
+            if (editor.preview_surface.used_size.width != frame_size.width or editor.preview_surface.used_size.height != frame_size.height) {
+                editor.preview_surface.used_size = frame_size;
+                editor.invalidate_preview();
+            }
+
+            if (editor.preview_surface.dirty) {
+                try editor.render_preview(frame_size);
+            }
+
+            const tex_ref: zgui.TextureRef = .{
+                .tex_data = null,
+                .tex_id = @enumFromInt(editor.preview_surface.texture),
             };
 
-            for (window.widgets.items) |widget| {
-                const h_align: Alignment = .from_anchor(widget.anchor.left, widget.anchor.right);
-                const v_align: Alignment = .from_anchor(widget.anchor.top, widget.anchor.bottom);
-
-                const h_bounds: Alignment.Bounds = .{
-                    .near_margin = widget.bounds.x,
-                    .far_margin = @intCast(window.design_size.width -| (@as(i32, widget.bounds.x) +| widget.bounds.width)),
-                    .size = widget.bounds.width,
-                    .limit = frame.width,
-                };
-                const v_bounds: Alignment.Bounds = .{
-                    .near_margin = widget.bounds.y,
-                    .far_margin = @intCast(window.design_size.height -| (@as(i32, widget.bounds.y) +| widget.bounds.height)),
-                    .size = widget.bounds.height,
-                    .limit = frame.height,
-                };
-
-                var dupe: Widget = widget;
-
-                dupe.bounds = .{
-                    .x = h_align.compute_pos(h_bounds),
-                    .y = v_align.compute_pos(v_bounds),
-                    .width = h_align.compute_size(h_bounds),
-                    .height = v_align.compute_size(v_bounds),
-                };
-                paintWidget(draw, base, dupe, false);
-            }
+            zgui.image(tex_ref, .{
+                .w = @as(f32, @floatFromInt(frame_size.width)) * zoom,
+                .h = @as(f32, @floatFromInt(frame_size.height)) * zoom,
+                .uv1 = .{
+                    @as(f32, @floatFromInt(frame_size.width)) / preview_texture_extent,
+                    @as(f32, @floatFromInt(frame_size.height)) / preview_texture_extent,
+                },
+            });
         }
+    }
+
+    fn render_preview(editor: *Editor, frame_size: Size) !void {
+        const window = &editor.document.window;
+        const client_rect = preview_window_client_rect(frame_size);
+
+        try editor.preview_surface.ensureInitialized(editor.document.allocator);
+        editor.preview_surface.used_size = frame_size;
+        editor.preview_surface.clear(.black);
+
+        ensure_preview_icon_loaded(editor);
+
+        var queue = try CommandQueue.init(editor.document.allocator);
+        defer queue.deinit();
+
+        queue.reset();
+        try encode_preview_window_frame(&queue, editor.preview_theme, frame_size, .{
+            .buttons = .{
+                .maximize = .disabled,
+                .minimize = .visible,
+                .close = .disabled,
+                .resize = if (editor.document.window.min_size.eql(editor.document.window.max_size))
+                    .hidden
+                else
+                    .visible,
+            },
+            .icon = preview_window_icon(editor),
+            .title = preview_window_title(window),
+        });
+        try rasterize_preview_queue(editor.document.allocator, queue.data.written(), .{
+            .pixels = editor.preview_surface.indexed_pixels.ptr,
+            .width = frame_size.width,
+            .height = frame_size.height,
+            .stride = preview_texture_extent,
+        });
+
+        for (window.widgets.items) |widget| {
+            var bounds = resolve_preview_widget_bounds(window, Size.new(client_rect.width, client_rect.height), widget);
+            bounds.x +|= client_rect.x;
+            bounds.y +|= client_rect.y;
+            try render_preview_widget(editor, &queue, widget, bounds);
+        }
+
+        editor.preview_surface.upload();
+        editor.preview_surface.dirty = false;
     }
 
     fn handle_hierarchy_gui(editor: *Editor) !void {
@@ -444,6 +780,7 @@ pub const Editor = struct {
             return;
 
         const window: *model.Window = &editor.document.window;
+        const zoom = editor.options.designer_zoom();
 
         const base = zgui.getCursorScreenPos();
         const draw = zgui.getWindowDrawList();
@@ -453,20 +790,20 @@ pub const Editor = struct {
 
         const topleft = base;
         const bottomright: [2]f32 = .{
-            topleft[0] + @as(f32, @floatFromInt(window.design_size.width)),
-            topleft[1] + @as(f32, @floatFromInt(window.design_size.height)),
+            topleft[0] + @as(f32, @floatFromInt(window.design_size.width)) * zoom,
+            topleft[1] + @as(f32, @floatFromInt(window.design_size.height)) * zoom,
         };
 
         const pos: model.Point = .new(
-            @intFromFloat(mouse_pos[0] - topleft[0]),
-            @intFromFloat(mouse_pos[1] - topleft[1]),
+            @intFromFloat((mouse_pos[0] - topleft[0]) / zoom),
+            @intFromFloat((mouse_pos[1] - topleft[1]) / zoom),
         );
 
         const maybe_hovered_widget = window.widget_from_pos(pos);
 
         const is_window_clicked_raw = zgui.invisibleButton("Window Preview", .{
-            .w = @floatFromInt(window.design_size.width),
-            .h = @floatFromInt(window.design_size.height),
+            .w = @as(f32, @floatFromInt(window.design_size.width)) * zoom,
+            .h = @as(f32, @floatFromInt(window.design_size.height)) * zoom,
         });
 
         if (maybe_hovered_widget != null or editor.maybe_popup_widget != null) {
@@ -492,18 +829,21 @@ pub const Editor = struct {
                         const new_pos = editor.options.snap_pos(target_widget.ptr.bounds.position());
                         target_widget.ptr.bounds.x = new_pos.x;
                         target_widget.ptr.bounds.y = new_pos.y;
+                        editor.invalidate_preview();
                     }
 
                     if (zgui.menuItem("Shrink size to grid", .{})) {
                         const new_size = editor.options.snap_size(target_widget.ptr.bounds.size(), .shrink);
                         target_widget.ptr.bounds.width = new_size.width;
                         target_widget.ptr.bounds.height = new_size.height;
+                        editor.invalidate_preview();
                     }
 
                     if (zgui.menuItem("Grow size to grid", .{})) {
                         const new_size = editor.options.snap_size(target_widget.ptr.bounds.size(), .grow);
                         target_widget.ptr.bounds.width = new_size.width;
                         target_widget.ptr.bounds.height = new_size.height;
+                        editor.invalidate_preview();
                     }
 
                     _ = zgui.separator();
@@ -540,8 +880,8 @@ pub const Editor = struct {
 
         const drag_fdx, const drag_fdy = zgui.getMouseDragDelta(.left, .{});
 
-        const drag_dx: i16 = @intFromFloat(drag_fdx);
-        const drag_dy: i16 = @intFromFloat(drag_fdy);
+        const drag_dx: i16 = @intFromFloat(drag_fdx / zoom);
+        const drag_dy: i16 = @intFromFloat(drag_fdy / zoom);
 
         const dragging = (editor.widget_drag != null);
         const is_window_clicked = is_window_clicked_raw and !dragging;
@@ -556,8 +896,11 @@ pub const Editor = struct {
                 drag.start.y +| drag_dy,
             ));
 
-            drag.widget.bounds.x = newpos.x;
-            drag.widget.bounds.y = newpos.y;
+            if (drag.widget.bounds.x != newpos.x or drag.widget.bounds.y != newpos.y) {
+                drag.widget.bounds.x = newpos.x;
+                drag.widget.bounds.y = newpos.y;
+                editor.invalidate_preview();
+            }
         } else {
             // "Not dragging"
             if (is_window_clicked) {
@@ -568,7 +911,7 @@ pub const Editor = struct {
                 }
             } else if (is_window_pressed) {
                 if (maybe_hovered_widget) |hovered_widget| {
-                    if (hovered_widget.index == editor.maybe_selected_widget_index and (drag_dx != 0 or drag_dy != 0)) {
+                    if (hovered_widget.index == editor.maybe_selected_widget_index and (drag_fdx != 0 or drag_fdy != 0)) {
                         editor.widget_drag = .{
                             .widget = hovered_widget.ptr,
                             .start = hovered_widget.ptr.bounds.position(),
@@ -586,8 +929,8 @@ pub const Editor = struct {
 
         if (window.min_size.width > 0 and window.min_size.width < window.max_size.width and window.min_size.height > 0 and window.min_size.height < window.max_size.height) {
             const min_bottomright: [2]f32 = .{
-                topleft[0] + @as(f32, @floatFromInt(window.min_size.width)),
-                topleft[1] + @as(f32, @floatFromInt(window.min_size.height)),
+                topleft[0] + @as(f32, @floatFromInt(window.min_size.width)) * zoom,
+                topleft[1] + @as(f32, @floatFromInt(window.min_size.height)) * zoom,
             };
             draw.addRectFilled(.{
                 .pmin = topleft,
@@ -597,7 +940,7 @@ pub const Editor = struct {
         }
 
         if (editor.options.render_grid and editor.options.grid_size > 1) {
-            const grid_increment: f32 = @floatFromInt(editor.options.grid_size);
+            const grid_increment: f32 = @as(f32, @floatFromInt(editor.options.grid_size)) * zoom;
             std.debug.assert(grid_increment > 0);
 
             var x: f32 = topleft[0];
@@ -621,7 +964,7 @@ pub const Editor = struct {
             }
         }
         for (window.widgets.items, 0..) |widget, index| {
-            paintWidget(draw, base, widget, editor.maybe_selected_widget_index == index);
+            paintWidget(draw, base, widget, zoom, editor.maybe_selected_widget_index == index);
         }
 
         if (zgui.beginDragDropTarget()) {
@@ -629,7 +972,7 @@ pub const Editor = struct {
 
             if (zgui.getDragDropPayload()) |payload| {
                 if (widget_from_payload(editor.metadata, editor.options, payload, pos)) |widget| {
-                    paintWidget(draw, base, widget, false);
+                    paintWidget(draw, base, widget, zoom, false);
                 }
             }
 
@@ -637,6 +980,7 @@ pub const Editor = struct {
                 if (widget_from_payload(editor.metadata, editor.options, payload, pos)) |widget| {
                     try window.widgets.append(editor.document.allocator, widget);
                     editor.select_by_index(window.widgets.items.len - 1);
+                    editor.invalidate_preview();
                 }
             }
         }
@@ -690,13 +1034,14 @@ pub const Editor = struct {
                     _ = zgui.tableNextColumn();
                 }
 
-                pub fn sizeField(self: @This(), comptime display: [:0]const u8, value_ptr: anytype, min: anytype, max: anytype) void {
+                pub fn sizeField(self: @This(), comptime display: [:0]const u8, value_ptr: anytype, min: anytype, max: anytype) bool {
                     self.beginField(display);
 
                     zgui.beginDisabled(.{ .disabled = min >= max });
                     defer zgui.endDisabled();
 
                     var value: i32 = value_ptr.*;
+                    const previous = value;
 
                     _ = zgui.dragInt("##edit_" ++ display, .{ .v = &value, .min = min, .max = max });
 
@@ -713,6 +1058,7 @@ pub const Editor = struct {
                     value = std.math.clamp(value, min, max);
 
                     value_ptr.* = @intCast(value);
+                    return value != previous;
                 }
             };
             var utils: Utils = .{};
@@ -763,11 +1109,11 @@ pub const Editor = struct {
 
                 utils.header("Geometry");
 
-                utils.sizeField("X", &selected_widget.bounds.x, std.math.minInt(i16), std.math.maxInt(i16));
-                utils.sizeField("Y", &selected_widget.bounds.y, std.math.minInt(i16), std.math.maxInt(i16));
+                editor.touch(utils.sizeField("X", &selected_widget.bounds.x, std.math.minInt(i16), std.math.maxInt(i16)));
+                editor.touch(utils.sizeField("Y", &selected_widget.bounds.y, std.math.minInt(i16), std.math.maxInt(i16)));
 
-                utils.sizeField("Width", &selected_widget.bounds.width, selected_widget.class.min_size.width, selected_widget.class.max_size.width);
-                utils.sizeField("Height", &selected_widget.bounds.height, selected_widget.class.min_size.height, selected_widget.class.max_size.height);
+                editor.touch(utils.sizeField("Width", &selected_widget.bounds.width, selected_widget.class.min_size.width, selected_widget.class.max_size.width));
+                editor.touch(utils.sizeField("Height", &selected_widget.bounds.height, selected_widget.class.min_size.height, selected_widget.class.max_size.height));
 
                 utils.beginField("Anchor");
 
@@ -777,25 +1123,25 @@ pub const Editor = struct {
                     zgui.tableNextRow(.{});
 
                     _ = zgui.tableSetColumnIndex(1);
-                    _ = zgui.checkbox("Top", .{ .v = &selected_widget.anchor.top });
+                    editor.touch(zgui.checkbox("Top", .{ .v = &selected_widget.anchor.top }));
 
                     zgui.tableNextRow(.{});
 
                     _ = zgui.tableSetColumnIndex(0);
-                    _ = zgui.checkbox("Left", .{ .v = &selected_widget.anchor.left });
+                    editor.touch(zgui.checkbox("Left", .{ .v = &selected_widget.anchor.left }));
                     _ = zgui.tableSetColumnIndex(2);
-                    _ = zgui.checkbox("Right", .{ .v = &selected_widget.anchor.right });
+                    editor.touch(zgui.checkbox("Right", .{ .v = &selected_widget.anchor.right }));
 
                     zgui.tableNextRow(.{});
 
                     _ = zgui.tableSetColumnIndex(1);
-                    _ = zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom });
+                    editor.touch(zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom }));
                 }
 
                 utils.header("Visuals");
 
                 utils.beginField("Visible");
-                _ = zgui.checkbox("##Visible", .{ .v = &selected_widget.visible });
+                editor.touch(zgui.checkbox("##Visible", .{ .v = &selected_widget.visible }));
 
                 if (selected_widget.class.properties.count() > 0) {
                     utils.header("Widget Properties");
@@ -812,12 +1158,26 @@ pub const Editor = struct {
                         const field_key = try std.fmt.bufPrintZ(&key_buf, "##userprop_{s}", .{prop_name});
 
                         switch (gop.value_ptr.*) {
-                            .bool => |*data| _ = zgui.checkbox(field_key, .{ .v = data }),
+                            .bool => |*data| editor.touch(zgui.checkbox(field_key, .{ .v = data })),
 
-                            .int => |*data| _ = zgui.inputInt(field_key, .{ .v = data }),
-                            .float => |*data| _ = zgui.inputFloat(field_key, .{ .v = data }),
+                            .int => |*data| editor.touch(zgui.inputInt(field_key, .{ .v = data })),
+                            .float => |*data| editor.touch(zgui.inputFloat(field_key, .{ .v = data })),
                             .string => |*data| {
-                                _ = zgui.inputText(field_key, .{ .buf = &data.data });
+                                editor.touch(zgui.inputText(field_key, .{ .buf = &data.data }));
+                            },
+                            .@"enum" => |*data| {
+                                const preview_value = prop_desc.get_enum_option_name(data.slice()) orelse data.slice();
+
+                                if (zgui.beginCombo(field_key, .{ .preview_value = preview_value })) {
+                                    defer zgui.endCombo();
+
+                                    for (prop_desc.enum_options) |option| {
+                                        if (zgui.selectable(option.name, .{ .selected = std.mem.eql(u8, option.value.slice(), data.slice()) })) {
+                                            data.* = option.value;
+                                            editor.invalidate_preview();
+                                        }
+                                    }
+                                }
                             },
                             .color => |*data| {
                                 const rgb = data.to_rgb888();
@@ -826,9 +1186,10 @@ pub const Editor = struct {
                                     @floatFromInt(rgb.g),
                                     @floatFromInt(rgb.b),
                                 };
-                                _ = zgui.colorEdit3(field_key, .{ .col = &rgbf });
+                                const changed = zgui.colorEdit3(field_key, .{ .col = &rgbf });
 
                                 data.* = .from_rgbf(rgbf[0], rgbf[1], rgbf[2]);
+                                editor.touch(changed);
                             },
                         }
                     }
@@ -837,16 +1198,50 @@ pub const Editor = struct {
                 // Window/Design Properties
                 utils.header("Window");
 
+                utils.header("General");
+
+                utils.beginField("Title");
+                editor.touch(zgui.inputText("##WindowTitle", .{ .buf = &window.title.data }));
+
+                utils.beginField("Icon");
+                var icon_changed = zgui.inputText("##WindowIconPath", .{ .buf = &window.icon_path.data });
+
+                zgui.sameLine(.{});
+                if (zgui.button("...##WindowIcon", .{})) {
+                    const current_icon_path = window.icon_path.slice();
+                    const default_path: ?[:0]const u8 = if (current_icon_path.len > 0)
+                        current_icon_path
+                    else
+                        editor.current_file_path;
+
+                    const selected_path = try nfd.openFileDialog("abm", default_path);
+                    if (selected_path) |path| {
+                        defer nfd.freePath(path);
+                        window.icon_path = try model.Value.String.from_slice(path);
+                        icon_changed = true;
+                    }
+                }
+
+                zgui.sameLine(.{});
+                if (zgui.button("×##WindowIcon", .{})) {
+                    window.icon_path = .empty;
+                    icon_changed = true;
+                }
+
+                if (icon_changed) {
+                    editor.invalidate_preview_icon();
+                }
+
                 utils.header("Geometry");
 
-                utils.sizeField("Min Width", &window.min_size.width, 0, window.max_size.width);
-                utils.sizeField("Min Height", &window.min_size.height, 0, window.max_size.height);
+                editor.touch(utils.sizeField("Min Width", &window.min_size.width, 0, window.max_size.width));
+                editor.touch(utils.sizeField("Min Height", &window.min_size.height, 0, window.max_size.height));
 
-                utils.sizeField("Max Width", &window.max_size.width, window.min_size.width, std.math.maxInt(u15));
-                utils.sizeField("Max Height", &window.max_size.height, window.min_size.height, std.math.maxInt(u15));
+                editor.touch(utils.sizeField("Max Width", &window.max_size.width, window.min_size.width, std.math.maxInt(u15)));
+                editor.touch(utils.sizeField("Max Height", &window.max_size.height, window.min_size.height, std.math.maxInt(u15)));
 
-                utils.sizeField("Design Width", &window.design_size.width, window.min_size.width, window.max_size.width);
-                utils.sizeField("Design Height", &window.design_size.height, window.min_size.height, window.max_size.height);
+                editor.touch(utils.sizeField("Design Width", &window.design_size.width, window.min_size.width, window.max_size.width));
+                editor.touch(utils.sizeField("Design Height", &window.design_size.height, window.min_size.height, window.max_size.height));
             }
         }
     }
@@ -884,17 +1279,12 @@ pub const Editor = struct {
         if (zgui.beginMenu("File", true)) {
             defer zgui.endMenu();
 
-            _ = zgui.menuItem("Restore", .{});
+            if (zgui.menuItem("Load", .{})) {
+                try editor.load_document_with_dialog();
+            }
 
             if (zgui.menuItem("Save", .{})) {
-                var file_buffer: [2048]u8 = undefined;
-
-                var result_file = try std.fs.cwd().atomicFile("current.gui.json", .{ .write_buffer = &file_buffer });
-                defer result_file.deinit();
-
-                try model.save_design(editor.document.window, &result_file.file_writer.interface);
-
-                try result_file.finish();
+                try editor.save_document_with_dialog();
             }
 
             zgui.separator();
@@ -902,6 +1292,83 @@ pub const Editor = struct {
                 return error.AppExit;
             }
         }
+    }
+
+    fn load_document_with_dialog(editor: *Editor) !void {
+        const selected_path = try nfd.openFileDialog("json", editor.current_file_path);
+        if (selected_path) |path| {
+            defer nfd.freePath(path);
+            try editor.load_document(path);
+        }
+    }
+
+    fn save_document_with_dialog(editor: *Editor) !void {
+        const path = if (editor.current_file_path) |current_path|
+            current_path
+        else {
+            const selected_path = try nfd.saveFileDialog("json", null);
+            if (selected_path) |path| {
+                defer nfd.freePath(path);
+                try editor.save_document(path);
+            }
+            return;
+        };
+
+        try editor.save_document(path);
+    }
+
+    fn load_document(editor: *Editor, path: []const u8) !void {
+        const file = if (std.fs.path.isAbsolute(path))
+            try std.fs.openFileAbsolute(path, .{})
+        else
+            try std.fs.cwd().openFile(path, .{});
+        defer file.close();
+
+        var file_buffer: [2048]u8 = undefined;
+        var file_reader = file.reader(&file_buffer);
+
+        var document = try model.load_design(
+            &file_reader.interface,
+            editor.document.allocator,
+            editor.metadata,
+        );
+        errdefer document.deinit();
+
+        editor.document.deinit();
+        editor.document.* = document;
+
+        try editor.set_current_file_path(path);
+
+        editor.select_by_index(null);
+        editor.maybe_popup_widget = null;
+        editor.widget_drag = null;
+        editor.preview_window_size_override = preview_window_outer_size(editor.document.window.design_size);
+        editor.invalidate_preview_icon();
+    }
+
+    fn save_document(editor: *Editor, path: []const u8) !void {
+        const file = if (std.fs.path.isAbsolute(path))
+            try std.fs.createFileAbsolute(path, .{ .truncate = true })
+        else
+            try std.fs.cwd().createFile(path, .{ .truncate = true });
+        defer file.close();
+
+        var file_buffer: [2048]u8 = undefined;
+        var file_writer = file.writer(&file_buffer);
+
+        try model.save_design(editor.document.window, &file_writer.interface);
+        try editor.set_current_file_path(path);
+    }
+
+    fn set_current_file_path(editor: *Editor, path: []const u8) !void {
+        const owned_path = try editor.allocator.dupeZ(u8, path);
+        errdefer editor.allocator.free(owned_path);
+
+        if (editor.current_file_path) |current_path| {
+            editor.allocator.free(current_path);
+        }
+
+        editor.current_file_path = owned_path;
     }
 };
 
@@ -938,15 +1405,363 @@ fn widget_from_payload(
     return new;
 }
 
-fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected: bool) void {
-    const x0: f32 = @floatFromInt(widget.bounds.x);
-    const y0: f32 = @floatFromInt(widget.bounds.y);
+fn resolve_preview_widget_bounds(window: *const Window, frame_size: Size, widget: Widget) Rectangle {
+    const h_align: Alignment = .from_anchor(widget.anchor.left, widget.anchor.right);
+    const v_align: Alignment = .from_anchor(widget.anchor.top, widget.anchor.bottom);
+
+    const h_bounds: Alignment.Bounds = .{
+        .near_margin = widget.bounds.x,
+        .far_margin = @intCast(window.design_size.width -| (@as(i32, widget.bounds.x) +| widget.bounds.width)),
+        .size = widget.bounds.width,
+        .limit = frame_size.width,
+    };
+    const v_bounds: Alignment.Bounds = .{
+        .near_margin = widget.bounds.y,
+        .far_margin = @intCast(window.design_size.height -| (@as(i32, widget.bounds.y) +| widget.bounds.height)),
+        .size = widget.bounds.height,
+        .limit = frame_size.height,
+    };
+
+    return .{
+        .x = h_align.compute_pos(h_bounds),
+        .y = v_align.compute_pos(v_bounds),
+        .width = h_align.compute_size(h_bounds),
+        .height = v_align.compute_size(v_bounds),
+    };
+}
+
+fn preview_window_outer_size(client_size: Size) Size {
+    return .new(
+        client_size.width +| preview_window_frame_size.width,
+        client_size.height +| preview_window_frame_size.height,
+    );
+}
+
+fn clamp_preview_window_size(window: *const Window, requested_outer_size: Size) Size {
+    const texture_max_client_size = Size.new(
+        preview_texture_extent -| preview_window_frame_size.width,
+        preview_texture_extent -| preview_window_frame_size.height,
+    );
+
+    const max_client_size = Size.new(
+        @min(window.max_size.width, texture_max_client_size.width),
+        @min(window.max_size.height, texture_max_client_size.height),
+    );
+    const min_client_size = Size.new(
+        @min(window.min_size.width, max_client_size.width),
+        @min(window.min_size.height, max_client_size.height),
+    );
+
+    const min_outer_size = preview_window_outer_size(min_client_size);
+    const max_outer_size = preview_window_outer_size(max_client_size);
+
+    return .new(
+        std.math.clamp(requested_outer_size.width, min_outer_size.width, max_outer_size.width),
+        std.math.clamp(requested_outer_size.height, min_outer_size.height, max_outer_size.height),
+    );
+}
+
+fn preview_window_client_rect(frame_size: Size) Rectangle {
+    return .{
+        .x = preview_window_client_offset.x,
+        .y = preview_window_client_offset.y,
+        .width = frame_size.width -| preview_window_frame_size.width,
+        .height = frame_size.height -| preview_window_frame_size.height,
+    };
+}
+
+fn preview_window_title(window: *const Window) []const u8 {
+    const title = window.title.slice();
+    return if (title.len > 0) title else "Preview";
+}
+
+fn embed_preview_font(data: []const u8, hint: agp_swrast.fonts.FontHint) ashet.graphics.Font {
+    @setEvalBranchQuota(10_000);
+    return @ptrCast(@constCast(&(agp_swrast.fonts.FontInstance.load(data, hint) catch unreachable)));
+}
+
+fn load_preview_font(name: []const u8) error{ Unexpected, FileNotFound, SystemResources }!ashet.graphics.Font {
+    if (std.mem.eql(u8, name, "sans-6"))
+        return preview_sans_6_font;
+    if (std.mem.eql(u8, name, "mono-8"))
+        return preview_mono_8_font;
+
+    return error.FileNotFound;
+}
+
+/// Mock implementation of the system call for Ashet OS font measurement:
+export fn ashet_syscalls_draw_measure_text_size(font_ptr: ashet.abi.Font, text_ptr: [*]const u8, text_len: usize, size: *Size) callconv(.c) u16 {
+    const text = text_ptr[0..text_len];
+    const font: *const agp_swrast.fonts.FontInstance = @ptrCast(@alignCast(font_ptr));
+
+    const width = font.measure_width(text);
+
+    size.* = .new(width, font.line_height());
+
+    return 0;
+}
+
+fn render_preview_widget(editor: *Editor, queue: *CommandQueue, widget: Widget, bounds: Rectangle) !void {
+    const target = get_preview_target(editor, bounds) orelse return;
+
+    queue.reset();
+    try encode_preview_widget(queue, editor.preview_theme, widget, Size.new(bounds.width, bounds.height));
+    try rasterize_preview_queue(editor.document.allocator, queue.data.written(), target);
+}
+
+fn get_preview_target(editor: *Editor, bounds: Rectangle) ?agp_swrast.RenderTarget {
+    if (bounds.width == 0 or bounds.height == 0 or bounds.x < 0 or bounds.y < 0)
+        return null;
+
+    const x: usize = @intCast(bounds.x);
+    const y: usize = @intCast(bounds.y);
+
+    if (x >= editor.preview_surface.used_size.width or y >= editor.preview_surface.used_size.height)
+        return null;
+
+    const visible_width = @min(bounds.width, editor.preview_surface.used_size.width - x);
+    const visible_height = @min(bounds.height, editor.preview_surface.used_size.height - y);
+
+    return .{
+        .pixels = editor.preview_surface.indexed_pixels.ptr + y * preview_texture_extent + x,
+        .width = visible_width,
+        .height = visible_height,
+        .stride = preview_texture_extent,
+    };
+}
+
+fn encode_preview_widget(queue: *CommandQueue, preview_theme: *const PreviewTheme, widget: Widget, size: Size) !void {
+    const class_name = widget.class.name;
+
+    if (std.mem.eql(u8, class_name, "Label")) {
+        var label: standard_widgets.Label = .{
+            .text = preview_widget_text(widget),
+        };
+        const LabelAlignment = @TypeOf(label.horizontal_alignment);
+        label.horizontal_alignment = preview_widget_enum(LabelAlignment, widget, "horizontal_alignment", label.horizontal_alignment);
+        label.vertical_alignment = preview_widget_enum(LabelAlignment, widget, "vertical_alignment", label.vertical_alignment);
+        try standard_widgets.Label.paint(&label, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "Button")) {
+        var button: standard_widgets.Button = .{
+            .text = preview_widget_text(widget),
+        };
+        try standard_widgets.Button.paint(&button, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "ToolButton")) {
+        var button: standard_widgets.ToolButton = .{};
+        try standard_widgets.ToolButton.paint(&button, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "TextBox")) {
+        var textbox: standard_widgets.TextBox = .{
+            .text = preview_widget_text(widget),
+        };
+        try standard_widgets.TextBox.paint(&textbox, queue, size);
+        return;
+    }
+
+    if (std.mem.eql(u8, class_name, "ListBox")) {
+        const ListBoxData = struct {
+            var buffer: [64]u8 = undefined;
+
+            fn get_item(_: ?*anyopaque, index: usize, item: *standard_widgets.ListBox.Item) callconv(.c) void {
+                item.* = .new(
+                    std.fmt.bufPrint(&buffer, "Item {}", .{index}) catch "Item ???",
+                );
+            }
+        };
+
+        var listbox: standard_widgets.ListBox = .{
+            .get_item_callback = ListBoxData.get_item,
+            .get_item_context = null,
+            .item_count = 30,
+            .selected_index = 3,
+        };
+        try standard_widgets.ListBox.paint(&listbox, queue, size);
+        return;
+    }
+
+    try encode_preview_placeholder(queue, preview_theme, size);
+}
+
+fn preview_widget_text(widget: Widget) std.ArrayListUnmanaged(u8) {
+    // We have to capture by-ref as `string` is an *owning* value, not
+    // a reference value.
+    if (widget.properties.getPtr("text")) |value| {
+        if (value.* == .string) {
+            const str = value.string.slice();
+            return .{
+                .items = @constCast(str),
+                .capacity = undefined,
+            };
+        }
+    }
+
+    return .empty;
+}
+
+fn preview_widget_enum(comptime T: type, widget: Widget, property_name: [:0]const u8, default: T) T {
+    if (widget.properties.getPtr(property_name)) |value| {
+        const raw = switch (value.*) {
+            .string => |string| string.slice(),
+            .@"enum" => |string| string.slice(),
+            else => return default,
+        };
+
+        return std.meta.stringToEnum(T, raw) orelse default;
+    }
+
+    return default;
+}
+
+fn encode_preview_placeholder(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size) !void {
+    const rect: Rectangle = .new(.zero, size);
+    try queue.fill_rect(rect, preview_theme.widget_background);
+    try queue.draw_rect(rect, preview_theme.border_normal);
+}
+
+fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const PreviewTheme, size: Size, options: struct {
+    title: []const u8,
+    icon: ?*const agp.Bitmap,
+    buttons: standard_widgets.draw.Draw.ButtonMask,
+}) !void {
+    var draw = standard_widgets.draw.Draw.init(
+        preview_theme.*,
+        agp.encoder(&queue.data.writer),
+    );
+
+    try draw.window(.{
+        .bounds = .new(.zero, size),
+        .title = options.title,
+        .icon = options.icon,
+        .active = true,
+        .buttons = options.buttons,
+    });
+}
+
+fn load_abm_bitmap_from_path(allocator: std.mem.Allocator, path: []const u8) !OwnedBitmap {
+    const file = if (std.fs.path.isAbsolute(path))
+        try std.fs.openFileAbsolute(path, .{})
+    else
+        try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    const stat = try file.stat();
+    const file_size = std.math.cast(usize, stat.size) orelse return error.OutOfMemory;
+    if (file_size < @sizeOf(AbmHeader))
+        return error.InvalidFile;
+
+    const data = try allocator.alloc(u8, file_size);
+    defer allocator.free(data);
+
+    const len = try file.readAll(data);
+    if (len != data.len)
+        return error.InvalidFile;
+
+    var header = std.mem.bytesAsValue(AbmHeader, data[0..@sizeOf(AbmHeader)]).*;
+    inline for (comptime std.meta.fields(AbmHeader)) |field| {
+        @field(header, field.name) = std.mem.littleToNative(field.type, @field(header, field.name));
+    }
+
+    if (header.magic != AbmHeader.magic_number)
+        return error.InvalidFile;
+
+    const pixel_count: usize = @as(usize, header.width) * @as(usize, header.height);
+    if (data.len != @sizeOf(AbmHeader) + pixel_count)
+        return error.InvalidFile;
+
+    const pixels = try allocator.alignedAlloc(Color, .@"4", pixel_count);
+    errdefer allocator.free(pixels);
+
+    @memcpy(std.mem.sliceAsBytes(pixels), data[@sizeOf(AbmHeader)..]);
+
+    return .{
+        .pixels = pixels,
+        .bitmap = .{
+            .pixels = pixels.ptr,
+            .width = header.width,
+            .height = header.height,
+            .stride = header.width,
+            .transparency_key = header.transparency_key,
+            .has_transparency = header.flags.use_transparent,
+        },
+    };
+}
+
+fn preview_window_icon(editor: *Editor) ?*const agp.Bitmap {
+    if (editor.preview_icon) |*bitmap| {
+        if (bitmap.bitmap.height <= 7)
+            return &bitmap.bitmap;
+    }
+
+    return null;
+}
+
+fn ensure_preview_icon_loaded(editor: *Editor) void {
+    if (!editor.preview_icon_dirty)
+        return;
+
+    if (editor.preview_icon) |*bitmap| {
+        bitmap.deinit(editor.allocator);
+        editor.preview_icon = null;
+    }
+
+    const path = editor.document.window.icon_path.slice();
+    if (path.len > 0) {
+        editor.preview_icon = load_abm_bitmap_from_path(editor.allocator, path) catch |err| blk: {
+            std.log.err("failed to load preview icon '{s}': {s}", .{ path, @errorName(err) });
+            break :blk null;
+        };
+    }
+
+    editor.preview_icon_dirty = false;
+}
+
+fn rasterize_preview_queue(allocator: std.mem.Allocator, command_stream: []const u8, target: agp_swrast.RenderTarget) !void {
+    var rasterizer = agp_swrast.Rasterizer.init(target);
+
+    var stream = std.io.fixedBufferStream(command_stream);
+    var decoder = agp.streamDecoder(allocator, stream.reader());
+    defer decoder.deinit();
+
+    var resolver_cookie: u8 = 0;
+    const resolver: agp_swrast.Rasterizer.Resolver = .{
+        .ctx = @ptrCast(&resolver_cookie),
+        .resolve_font_fn = resolve_preview_font,
+        .resolve_framebuffer_fn = resolve_preview_framebuffer,
+    };
+
+    while (try decoder.next()) |cmd| {
+        rasterizer.execute(cmd, resolver);
+    }
+}
+
+fn resolve_preview_font(_: *anyopaque, font: agp.Font) ?*const agp_swrast.fonts.FontInstance {
+    if (@intFromPtr(font) == 0)
+        return null;
+
+    return @ptrCast(@alignCast(font));
+}
+
+fn resolve_preview_framebuffer(_: *anyopaque, _: agp.Framebuffer) ?agp_swrast.Image {
+    return null;
+}
+
+fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, zoom: f32, selected: bool) void {
+    const x0: f32 = @as(f32, @floatFromInt(widget.bounds.x)) * zoom;
+    const y0: f32 = @as(f32, @floatFromInt(widget.bounds.y)) * zoom;
 
     const x = base[0] + x0;
     const y = base[1] + y0;
 
-    const w: f32 = @floatFromInt(widget.bounds.width);
-    const h: f32 = @floatFromInt(widget.bounds.height);
+    const w: f32 = @as(f32, @floatFromInt(widget.bounds.width)) * zoom;
+    const h: f32 = @as(f32, @floatFromInt(widget.bounds.height)) * zoom;
 
     {
         draw.pushClipRect(.{
@@ -1020,6 +1835,8 @@ fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected
 
 const EditorOptions = struct {
     grid_size: i32 = 10,
+    zoom_factor: i32 = 2,
+    preview_zoom_factor: i32 = 1,
 
     render_grid: bool = true,
     snap_to_grid: bool = true,
@@ -1065,5 +1882,13 @@ const EditorOptions = struct {
             .best_fit => gs / 2,
         };
         return gs * @divFloor(value + bias_offset, gs);
+    }
+
+    pub fn designer_zoom(opts: EditorOptions) f32 {
+        return @floatFromInt(@max(1, opts.zoom_factor));
+    }
+
+    pub fn preview_zoom(opts: EditorOptions) f32 {
+        return @floatFromInt(@max(1, opts.preview_zoom_factor));
     }
 };

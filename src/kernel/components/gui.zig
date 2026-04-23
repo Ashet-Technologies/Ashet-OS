@@ -385,7 +385,7 @@ pub const Window = struct {
 
                 // Focused widgets just receive the keyboard event,
                 // and the window won't see them:
-                focused_widget.process_event(key_event);
+                _ = focused_widget.process_event(key_event);
 
                 if (event.event_type == .key_release) {
                     if (window.keyboard_clicked_widget) |_pack| {
@@ -394,7 +394,13 @@ pub const Window = struct {
                         if (clicked_widget == focused_widget and event.keyboard.usage == source_key) {
                             // If we have a primed key click, and we have a key release of the
                             // same key that primed our focus change, we can trigger the click event:
-                            focused_widget.process_event(.{ .event_type = .click });
+                            _ = focused_widget.process_event(.{
+                                .clicked = .{
+                                    .event_type = .click,
+                                    .source = .keyboard,
+                                    .position = .new(std.math.minInt(i16), std.math.minInt(i16)),
+                                },
+                            });
                         }
                     }
 
@@ -435,7 +441,7 @@ pub const Window = struct {
                 if (maybe_hovered_widget) |widget| {
                     // If we have a widget, the event will be forwarded to the
                     // widget server and must be swallowed later, so it doesn't show up in the window queue:
-                    widget.process_event(derive_mouse_event(widget, event.mouse, switch (event.event_type) {
+                    _ = widget.process_event(derive_mouse_event(widget, event.mouse, switch (event.event_type) {
                         .mouse_motion => .mouse_motion,
                         .mouse_button_press => .mouse_button_press,
                         .mouse_button_release => .mouse_button_release,
@@ -453,7 +459,14 @@ pub const Window = struct {
                                     window.update_focused_widget(clicked_widget);
                                 }
 
-                                clicked_widget.process_event(.{ .event_type = .click });
+                                _ = clicked_widget.process_event(.{ .clicked = .{
+                                    .event_type = .click,
+                                    .source = .mouse,
+                                    .position = .new(
+                                        pos.x -| clicked_widget.bounds.x,
+                                        pos.y -| clicked_widget.bounds.y,
+                                    ),
+                                } });
                             }
                         }
                     }
@@ -508,7 +521,7 @@ pub const Window = struct {
 
         if (maybe_old_widget) |old_widget| {
             std.debug.assert(old_widget.type.flags.focusable);
-            old_widget.process_event(.{
+            _ = old_widget.process_event(.{
                 .event_type = .focus_leave,
             });
         }
@@ -517,7 +530,7 @@ pub const Window = struct {
 
         if (maybe_new_widget) |new_widget| {
             std.debug.assert(new_widget.type.flags.focusable);
-            new_widget.process_event(.{
+            _ = new_widget.process_event(.{
                 .event_type = .focus_enter,
             });
         }
@@ -531,13 +544,13 @@ pub const Window = struct {
 
             if (maybe_old_widget) |old_widget| {
                 std.debug.assert(old_widget.type.flags.hit_test_visible);
-                old_widget.process_event(
+                _ = old_widget.process_event(
                     derive_mouse_event(old_widget, mouse_event, .mouse_leave),
                 );
             }
             if (maybe_new_widget) |new_widget| {
                 std.debug.assert(new_widget.type.flags.hit_test_visible);
-                new_widget.process_event(
+                _ = new_widget.process_event(
                     derive_mouse_event(new_widget, mouse_event, .mouse_enter),
                 );
             }
@@ -669,7 +682,7 @@ pub const Widget = struct {
         owner.widgets.append(&widget.window_link);
         errdefer owner.widgets.remove(&widget.window_link);
 
-        try widget.type.process_event(widget, .add_ownership, .{
+        _ = try widget.type.process_event(widget, .add_ownership, .{
             .event_type = .create,
         });
 
@@ -695,7 +708,7 @@ pub const Widget = struct {
             widget.window.update_focused_widget(null);
         }
 
-        widget.type.process_event(widget, .default, .{
+        _ = widget.type.process_event(widget, .default, .{
             .event_type = .destroy,
         });
 
@@ -713,17 +726,17 @@ pub const Widget = struct {
     ///
     /// Forwards the call to `widget.type.process_event` with `.default` mode,
     /// so the widget won't be created inside the widget server process.
-    pub fn process_event(widget: *Widget, event: ashet.abi.WidgetEvent) void {
-        widget.type.process_event(widget, .default, event);
+    pub fn process_event(widget: *Widget, event: ashet.abi.WidgetEvent) usize {
+        return widget.type.process_event(widget, .default, event);
     }
 
     /// Sends the "control" event to the widget.
     ///
     /// NOTE: This function patches the `message.event_type` field to `.control` before forwarding it.
-    pub fn control(widget: *Widget, message: ashet.abi.WidgetControlMessage) void {
+    pub fn control(widget: *Widget, message: ashet.abi.WidgetControlMessage) usize {
         var msg = message;
         msg.event_type = .control;
-        widget.process_event(.{ .control = msg });
+        return widget.process_event(.{ .control = msg });
     }
 
     /// Puts `event` into its window event queue.
@@ -757,10 +770,17 @@ pub const Widget = struct {
         const resize_requested = !previous.size().eql(desired_bounds.size());
 
         widget.bounds = desired_bounds;
+
         if (resize_requested) {
-            widget.process_event(.{
-                .event_type = .resized,
+            var desired_size = widget.bounds.size();
+            _ = widget.process_event(.{
+                .resize_requested = .{
+                    .event_type = .resize_requested,
+                    .requested_size = &desired_size,
+                },
             });
+            widget.bounds.width = desired_size.width;
+            widget.bounds.height = desired_size.height;
         }
 
         const resize_granted = resize_requested and !previous.size().eql(widget.bounds.size());
@@ -806,7 +826,12 @@ pub const Widget = struct {
             // the widget was resized, which means its pixel contents aren't correctly rendered
             // anymore.
             @memset(widget.pixels, .black);
-            widget.process_event(.{
+
+            _ = widget.process_event(.{
+                .event_type = .resized,
+            });
+
+            _ = widget.process_event(.{
                 // TODO: Rendering is asynchronous, how can we handle this here?
                 //       the paint even must be processed synchronously, but the rendering
                 //       can take some time and might conflict with other schedulings.
@@ -893,8 +918,8 @@ pub const WidgetType = struct {
     const ProcessEventMode = enum { default, add_ownership };
 
     pub fn process_event(widget_type: *WidgetType, widget: *Widget, comptime mode: ProcessEventMode, event: ashet.abi.WidgetEvent) switch (mode) {
-        .default => void,
-        .add_ownership => error{SystemResources}!void,
+        .default => usize,
+        .add_ownership => error{SystemResources}!usize,
     } {
         const type_handle = ashet.resources.get_handle(widget_type.server_process, &widget_type.system_resource) orelse @panic("process_event called for a process that does not own the widget type");
 
@@ -902,11 +927,11 @@ pub const WidgetType = struct {
             .add_ownership => try ashet.resources.add_to_process(widget_type.server_process, &widget.system_resource),
             .default => ashet.resources.get_handle(widget_type.server_process, &widget.system_resource) orelse {
                 logger.warn("failed to process widget notification: widget does not exist anymore!", .{});
-                return;
+                return std.math.maxInt(usize);
             },
         };
 
-        ashet.multi_tasking.call_inside_process(
+        return ashet.multi_tasking.call_inside_process(
             widget_type.server_process,
             widget_type.handle_event,
             .{
