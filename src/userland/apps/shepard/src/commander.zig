@@ -138,6 +138,18 @@ pub fn main() !void {
 
     try change_dir(".");
 
+    const Router = ashet.gui.EventRouter(struct {
+        path_box: *ashet.gui.widgets.TextBox,
+        go_button: *ashet.gui.widgets.Button,
+        list_box: *ashet.gui.widgets.ListBox,
+    });
+
+    const router: Router = .init(.{
+        .path_box = path_box,
+        .go_button = go_button,
+        .list_box = list_box,
+    });
+
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);
 
@@ -154,44 +166,50 @@ pub fn main() !void {
                     notify.data[3],
                 });
 
-                if (go_button.match_event(&notify)) |evt| {
-                    _ = evt;
-                } else if (path_box.match_event(&notify)) |evt| {
-                    _ = evt;
-                } else if (list_box.match_event(&notify)) |evt| {
-                    switch (evt) {
-                        .item_clicked => |clicked| {
-                            const index = clicked.index;
-                            std.log.info("clicked item: {}", .{index});
+                if (router.match(&notify)) |event_pos| {
+                    switch (event_pos) {
+                        .go_button => |evt| {
+                            _ = evt;
+                        },
+                        .path_box => |evt| {
+                            _ = evt;
+                        },
+                        .list_box => |evt| {
+                            switch (evt) {
+                                .item_clicked => |clicked| {
+                                    const index = clicked.index;
+                                    std.log.info("clicked item: {}", .{index});
 
-                            switch (index) {
-                                0 => {}, // clicked on "."
-                                1 => {
-                                    //  clicked on ".."
-                                    std.log.info("selected ..", .{});
+                                    switch (index) {
+                                        0 => {}, // clicked on "."
+                                        1 => {
+                                            //  clicked on ".."
+                                            std.log.info("selected ..", .{});
 
-                                    try change_dir("..");
-                                },
+                                            try change_dir("..");
+                                        },
 
-                                else => if (index - 2 < current_directory_list.items.len) {
-                                    // clicked on regular file or path
-                                    const info = current_directory_list.items[index - 2];
+                                        else => if (index - 2 < current_directory_list.items.len) {
+                                            // clicked on regular file or path
+                                            const info = current_directory_list.items[index - 2];
 
-                                    if (info.attributes.directory) {
-                                        const name = info.getName();
-                                        std.debug.assert(std.mem.endsWith(u8, name, "/"));
-                                        try change_dir(name[0 .. name.len - 1]);
+                                            if (info.attributes.directory) {
+                                                const name = info.getName();
+                                                std.debug.assert(std.mem.endsWith(u8, name, "/"));
+                                                try change_dir(name[0 .. name.len - 1]);
+                                            }
+                                        },
                                     }
                                 },
+                                .selected_item_changed => |data| {
+                                    const index = try list_box.get_selected_item();
+
+                                    std.log.info("selected from event: {}", .{data.index});
+                                    std.log.info("selected from control: {}", .{index});
+
+                                    // TODO: Render the cached file info
+                                },
                             }
-                        },
-                        .selected_item_changed => |data| {
-                            const index = try list_box.get_selected_item();
-
-                            std.log.info("selected from event: {}", .{data.index});
-                            std.log.info("selected from control: {}", .{index});
-
-                            // TODO: Render the cached file info
                         },
                     }
                 }

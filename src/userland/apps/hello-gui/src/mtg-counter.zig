@@ -11,6 +11,11 @@ const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
+const Router = ashet.gui.EventRouter(struct {
+    inc_button: *ashet.gui.widgets.Button,
+    dec_button: *ashet.gui.widgets.Button,
+});
+
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = try ashet.process.get_arguments(null, &argv_buffer);
@@ -59,6 +64,11 @@ pub fn main() !void {
         dec_button,
     });
 
+    const router: Router = .init(.{
+        .inc_button = inc_button,
+        .dec_button = dec_button,
+    });
+
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);
 
@@ -75,22 +85,21 @@ pub fn main() !void {
                     notify.data[3],
                 });
 
-                if (inc_button.match_event(&notify)) |evt| {
-                    switch (evt) {
-                        .clicked => {
-                            counter +|= 1;
-                            try set_label_int(count_label, counter);
+                if (router.match(&notify)) |widget_event| {
+                    switch (widget_event) {
+                        .inc_button => |evt| switch (evt) {
+                            .clicked => {
+                                counter +|= 1;
+                                try set_label_int(count_label, counter);
+                            },
+                        },
+                        .dec_button => |evt| switch (evt) {
+                            .clicked => {
+                                counter -|= 1;
+                                try set_label_int(count_label, counter);
+                            },
                         },
                     }
-                } else if (dec_button.match_event(&notify)) |evt| {
-                    switch (evt) {
-                        .clicked => {
-                            counter -|= 1;
-                            try set_label_int(count_label, counter);
-                        },
-                    }
-                } else {
-                    std.log.err("unknown widget!?", .{});
                 }
             },
 
