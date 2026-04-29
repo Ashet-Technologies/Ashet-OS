@@ -26,11 +26,30 @@ const DraftMessage = struct {
     data: model.Message,
 };
 
+const DraftPropertyOption = struct {
+    line: usize,
+    title: []const u8,
+    value: model.Literal,
+};
+
+const DraftProperty = struct {
+    line: usize,
+    name: []const u8,
+    title: []const u8,
+    docs: model.DocLines,
+    set_with: ?model.PropertyBinding,
+    default_value: ?model.Literal,
+    option_labels: []const DraftPropertyOption,
+};
+
 const DraftWidget = struct {
     line: usize,
     name: []const u8,
     uuid: []const u8,
     docs: model.DocLines,
+    width_constraint: ?model.AxisConstraint,
+    height_constraint: ?model.AxisConstraint,
+    properties: []const DraftProperty,
     controls: []const DraftMessage,
     events: []const DraftMessage,
     types: []const DraftTypeDeclaration,
@@ -270,6 +289,7 @@ const Parser = struct {
             line: usize,
             kind: []const u8,
         }).init(parser.allocator);
+        var properties = std.StringHashMap(usize).init(parser.allocator);
 
         for (widget.types) |local_type| {
             if (std.mem.eql(u8, local_type.data.name, widget.name)) {
@@ -317,6 +337,153 @@ const Parser = struct {
             }
             result.value_ptr.* = .{ .line = event.line, .kind = "event" };
         }
+
+        for (widget.properties) |property| {
+            const result = try properties.getOrPut(property.name);
+            if (result.found_existing) {
+                try parser.fail_report(
+                    property.line,
+                    "widget '{s}' contains duplicate property '{s}' first declared at line {d}",
+                    .{ widget.name, property.name, result.value_ptr.* },
+                );
+                continue;
+            }
+            result.value_ptr.* = property.line;
+
+            if (property.set_with == null) {
+                try parser.fail_report(
+                    property.line,
+                    "property '{s}' on widget '{s}' is missing a set-with binding",
+                    .{ property.name, widget.name },
+                );
+                continue;
+            }
+            if (property.default_value == null) {
+                try parser.fail_report(
+                    property.line,
+                    "property '{s}' on widget '{s}' is missing a default value",
+                    .{ property.name, widget.name },
+                );
+                continue;
+            }
+
+            const binding = property.set_with.?;
+            const property_type = findControlParameterType(widget.controls, binding) orelse {
+                const control = findControl(widget.controls, binding.control_name) orelse {
+                    try parser.fail_report(
+                        property.line,
+                        "property '{s}' on widget '{s}' references unknown control '{s}'",
+                        .{ property.name, widget.name, binding.control_name },
+                    );
+                    continue;
+                };
+
+                try parser.fail_report(
+                    property.line,
+                    "property '{s}' on widget '{s}' references unknown parameter '{s}' on control '{s}' declared at line {d}",
+                    .{ property.name, widget.name, binding.parameter_name, binding.control_name, control.line },
+                );
+                continue;
+            };
+
+            try parser.validateLiteralAgainstType(property.line, property.default_value.?, property_type, "default");
+
+            for (property.option_labels, 0..) |option, option_index| {
+                try parser.validateLiteralAgainstType(option.line, option.value, property_type, "option value");
+
+                for (property.option_labels[0..option_index]) |previous| {
+                    if (literalEql(previous.value, option.value)) {
+                        try parser.fail_report(
+                            option.line,
+                            "property '{s}' on widget '{s}' redefines a property option value",
+                            .{ property.name, widget.name },
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn validateLiteralAgainstType(
+        parser: *Parser,
+        line: usize,
+        literal: model.Literal,
+        type_ref: model.TypeRef,
+        context: []const u8,
+    ) ParserError!void {
+        switch (type_ref.kind) {
+            .builtin => switch (type_ref.builtin.?) {
+                .bool => switch (literal) {
+                    .boolean => {},
+                    else => try parser.fail_report(
+                        line,
+                        "{s} literal for type '{s}' must be boolean, found {s}",
+                        .{ context, type_ref.name, literalTagName(literal) },
+                    ),
+                },
+                .i8 => try parser.validateIntegerLiteralAgainstType(line, literal, i8, context, type_ref.name),
+                .i16 => try parser.validateIntegerLiteralAgainstType(line, literal, i16, context, type_ref.name),
+                .i32 => try parser.validateIntegerLiteralAgainstType(line, literal, i32, context, type_ref.name),
+                .u8 => try parser.validateIntegerLiteralAgainstType(line, literal, u8, context, type_ref.name),
+                .u16 => try parser.validateIntegerLiteralAgainstType(line, literal, u16, context, type_ref.name),
+                .u32 => try parser.validateIntegerLiteralAgainstType(line, literal, u32, context, type_ref.name),
+                .isize => try parser.validateIntegerLiteralAgainstType(line, literal, isize, context, type_ref.name),
+                .usize => try parser.validateIntegerLiteralAgainstType(line, literal, usize, context, type_ref.name),
+                .str => switch (literal) {
+                    .string => {},
+                    else => try parser.fail_report(
+                        line,
+                        "{s} literal for type '{s}' must be string, found {s}",
+                        .{ context, type_ref.name, literalTagName(literal) },
+                    ),
+                },
+                .strbuf, .contextptr, .framebuf => {
+                    try parser.fail_report(
+                        line,
+                        "{s} literals do not support widget property type '{s}' yet",
+                        .{ context, type_ref.name },
+                    );
+                },
+            },
+            .named => switch (literal) {
+                .identifier => {},
+                else => try parser.fail_report(
+                    line,
+                    "{s} literal for named type '{s}' must be an identifier, found {s}",
+                    .{ context, type_ref.name, literalTagName(literal) },
+                ),
+            },
+        }
+    }
+
+    fn validateIntegerLiteralAgainstType(
+        parser: *Parser,
+        line: usize,
+        literal: model.Literal,
+        comptime Int: type,
+        context: []const u8,
+        type_name: []const u8,
+    ) ParserError!void {
+        const value = switch (literal) {
+            .integer => |integer| integer,
+            else => {
+                try parser.fail_report(
+                    line,
+                    "{s} literal for type '{s}' must be integer, found {s}",
+                    .{ context, type_name, literalTagName(literal) },
+                );
+                return;
+            },
+        };
+
+        if (std.math.cast(Int, value) == null) {
+            try parser.fail_report(
+                line,
+                "{s} literal {d} is out of range for type '{s}'",
+                .{ context, value, type_name },
+            );
+        }
     }
 
     fn parseWidget(parser: *Parser) ParserError!DraftWidget {
@@ -324,10 +491,16 @@ const Parser = struct {
         const header = try parseHeaderAssignment(parser, entry.line, entry.text, "widget ");
 
         var docs: model.DocLines = &.{};
+        var width_constraint: ?model.AxisConstraint = null;
+        var height_constraint: ?model.AxisConstraint = null;
+        var properties: std.ArrayList(DraftProperty) = .empty;
         var controls: std.ArrayList(DraftMessage) = .empty;
         var events: std.ArrayList(DraftMessage) = .empty;
         var types: std.ArrayList(DraftTypeDeclaration) = .empty;
         var next_identifier: u32 = 1;
+        var has_size_constraint = false;
+        var has_width_constraint = false;
+        var has_height_constraint = false;
 
         while (parser.peek()) |child| {
             if (child.indent <= entry.indent) break;
@@ -342,6 +515,63 @@ const Parser = struct {
                     continue;
                 }
                 docs = try parser.parseDocLines(parser.advance().?);
+                continue;
+            }
+            if (beginsDirective(child.text, "size")) {
+                const size_entry = parser.advance().?;
+                const value = try parseDirectiveAssignment(parser, size_entry.line, size_entry.text, "size");
+                const parsed = try parseSizeConstraint(parser, size_entry.line, value);
+
+                if (has_size_constraint or has_width_constraint or has_height_constraint) {
+                    try parser.fail_report(
+                        size_entry.line,
+                        "widget '{s}' cannot mix 'size' with separate width or height constraints",
+                        .{header.name},
+                    );
+                    continue;
+                }
+
+                width_constraint = parsed.width;
+                height_constraint = parsed.height;
+                has_size_constraint = true;
+                continue;
+            }
+            if (beginsDirective(child.text, "width")) {
+                const width_entry = parser.advance().?;
+                const value = try parseDirectiveAssignment(parser, width_entry.line, width_entry.text, "width");
+
+                if (has_size_constraint or has_width_constraint) {
+                    try parser.fail_report(
+                        width_entry.line,
+                        "widget '{s}' declares width constraints more than once or conflicts with 'size'",
+                        .{header.name},
+                    );
+                    continue;
+                }
+
+                width_constraint = try parseAxisConstraint(parser, width_entry.line, value);
+                has_width_constraint = true;
+                continue;
+            }
+            if (beginsDirective(child.text, "height")) {
+                const height_entry = parser.advance().?;
+                const value = try parseDirectiveAssignment(parser, height_entry.line, height_entry.text, "height");
+
+                if (has_size_constraint or has_height_constraint) {
+                    try parser.fail_report(
+                        height_entry.line,
+                        "widget '{s}' declares height constraints more than once or conflicts with 'size'",
+                        .{header.name},
+                    );
+                    continue;
+                }
+
+                height_constraint = try parseAxisConstraint(parser, height_entry.line, value);
+                has_height_constraint = true;
+                continue;
+            }
+            if (std.mem.startsWith(u8, child.text, "property ")) {
+                try properties.append(parser.allocator, try parser.parseProperty());
                 continue;
             }
             if (std.mem.startsWith(u8, child.text, "control ")) {
@@ -367,9 +597,93 @@ const Parser = struct {
             .name = header.name,
             .uuid = header.value,
             .docs = docs,
+            .width_constraint = width_constraint,
+            .height_constraint = height_constraint,
+            .properties = try properties.toOwnedSlice(parser.allocator),
             .controls = try controls.toOwnedSlice(parser.allocator),
             .events = try events.toOwnedSlice(parser.allocator),
             .types = try types.toOwnedSlice(parser.allocator),
+        };
+    }
+
+    fn parseProperty(parser: *Parser) ParserError!DraftProperty {
+        const entry = parser.advance().?;
+        const header = try parsePropertyHeader(parser, entry.line, entry.text);
+
+        var docs: model.DocLines = &.{};
+        var set_with: ?model.PropertyBinding = null;
+        var default_value: ?model.Literal = null;
+        var option_labels: std.ArrayList(DraftPropertyOption) = .empty;
+
+        while (parser.peek()) |child| {
+            if (child.indent <= entry.indent) break;
+            if (child.indent != entry.indent + 4) {
+                return parser.fail_fatal(child.line, "unexpected indentation inside property '{s}'", .{header.name});
+            }
+
+            if (std.mem.startsWith(u8, child.text, "docs:")) {
+                if (docs.len != 0) {
+                    try parser.fail_report(child.line, "property '{s}' has multiple docs blocks", .{header.name});
+                    parser.skip_entry_and_nested(child.indent);
+                    continue;
+                }
+                docs = try parser.parseDocLines(parser.advance().?);
+                continue;
+            }
+
+            if (std.mem.startsWith(u8, child.text, "set-with:")) {
+                const binding_entry = parser.advance().?;
+                if (set_with != null) {
+                    try parser.fail_report(binding_entry.line, "property '{s}' has multiple set-with bindings", .{header.name});
+                    continue;
+                }
+                set_with = try parsePropertyBinding(parser, binding_entry.line, std.mem.trim(u8, binding_entry.text[9..], " "));
+                continue;
+            }
+
+            if (std.mem.startsWith(u8, child.text, "default:")) {
+                const default_entry = parser.advance().?;
+                if (default_value != null) {
+                    try parser.fail_report(default_entry.line, "property '{s}' has multiple default values", .{header.name});
+                    continue;
+                }
+                default_value = try parseLiteral(parser, default_entry.line, std.mem.trim(u8, default_entry.text[8..], " "));
+                continue;
+            }
+
+            if (std.mem.startsWith(u8, child.text, "option ")) {
+                try option_labels.append(parser.allocator, try parser.parsePropertyOption());
+                continue;
+            }
+
+            try parser.fail_report(child.line, "unexpected property child '{s}'", .{child.text});
+            parser.skip_entry_and_nested(child.indent);
+        }
+
+        return .{
+            .line = entry.line,
+            .name = header.name,
+            .title = header.title,
+            .docs = docs,
+            .set_with = set_with,
+            .default_value = default_value,
+            .option_labels = try option_labels.toOwnedSlice(parser.allocator),
+        };
+    }
+
+    fn parsePropertyOption(parser: *Parser) ParserError!DraftPropertyOption {
+        const entry = parser.advance().?;
+        const tail = entry.text[7..];
+        const eq_index = std.mem.indexOfScalar(u8, tail, '=') orelse
+            return parser.fail_fatal(entry.line, "property option is missing '='", .{});
+
+        const value = try parseLiteral(parser, entry.line, std.mem.trim(u8, tail[0..eq_index], " "));
+        const title = try parseQuotedString(parser, entry.line, std.mem.trim(u8, tail[eq_index + 1 ..], " "), "property option title");
+
+        return .{
+            .line = entry.line,
+            .title = title,
+            .value = value,
         };
     }
 
@@ -539,12 +853,43 @@ const Parser = struct {
                 .name = draft.name,
                 .uuid = draft.uuid,
                 .docs = draft.docs,
+                .width_constraint = draft.width_constraint,
+                .height_constraint = draft.height_constraint,
+                .properties = try parser.materializeProperties(draft),
                 .controls = try parser.materializeMessages(draft.controls),
                 .events = try parser.materializeMessages(draft.events),
                 .types = try parser.materializeTypeDeclarations(draft.types),
             };
         }
         return widgets;
+    }
+
+    fn materializeProperties(parser: *Parser, widget: DraftWidget) Allocator.Error![]const model.Property {
+        const properties = try parser.allocator.alloc(model.Property, widget.properties.len);
+        for (widget.properties, 0..) |draft, item_index| {
+            const binding = draft.set_with.?;
+            properties[item_index] = .{
+                .name = draft.name,
+                .title = draft.title,
+                .docs = draft.docs,
+                .set_with = binding,
+                .default_value = draft.default_value.?,
+                .option_labels = try parser.materializePropertyOptions(draft.option_labels),
+                .type = findControlParameterType(widget.controls, binding).?,
+            };
+        }
+        return properties;
+    }
+
+    fn materializePropertyOptions(parser: *Parser, drafts: []const DraftPropertyOption) Allocator.Error![]const model.PropertyOption {
+        const options = try parser.allocator.alloc(model.PropertyOption, drafts.len);
+        for (drafts, 0..) |draft, item_index| {
+            options[item_index] = .{
+                .title = draft.title,
+                .value = draft.value,
+            };
+        }
+        return options;
     }
 
     fn materializeMessages(parser: *Parser, drafts: []const DraftMessage) Allocator.Error![]const model.Message {
@@ -630,9 +975,53 @@ fn parseHeaderAssignment(parser: *Parser, line: usize, text: []const u8, prefix:
     return .{ .name = name, .value = value };
 }
 
+fn parsePropertyHeader(parser: *Parser, line: usize, text: []const u8) ParserError!struct {
+    name: []const u8,
+    title: []const u8,
+} {
+    const tail = text[9..];
+    const eq_index = std.mem.indexOfScalar(u8, tail, '=') orelse
+        return parser.fail_fatal(line, "property declaration '{s}' is missing '='", .{text});
+
+    const name = std.mem.trim(u8, tail[0..eq_index], " ");
+    try ensurePropertyIdentifier(parser, line, name);
+
+    const title = try parseQuotedString(parser, line, std.mem.trim(u8, tail[eq_index + 1 ..], " "), "property title");
+    return .{ .name = name, .title = title };
+}
+
+fn parseDirectiveAssignment(parser: *Parser, line: usize, text: []const u8, directive: []const u8) ParserError![]const u8 {
+    const tail = text[directive.len..];
+    const eq_index = std.mem.indexOfScalar(u8, tail, '=') orelse
+        return parser.fail_fatal(line, "directive '{s}' is missing '='", .{directive});
+
+    if (std.mem.trim(u8, tail[0..eq_index], " ").len != 0) {
+        return parser.fail_fatal(line, "directive '{s}' has unexpected tokens before '='", .{directive});
+    }
+
+    const value = std.mem.trim(u8, tail[eq_index + 1 ..], " ");
+    if (value.len == 0) {
+        return parser.fail_fatal(line, "directive '{s}' requires a value", .{directive});
+    }
+    return value;
+}
+
+fn parseQuotedString(parser: *Parser, line: usize, text: []const u8, context: []const u8) ParserError![]const u8 {
+    if (text.len < 2 or text[0] != '"' or text[text.len - 1] != '"') {
+        return parser.fail_fatal(line, "{s} must be a quoted string", .{context});
+    }
+    return text[1 .. text.len - 1];
+}
+
 fn ensureIdentifier(parser: *Parser, line: usize, text: []const u8, kind: []const u8) ParserError!void {
     if (!isIdentifier(text)) {
         return parser.fail_fatal(line, "invalid {s} identifier '{s}'", .{ kind, text });
+    }
+}
+
+fn ensurePropertyIdentifier(parser: *Parser, line: usize, text: []const u8) ParserError!void {
+    if (!isPropertyIdentifier(text)) {
+        return parser.fail_fatal(line, "invalid property identifier '{s}'", .{text});
     }
 }
 
@@ -643,6 +1032,161 @@ fn isIdentifier(text: []const u8) bool {
         if (!std.ascii.isAlphanumeric(char) and char != '_') return false;
     }
     return true;
+}
+
+fn isPropertyIdentifier(text: []const u8) bool {
+    var iter = std.mem.splitScalar(u8, text, '-');
+    var saw_segment = false;
+    while (iter.next()) |segment| {
+        if (!isIdentifier(segment)) return false;
+        saw_segment = true;
+    }
+    return saw_segment;
+}
+
+fn beginsDirective(text: []const u8, directive: []const u8) bool {
+    if (!std.mem.startsWith(u8, text, directive)) return false;
+    if (text.len == directive.len) return true;
+
+    return switch (text[directive.len]) {
+        ' ', '=' => true,
+        else => false,
+    };
+}
+
+fn findControl(controls: []const DraftMessage, control_name: []const u8) ?DraftMessage {
+    for (controls) |control| {
+        if (std.mem.eql(u8, control.data.name, control_name)) return control;
+    }
+    return null;
+}
+
+fn findControlParameterType(controls: []const DraftMessage, binding: model.PropertyBinding) ?model.TypeRef {
+    const control = findControl(controls, binding.control_name) orelse return null;
+    for (control.data.parameters) |parameter| {
+        if (std.mem.eql(u8, parameter.name, binding.parameter_name)) return parameter.type;
+    }
+    return null;
+}
+
+fn literalTagName(literal: model.Literal) []const u8 {
+    return @tagName(std.meta.activeTag(literal));
+}
+
+fn literalEql(lhs: model.Literal, rhs: model.Literal) bool {
+    return switch (lhs) {
+        .boolean => |lhs_value| switch (rhs) {
+            .boolean => |rhs_value| lhs_value == rhs_value,
+            else => false,
+        },
+        .integer => |lhs_value| switch (rhs) {
+            .integer => |rhs_value| lhs_value == rhs_value,
+            else => false,
+        },
+        .string => |lhs_value| switch (rhs) {
+            .string => |rhs_value| std.mem.eql(u8, lhs_value, rhs_value),
+            else => false,
+        },
+        .identifier => |lhs_value| switch (rhs) {
+            .identifier => |rhs_value| std.mem.eql(u8, lhs_value, rhs_value),
+            else => false,
+        },
+    };
+}
+
+fn parseAxisConstraint(parser: *Parser, line: usize, text: []const u8) ParserError!model.AxisConstraint {
+    const trimmed = std.mem.trim(u8, text, " ");
+    if (std.mem.indexOf(u8, trimmed, "...")) |ellipsis_index| {
+        const min_text = std.mem.trim(u8, trimmed[0..ellipsis_index], " ");
+        const max_text = std.mem.trim(u8, trimmed[ellipsis_index + 3 ..], " ");
+
+        if (min_text.len == 0 and max_text.len == 0) {
+            return parser.fail_fatal(line, "axis constraint must set at least one bound", .{});
+        }
+
+        const min_value = if (min_text.len == 0) null else try parseConstraintNumber(parser, line, min_text);
+        const max_value = if (max_text.len == 0) null else try parseConstraintNumber(parser, line, max_text);
+
+        if (min_value != null and max_value != null and min_value.? > max_value.?) {
+            return parser.fail_fatal(
+                line,
+                "axis constraint lower bound {d} exceeds upper bound {d}",
+                .{ min_value.?, max_value.? },
+            );
+        }
+
+        return .{ .min = min_value, .max = max_value };
+    }
+
+    const fixed = try parseConstraintNumber(parser, line, trimmed);
+    return .{ .min = fixed, .max = fixed };
+}
+
+fn parseSizeConstraint(parser: *Parser, line: usize, text: []const u8) ParserError!struct {
+    width: model.AxisConstraint,
+    height: model.AxisConstraint,
+} {
+    const trimmed = std.mem.trim(u8, text, " ");
+    const x_index = std.mem.indexOfScalar(u8, trimmed, 'x') orelse
+        return parser.fail_fatal(line, "size constraint must use '<width>x<height>' syntax", .{});
+
+    const width = try parseConstraintNumber(parser, line, std.mem.trim(u8, trimmed[0..x_index], " "));
+    const height = try parseConstraintNumber(parser, line, std.mem.trim(u8, trimmed[x_index + 1 ..], " "));
+
+    return .{
+        .width = .{ .min = width, .max = width },
+        .height = .{ .min = height, .max = height },
+    };
+}
+
+fn parseConstraintNumber(parser: *Parser, line: usize, text: []const u8) ParserError!u16 {
+    return std.fmt.parseInt(u16, text, 10) catch |err| switch (err) {
+        error.InvalidCharacter => return parser.fail_fatal(line, "constraint value '{s}' must be a decimal integer", .{text}),
+        error.Overflow => return parser.fail_fatal(line, "constraint value '{s}' exceeds the supported u16 range", .{text}),
+    };
+}
+
+fn parsePropertyBinding(parser: *Parser, line: usize, text: []const u8) ParserError!model.PropertyBinding {
+    const dot_index = std.mem.indexOfScalar(u8, text, '.') orelse
+        return parser.fail_fatal(line, "set-with bindings must use 'control.parameter' syntax", .{});
+    const last_dot_index = std.mem.lastIndexOfScalar(u8, text, '.').?;
+    if (last_dot_index != dot_index) {
+        return parser.fail_fatal(line, "set-with bindings must contain exactly one '.'", .{});
+    }
+
+    const control_name = std.mem.trim(u8, text[0..dot_index], " ");
+    const parameter_name = std.mem.trim(u8, text[dot_index + 1 ..], " ");
+    try ensureIdentifier(parser, line, control_name, "control");
+    try ensureIdentifier(parser, line, parameter_name, "parameter");
+
+    return .{ .control_name = control_name, .parameter_name = parameter_name };
+}
+
+fn parseLiteral(parser: *Parser, line: usize, text: []const u8) ParserError!model.Literal {
+    const trimmed = std.mem.trim(u8, text, " ");
+    if (trimmed.len == 0) {
+        return parser.fail_fatal(line, "literal value must not be empty", .{});
+    }
+
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+        return .{ .string = trimmed[1 .. trimmed.len - 1] };
+    }
+    if (std.mem.eql(u8, trimmed, "true")) return .{ .boolean = true };
+    if (std.mem.eql(u8, trimmed, "false")) return .{ .boolean = false };
+
+    const maybe_integer = std.fmt.parseInt(i64, trimmed, 10) catch |err| switch (err) {
+        error.InvalidCharacter => null,
+        error.Overflow => return parser.fail_fatal(line, "integer literal '{s}' exceeds the supported i64 range", .{trimmed}),
+    };
+    if (maybe_integer) |integer| {
+        return .{ .integer = integer };
+    }
+
+    if (!isIdentifier(trimmed)) {
+        return parser.fail_fatal(line, "literal '{s}' must be a quoted string, boolean, integer, or identifier", .{trimmed});
+    }
+
+    return .{ .identifier = trimmed };
 }
 
 fn sumParameterSlots(parameters: []const model.Parameter) u8 {
@@ -770,4 +1314,88 @@ test "parser smoke test round-trips to parsable json" {
     const reparsed = try model.from_json_str(arena.allocator(), json.written());
     try std.testing.expectEqual(@as(usize, 1), reparsed.value.widgets.len);
     try std.testing.expectEqual(@as(usize, 1), reparsed.value.types.len);
+}
+
+test "widget metadata parses size constraints and properties" {
+    const source =
+        \\widget Demo = "12345678-1234-1234-1234-123456789abc"
+        \\    width = 3...
+        \\    height = 15
+        \\    control set_alignment(horizontal: Alignment, vertical: Alignment)
+        \\    type Alignment = enum(u8) {
+        \\    |   near = 0,
+        \\    |   middle = 1,
+        \\    |   far = 2,
+        \\    |   _,
+        \\    |}
+        \\    property vertical-alignment = "Vertical Alignment"
+        \\        docs: Defines how the text is anchored vertically.
+        \\        set-with: set_alignment.vertical
+        \\        default: middle
+        \\        option near = "Top"
+        \\        option middle = "Middle"
+        \\        option far = "Bottom"
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser.init(arena.allocator(), source);
+    const document = try parser.parseDocument();
+
+    try std.testing.expectEqual(@as(usize, 1), document.widgets.len);
+    try std.testing.expectEqual(@as(?u16, 3), document.widgets[0].width_constraint.?.min);
+    try std.testing.expectEqual(@as(?u16, null), document.widgets[0].width_constraint.?.max);
+    try std.testing.expectEqual(@as(?u16, 15), document.widgets[0].height_constraint.?.min);
+    try std.testing.expectEqual(@as(?u16, 15), document.widgets[0].height_constraint.?.max);
+    try std.testing.expectEqual(@as(usize, 1), document.widgets[0].properties.len);
+    try std.testing.expectEqualStrings("vertical-alignment", document.widgets[0].properties[0].name);
+    try std.testing.expectEqualStrings("Vertical Alignment", document.widgets[0].properties[0].title);
+    try std.testing.expectEqualStrings("set_alignment", document.widgets[0].properties[0].set_with.control_name);
+    try std.testing.expectEqualStrings("vertical", document.widgets[0].properties[0].set_with.parameter_name);
+    try std.testing.expectEqualStrings("Alignment", document.widgets[0].properties[0].type.name);
+    try std.testing.expect(document.widgets[0].properties[0].default_value == .identifier);
+    try std.testing.expectEqualStrings("middle", document.widgets[0].properties[0].default_value.identifier);
+    try std.testing.expectEqual(@as(usize, 3), document.widgets[0].properties[0].option_labels.len);
+}
+
+test "size conflicts with width constraints" {
+    const source =
+        \\widget Demo = "12345678-1234-1234-1234-123456789abc"
+        \\    size = 9x9
+        \\    width = 3...
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser.init(arena.allocator(), source);
+    try std.testing.expectError(error.ParseFailed, parser.parseDocument());
+    try std.testing.expect(parser.failures.items.len != 0);
+    try std.testing.expect(hasFailureContaining(parser.failures.items, "size"));
+}
+
+test "properties validate set-with bindings" {
+    const source =
+        \\widget Demo = "12345678-1234-1234-1234-123456789abc"
+        \\    control set_text(text: str)
+        \\    property label = "Label"
+        \\        set-with: set_text.value
+        \\        default: "hello"
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser.init(arena.allocator(), source);
+    try std.testing.expectError(error.ParseFailed, parser.parseDocument());
+    try std.testing.expect(parser.failures.items.len != 0);
+    try std.testing.expect(hasFailureContaining(parser.failures.items, "unknown parameter 'value'"));
+}
+
+fn hasFailureContaining(failures: []const Failure, needle: []const u8) bool {
+    for (failures) |failure| {
+        if (std.mem.indexOf(u8, failure.message, needle) != null) return true;
+    }
+    return false;
 }

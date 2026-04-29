@@ -80,6 +80,38 @@ pub const TypeDeclaration = struct {
     zig_type: []const u8,
 };
 
+pub const AxisConstraint = struct {
+    min: ?u16 = null,
+    max: ?u16 = null,
+};
+
+pub const PropertyBinding = struct {
+    control_name: []const u8,
+    parameter_name: []const u8,
+};
+
+pub const Literal = union(enum) {
+    boolean: bool,
+    integer: i64,
+    string: []const u8,
+    identifier: []const u8,
+};
+
+pub const PropertyOption = struct {
+    title: []const u8,
+    value: Literal,
+};
+
+pub const Property = struct {
+    name: []const u8,
+    title: []const u8,
+    docs: DocLines = &.{},
+    set_with: PropertyBinding,
+    default_value: Literal,
+    option_labels: []const PropertyOption = &.{},
+    type: TypeRef,
+};
+
 pub const Message = struct {
     identifier: u32,
     name: []const u8,
@@ -94,6 +126,9 @@ pub const Widget = struct {
     name: []const u8,
     uuid: []const u8,
     docs: DocLines,
+    width_constraint: ?AxisConstraint = null,
+    height_constraint: ?AxisConstraint = null,
+    properties: []const Property = &.{},
     controls: []const Message,
     events: []const Message,
     types: []const TypeDeclaration,
