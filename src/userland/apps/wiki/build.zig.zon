@@ -18,8 +18,8 @@
         //     .path = "../../libs/libgui",
         // },
         .hyperdoc = .{
-            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#4b673429ae9668213992db43bc9b9158d1924b42",
-            .hash = "hyperdoc-0.1.0-nnPEq-LDAADToTXxWF55g42avVDqk1Sdmihm-2qSwK7g",
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#c11141ad27ee2794798dcfa80806fb48c85ce917",
+            .hash = "hyperdoc-0.1.0-nnPEqxbEAADEqal0Y8iAF2AMq0QvyxVROO572RDtrBhO",
         },
     },
 }

@@ -55,8 +55,8 @@
 
         // External dependencieS:
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
-            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+            .url = "git+https://github.com/ikskuh/zig-args.git#d47ae21768f9ec47c2a4154ab48b87166965b820",
+            .hash = "args-0.0.0-CiLiqmvgAADyJmrzcQTP9IOYNvTzR_KGrg3ZNNsH2Qv0",
         },
 
         .network = .{
@@ -106,8 +106,8 @@
 
         // External tooling:
         .propan = .{
-            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#acb54672a593414349df4c4198af52b68e27756b",
-            .hash = "propeller2_wg-0.0.0-hlK46lZRDABATFri59nreUt671QjSJjqKrd9TlgnB3uG",
+            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#6ae73eee050a173bfe3ea0961026ef04277f55ae",
+            .hash = "propeller2_wg-0.0.0-hlK46gPaDAAd3JyV0sHchqyDh73ce8f31LIkX9x2gXMf",
         },
 
         .regz = .{
