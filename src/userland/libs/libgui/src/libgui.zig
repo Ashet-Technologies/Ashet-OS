@@ -20,11 +20,11 @@ pub const Anchor = struct {
     right: bool,
 
     pub fn vertical_alignment(anchor: Anchor) Alignment {
-        return .from_anchor(anchor.left, anchor.right);
+        return .from_anchor(anchor.top, anchor.bottom);
     }
 
     pub fn horizontal_alignment(anchor: Anchor) Alignment {
-        return .from_anchor(anchor.top, anchor.bottom);
+        return .from_anchor(anchor.left, anchor.right);
     }
 };
 
