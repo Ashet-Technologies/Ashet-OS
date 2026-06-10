@@ -663,6 +663,7 @@ fn parse_elf_file(
         .RISCV => .riscv32,
         .@"386" => .x86,
         .ARM => .arm32,
+        .PPC => .ppc,
         else => return error.UnsupportedMachine,
     };
 

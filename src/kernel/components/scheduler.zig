@@ -104,6 +104,7 @@ const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
         .{ .x86_sysv = .{} },
     .thumb => .{ .arm_aapcs = .{} },
     .riscv32 => .{ .riscv32_ilp32 = .{} },
+    .powerpc => .{ .powerpc_sysv = .{} },
     else => @compileError("unsupported platform"),
 };
 
@@ -357,6 +358,10 @@ pub const Thread = struct {
                 thread.push(0x0000_0000); // r2
                 thread.push(0x0000_0000); // r1
                 thread.push(@intFromPtr(arg)); // r0
+            },
+
+            .powerpc => {
+                @panic("OH SHIT");
             },
 
             else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
@@ -1056,6 +1061,20 @@ comptime {
             \\  .word ashet_scheduler_save_thread
             \\.restore_thread:
             \\  .word ashet_scheduler_restore_thread
+        ),
+
+        .powerpc => (
+            // TODO
+            \\ 
+            \\.global ashet_scheduler_threadTrampoline
+            \\.type ashet_scheduler_threadTrampoline, %function
+            \\ashet_scheduler_threadTrampoline:
+            \\  trap
+            \\ 
+            \\.global ashet_scheduler_switchTasks
+            \\.type ashet_scheduler_switchTasks, %function
+            \\ashet_scheduler_switchTasks:
+            \\  trap
         ),
 
         else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),

@@ -247,6 +247,7 @@ fn parse_header(header_chunk: *const [512]u8) !ashex.Header {
         .riscv32 => .{ .machine32_le, .riscv32 },
         .x86 => .{ .machine32_le, .x86 },
         .arm, .thumb => .{ .machine32_le, .arm32 },
+        .powerpc => .{ .machine32_be, .ppc },
         else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
     };
 

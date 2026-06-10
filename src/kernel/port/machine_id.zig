@@ -24,7 +24,7 @@ pub const MachineID = enum {
     @"x86-pc-generic",
     // @"x86-pc-uefi", // TODO: Find better name for the UEFI executable kernel
 
-    // @"ppc-nintendo-gamecube",
+    @"ppc-nintendo-gc",
 
     pub fn is_hosted(target: MachineID) bool {
         return switch (target) {
@@ -34,6 +34,7 @@ pub const MachineID = enum {
             .@"rv32-qemu-virt",
             .@"rv32-ashet-base",
             .@"x86-pc-generic",
+            .@"ppc-nintendo-gc",
             => false,
 
             .@"x86-hosted-linux",
@@ -52,6 +53,7 @@ pub const MachineID = enum {
             .@"x86-hosted-linux" => "OS Hosted (x86, Linux)",
             .@"x86-hosted-windows" => "OS Hosted (x86, Windows)",
             .@"x86-pc-generic" => "Generic PC (x86)",
+            .@"ppc-nintendo-gc" => "Nintendo GameCube",
         };
     }
 
@@ -70,6 +72,9 @@ pub const MachineID = enum {
             .@"x86-hosted-windows",
             .@"x86-pc-generic",
             => .x86,
+
+            .@"ppc-nintendo-gc",
+            => .ppc,
         };
     }
 

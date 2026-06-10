@@ -4,10 +4,12 @@ pub const Platform = enum(u8) {
     riscv32 = 0,
     arm32 = 1,
     x86 = 2,
+    ppc = 3,
 };
 
 pub const FileType = enum(u8) {
     machine32_le = 0,
+    machine32_be = 1,
 };
 
 pub const file_magic: [4]u8 = .{ 'A', 'S', 'H', 'X' };
