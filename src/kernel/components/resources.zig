@@ -356,14 +356,14 @@ test "HandlePool Stress Test" {
 
     // test:
 
-    var rng_engine = std.rand.DefaultPrng.init(0x1337);
+    var rng_engine = std.Random.DefaultPrng.init(0x1337);
     const rng = rng_engine.random();
 
     for (0..repeat_count) |test_loop| {
         var pool = HandlePool.init(std.testing.allocator);
         defer pool.deinit();
 
-        var alive_handles = std.ArrayList(Handle).init(std.testing.allocator);
+        var alive_handles = std.array_list.Managed(Handle).init(std.testing.allocator);
         defer alive_handles.deinit();
 
         var retained_items = std.AutoHashMap(Handle, void).init(std.testing.allocator);
@@ -412,7 +412,7 @@ test "HandlePool Stress Test" {
             }
 
             if (rng.float(f32) < fake_free_chance) {
-                const handle: Handle = @ptrFromInt(rng.int(usize));
+                const handle: Handle = @enumFromInt(rng.int(usize));
 
                 if (pool.free_by_handle(handle)) |_| {
                     const alive_index = std.mem.indexOfScalar(Handle, alive_handles.items, handle);
@@ -427,7 +427,7 @@ test "HandlePool Stress Test" {
             }
 
             if (rng.float(f32) < fake_resolve_chance) {
-                const handle: Handle = @ptrFromInt(rng.int(usize));
+                const handle: Handle = @enumFromInt(rng.int(usize));
 
                 if (pool.resolve(handle)) |_| {
                     try std.testing.expect(std.mem.indexOfScalar(Handle, alive_handles.items, handle) != null);
@@ -461,7 +461,7 @@ test "HandlePool Stress Test" {
             max_level = @max(max_level, alive_handles.items.len);
         }
 
-        while (alive_handles.popOrNull()) |handle| {
+        while (alive_handles.pop()) |handle| {
             pool.free_by_handle(handle) catch {
                 // this is fine in our scenario
             };

@@ -49,15 +49,17 @@ pub const Directory = struct {
 
     fs: *FileSystem,
     handle: ashet.drivers.FileSystemDriver.DirectoryHandle,
+    canonical_path: []u8,
     iter: ?*ashet.drivers.FileSystemDriver.Enumerator = null,
 
-    pub fn create(fs: *FileSystem, handle: ashet.drivers.FileSystemDriver.DirectoryHandle) error{SystemResources}!*Directory {
+    pub fn create(fs: *FileSystem, handle: ashet.drivers.FileSystemDriver.DirectoryHandle, canonical_path: []u8) error{SystemResources}!*Directory {
         const dir = ashet.memory.type_pool(Directory).alloc() catch return error.SystemResources;
         errdefer ashet.memory.type_pool(Directory).free(dir);
 
         dir.* = .{
             .fs = fs,
             .handle = handle,
+            .canonical_path = canonical_path,
         };
 
         return dir;
@@ -70,6 +72,7 @@ pub const Directory = struct {
             dir.fs.driver.destroyEnumerator(iter);
         }
         dir.fs.driver.closeDir(dir.handle);
+        ashet.memory.allocator.free(dir.canonical_path);
 
         ashet.memory.type_pool(Directory).free(dir);
     }
@@ -77,6 +80,70 @@ pub const Directory = struct {
 
 fn slice_name(buf: []const u8) []const u8 {
     return buf[0 .. std.mem.indexOfScalar(u8, buf, 0) orelse buf.len];
+}
+
+fn appendNormalizedSegments(
+    allocator: std.mem.Allocator,
+    output: *std.ArrayList(u8),
+    path: []const u8,
+) error{SystemResources}!void {
+    var it = std.mem.tokenizeScalar(u8, path, '/');
+    while (it.next()) |segment| {
+        if (std.mem.eql(u8, segment, ".")) {
+            continue;
+        }
+
+        if (std.mem.eql(u8, segment, "..")) {
+            if (std.mem.lastIndexOfScalar(u8, output.items, '/')) |index| {
+                output.shrinkRetainingCapacity(index);
+            } else {
+                output.shrinkRetainingCapacity(0);
+            }
+            continue;
+        }
+
+        if (output.items.len > 0) {
+            output.append(allocator, '/') catch return error.SystemResources;
+        }
+        output.appendSlice(allocator, segment) catch return error.SystemResources;
+    }
+}
+
+fn normalizePathAlloc(allocator: std.mem.Allocator, base_path: []const u8, path: []const u8) error{ InvalidPath, SystemResources }![]u8 {
+    try validatePath(path);
+
+    var output: std.ArrayList(u8) = .empty;
+    errdefer output.deinit(allocator);
+
+    output.ensureTotalCapacity(allocator, base_path.len + path.len + 1) catch return error.SystemResources;
+
+    try appendNormalizedSegments(allocator, &output, base_path);
+    try appendNormalizedSegments(allocator, &output, path);
+
+    return output.toOwnedSlice(allocator) catch return error.SystemResources;
+}
+
+const SplitPath = struct {
+    parent: []const u8,
+    basename: []const u8,
+};
+
+fn splitParentPath(path: []const u8) ?SplitPath {
+    if (path.len == 0) {
+        return null;
+    }
+
+    if (std.mem.lastIndexOfScalar(u8, path, '/')) |index| {
+        return .{
+            .parent = path[0..index],
+            .basename = path[index + 1 ..],
+        };
+    }
+
+    return .{
+        .parent = "",
+        .basename = path,
+    };
 }
 
 var sys_disk_index: u32 = 0; // system disk index for disk named SYS:
@@ -244,10 +311,14 @@ const iop_handlers = struct {
 
         const ctx = &filesystems[disk_id];
 
-        const dri_dir = try ctx.driver.openDirFromRoot(inputs.path_ptr[0..inputs.path_len]);
+        var canonical_path: ?[]u8 = try normalizePathAlloc(ashet.memory.allocator, "", inputs.path_ptr[0..inputs.path_len]);
+        errdefer if (canonical_path) |path| ashet.memory.allocator.free(path);
+
+        const dri_dir = try ctx.driver.openDirFromRoot(canonical_path.?);
         errdefer ctx.driver.closeDir(dri_dir);
 
-        const backing = try Directory.create(ctx, dri_dir);
+        const backing = try Directory.create(ctx, dri_dir, canonical_path.?);
+        canonical_path = null;
         errdefer backing.destroy();
 
         return .{ .dir = try create_dir_handle(call, backing) };
@@ -258,10 +329,14 @@ const iop_handlers = struct {
 
         const ctx: *Directory = try resolve_dir(call, inputs.start_dir);
 
-        const dri_dir = try ctx.fs.driver.openDirRelative(ctx.handle, inputs.path_ptr[0..inputs.path_len]);
+        var canonical_path: ?[]u8 = try normalizePathAlloc(ashet.memory.allocator, ctx.canonical_path, inputs.path_ptr[0..inputs.path_len]);
+        errdefer if (canonical_path) |path| ashet.memory.allocator.free(path);
+
+        const dri_dir = try ctx.fs.driver.openDirFromRoot(canonical_path.?);
         errdefer ctx.fs.driver.closeDir(dri_dir);
 
-        const backing = try Directory.create(ctx.fs, dri_dir);
+        const backing = try Directory.create(ctx.fs, dri_dir, canonical_path.?);
+        canonical_path = null;
         errdefer backing.destroy();
 
         return .{ .dir = try create_dir_handle(call, backing) };
@@ -341,9 +416,17 @@ const iop_handlers = struct {
 
         const ctx: *Directory = try resolve_dir(call, inputs.dir);
 
+        const canonical_path = try normalizePathAlloc(ashet.memory.allocator, ctx.canonical_path, inputs.path_ptr[0..inputs.path_len]);
+        defer ashet.memory.allocator.free(canonical_path);
+
+        const split = splitParentPath(canonical_path) orelse return error.FileNotFound;
+
+        const parent_dir = try ctx.fs.driver.openDirFromRoot(split.parent);
+        defer ctx.fs.driver.closeDir(parent_dir);
+
         const dri_file = try ctx.fs.driver.openFile(
-            ctx.handle,
-            inputs.path_ptr[0..inputs.path_len],
+            parent_dir,
+            split.basename,
             inputs.access,
             inputs.mode,
         );
@@ -698,4 +781,58 @@ pub fn resize(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.Resize.Inputs) v
         return call.finalize(fs_abi.Resize, err);
     };
     work_queue.enqueue(call, null);
+}
+
+test "normalizePathAlloc keeps root at empty path" {
+    const root = try normalizePathAlloc(std.testing.allocator, "", ".");
+    defer std.testing.allocator.free(root);
+
+    try std.testing.expectEqualStrings("", root);
+}
+
+test "normalizePathAlloc keeps nested current directory" {
+    const path = try normalizePathAlloc(std.testing.allocator, "etc/desktop", ".");
+    defer std.testing.allocator.free(path);
+
+    try std.testing.expectEqualStrings("etc/desktop", path);
+}
+
+test "normalizePathAlloc resolves parent directory" {
+    const path = try normalizePathAlloc(std.testing.allocator, "etc/desktop", "..");
+    defer std.testing.allocator.free(path);
+
+    try std.testing.expectEqualStrings("etc", path);
+}
+
+test "normalizePathAlloc collapses mixed dot segments" {
+    const path = try normalizePathAlloc(std.testing.allocator, "", "foo/../bar");
+    defer std.testing.allocator.free(path);
+
+    try std.testing.expectEqualStrings("bar", path);
+}
+
+test "normalizePathAlloc clamps above root" {
+    const path = try normalizePathAlloc(std.testing.allocator, "", "../../etc");
+    defer std.testing.allocator.free(path);
+
+    try std.testing.expectEqualStrings("etc", path);
+}
+
+test "normalizePathAlloc can walk to root" {
+    const path = try normalizePathAlloc(std.testing.allocator, "etc/desktop", "../..");
+    defer std.testing.allocator.free(path);
+
+    try std.testing.expectEqualStrings("", path);
+}
+
+test "splitParentPath handles root and nested paths" {
+    try std.testing.expectEqual(@as(?SplitPath, null), splitParentPath(""));
+
+    const leaf = splitParentPath("etc").?;
+    try std.testing.expectEqualStrings("", leaf.parent);
+    try std.testing.expectEqualStrings("etc", leaf.basename);
+
+    const nested = splitParentPath("etc/desktop").?;
+    try std.testing.expectEqualStrings("etc", nested.parent);
+    try std.testing.expectEqualStrings("desktop", nested.basename);
 }

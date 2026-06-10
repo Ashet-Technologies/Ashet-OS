@@ -305,7 +305,6 @@ pub const FileSystemDriver = struct {
     pub const StatFileError = AccessError || error{InvalidHandle};
     pub const ResizeError = AccessError || error{ InvalidHandle, NoSpaceLeft };
     pub const OpenDirAbsError = AccessError || error{ FileNotFound, InvalidPath };
-    pub const OpenDirRelError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle };
     pub const OpenFileError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle, WriteProtected, FileAlreadyExists };
     pub const FlushFileError = AccessError || error{InvalidHandle};
     pub const CreateEnumeratorError = AccessError;
@@ -318,9 +317,6 @@ pub const FileSystemDriver = struct {
 
         pub fn openDirFromRoot(instance: *Instance, path: []const u8) !DirectoryHandle {
             return instance.vtable.openDirFromRootFn(instance, path);
-        }
-        pub fn openDirRelative(instance: *Instance, base_dir: DirectoryHandle, path: []const u8) !DirectoryHandle {
-            return instance.vtable.openDirRelativeFn(instance, base_dir, path);
         }
         pub fn closeDir(instance: *Instance, handle: DirectoryHandle) void {
             return instance.vtable.closeDirFn(instance, handle);
@@ -373,7 +369,6 @@ pub const FileSystemDriver = struct {
 
         pub const VTable = struct {
             openDirFromRootFn: *const fn (*Instance, []const u8) OpenDirAbsError!DirectoryHandle,
-            openDirRelativeFn: *const fn (*Instance, DirectoryHandle, []const u8) OpenDirRelError!DirectoryHandle,
             closeDirFn: *const fn (*Instance, DirectoryHandle) void,
             createEnumeratorFn: *const fn (*Instance, DirectoryHandle) CreateEnumeratorError!*Enumerator,
             destroyEnumeratorFn: *const fn (*Instance, *Enumerator) void,

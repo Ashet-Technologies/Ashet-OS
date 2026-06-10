@@ -6,6 +6,8 @@ const Platform = abiBuild.Platform;
 pub const Machine = @import("port/machine_id.zig").MachineID;
 
 pub fn build(b: *std.Build) void {
+    const test_step = b.step("test", "Runs the kernel tests");
+
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
@@ -357,6 +359,14 @@ pub fn build(b: *std.Build) void {
             .install_dir = .lib,
             .install_subdir = ".",
         });
+    }
+
+    {
+        const test_exe = b.addTest(.{
+            .root_module = kernel_mod,
+        });
+
+        test_step.dependOn(&b.addRunArtifact(test_exe).step);
     }
 
     if (validate_mode) {

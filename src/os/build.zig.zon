@@ -32,6 +32,7 @@
         .slideshow = .{ .path = "../userland/apps/slideshow" },
         .revision2026 = .{ .path = "../userland/apps/demos/revision2026" },
         .@"2048" = .{ .path = "../userland/apps/2048" },
+        .shepard = .{ .path = "../userland/apps/shepard" },
 
         // Externel deps:
         .dimmer = .{

@@ -410,6 +410,10 @@ pub const overlapped = struct {
 };
 
 pub const fs = struct {
+    pub const FileSystemId = abi.FileSystemId;
+    pub const FileAccess = abi.FileAccess;
+    pub const FileInfo = abi.FileInfo;
+
     pub const File = struct {
         pub const ReadError = abi.fs.Read.Error || GenericError;
         pub const WriteError = abi.fs.Write.Error || GenericError;
@@ -542,7 +546,7 @@ pub const fs = struct {
 
         pub fn openDir(dir: Directory, path: []const u8) OpenError!Directory {
             const out = try overlapped.performOne(abi.fs.OpenDir, .{
-                .dir = dir.handle,
+                .start_dir = dir.handle,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
             });

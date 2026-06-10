@@ -130,14 +130,6 @@ const Instance = struct {
         return enumCast(DirectoryHandle, dir);
     }
 
-    fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirRelError!DirectoryHandle {
-        const instance = getPtr(generic);
-
-        const dir = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .directory) catch |err| return try mapFileSystemError(err);
-
-        return enumCast(DirectoryHandle, dir);
-    }
-
     fn closeDir(generic: *GenericInstance, dir: DirectoryHandle) void {
         const instance = getPtr(generic);
 
@@ -223,7 +215,6 @@ const Instance = struct {
 
     const vtable = GenericInstance.VTable{
         .openDirFromRootFn = openDirFromRoot,
-        .openDirRelativeFn = openDirRelative,
         .closeDirFn = closeDir,
 
         .deleteFn = undefined, // TODO: Fix later

@@ -7,6 +7,9 @@ const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
 
+// The widget definitions are auto-generated:
+pub const widgets = @import("widgets");
+
 pub const UUID = ashet.abi.UUID;
 
 pub const Desktop = ashet.abi.Desktop;
@@ -143,8 +146,8 @@ pub fn get_widget_bounds(widget: Widget) !Rectangle {
 pub const ControlMessage = ashet.abi.gui.WidgetControlID;
 pub const NotifyEvent = ashet.abi.gui.WidgetNotifyID;
 
-pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize) !void {
-    try ashet.abi.gui.control_widget(widget, .{
+pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize) !usize {
+    return try ashet.abi.gui.control_widget(widget, .{
         .event_type = undefined,
         .type = control,
         .params = params,
@@ -159,59 +162,107 @@ pub fn register_widget_type(desc: WidgetDescriptor) !WidgetType {
     return try ashet.abi.gui.register_widget_type(&desc);
 }
 
-pub const widgets = struct {
-    pub const Label = opaque {
-        pub const uuid = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
+/// Helper function that converts a marshallable type into a `usize`.
+///
+/// NOTE: Use this to convert NotifyEvent/ControlMessage parameter values to `usize`.
+pub fn usize_from_type(comptime T: type, value: T) usize {
+    const info = @typeInfo(T);
+    switch (info) {
+        .@"enum" => return @intFromEnum(value),
+        .int => |int| switch (int.signedness) {
+            .unsigned => return value,
+            .signed => return @bitCast(@as(isize, value)),
+        },
+        .float => |flt| {
+            const ival: std.meta.Int(.unsigned, flt.bits) = @bitCast(value);
+            return ival;
+        },
 
-        pub const set_text: ControlMessage = .from_int(1);
-        pub const set_alignment: ControlMessage = .from_int(2);
+        .optional, .pointer => return @intFromPtr(value),
+
+        .bool => return @intFromBool(value),
+
+        else => @compileError(std.fmt.comptimePrint("{} is not a type that can be passed through usize", .{T})),
+    }
+}
+
+/// Helper function that converts a `usize` into a marshallable type.
+///
+/// NOTE: Use this to convert NotifyEvent/ControlMessage parameter values from the `usize`.
+pub fn type_from_usize(comptime T: type, value: usize) T {
+    const info = @typeInfo(T);
+    switch (info) {
+        .@"enum" => |enumeration| return @enumFromInt(@as(enumeration.tag_type, @truncate(value))),
+        .int => |int| switch (int.signedness) {
+            .unsigned => return @truncate(value),
+            .signed => return @truncate(@as(isize, @bitCast(value))),
+        },
+        .float => {
+            const fcal: std.meta.Float(@bitSizeOf(usize)) = @bitCast(value);
+            return @floatCast(fcal);
+        },
+        .optional, .pointer => return @ptrFromInt(value),
+
+        .bool => return (value != 0),
+
+        else => @compileError(std.fmt.comptimePrint("{} is not a type that can be passed through usize", .{T})),
+    }
+}
+
+/// The event router is a convenience structure that helps mapping out widgets into a
+/// structured, unwrapped definition of events.
+pub fn EventRouter(comptime Mapping: type) type {
+    var mapped_event_fields: []const std.builtin.Type.UnionField = &.{};
+
+    const mapping_info = @typeInfo(Mapping).@"struct";
+    for (mapping_info.fields) |fld| {
+        const ptr = @typeInfo(fld.type).pointer;
+        std.debug.assert(ptr.size == .one);
+
+        if (@typeInfo(ptr.child) != .@"opaque")
+            @compileError("Mapping must be struct of fields to pointers to opaque");
+        if (!@hasDecl(ptr.child, "uuid"))
+            @compileError("Each widget type requires a .uuid decl in its definition");
+        if (!@hasDecl(ptr.child, "Event"))
+            @compileError("Each widget type requires a .Event decl in its definition");
+
+        const mapped: std.builtin.Type.UnionField = .{
+            .alignment = @alignOf(ptr.child.Event),
+            .name = fld.name,
+            .type = ptr.child.Event,
+        };
+
+        mapped_event_fields = mapped_event_fields ++ &[1]std.builtin.Type.UnionField{mapped};
+    }
+
+    const mapped_event_fields_const = mapped_event_fields;
+
+    return struct {
+        const Router = @This();
+
+        pub const MappedEvent = @Type(.{
+            .@"union" = .{
+                .fields = mapped_event_fields_const,
+                .layout = .auto,
+                .tag_type = std.meta.FieldEnum(Mapping),
+                .decls = &.{},
+            },
+        });
+
+        mapping: Mapping,
+
+        pub fn init(mapping: Mapping) Router {
+            return .{ .mapping = mapping };
+        }
+
+        pub fn match(router: *const Router, event: *const WidgetNotifyEvent) ?MappedEvent {
+            inline for (mapping_info.fields) |fld| {
+                const widget = @field(router.mapping, fld.name);
+                if (widget.match_event(event)) |widget_event| {
+                    return @unionInit(MappedEvent, fld.name, widget_event);
+                }
+            }
+            return null;
+        }
     };
-
-    pub const Button = opaque {
-        pub const uuid = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
-
-        pub const set_text: ControlMessage = .from_int(1);
-
-        pub const clicked: NotifyEvent = .from_int(1);
-    };
-
-    pub const Panel = opaque {
-        pub const uuid = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
-    };
-
-    pub const PictureBox = opaque {
-        pub const uuid = UUID.constant("bb33e7a1-74ad-4040-a248-0015ba6b9dac");
-    };
-
-    pub const ProgressBar = opaque {
-        pub const uuid = UUID.constant("b96290a9-542f-45f5-9e37-1ce9084fc0e3");
-    };
-
-    pub const GroupBox = opaque {
-        pub const uuid = UUID.constant("b96bc6a2-6df0-4f76-962a-4af18fdf3548");
-    };
-
-    pub const TextBox = opaque {
-        pub const uuid = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
-    };
-
-    pub const MultiLineTextBox = opaque {
-        pub const uuid = UUID.constant("84d40a1a-04ab-4e00-ae93-6e91e6b3d10a");
-    };
-
-    pub const VerticalScrollBar = opaque {
-        pub const uuid = UUID.constant("d1c52f74-e9b8-4067-8bb6-fe01c49d97ae");
-    };
-
-    pub const HorizontalScrollBar = opaque {
-        pub const uuid = UUID.constant("2899397f-ede2-46e9-8458-1eea29c81fa1");
-    };
-
-    pub const CheckBox = opaque {
-        pub const uuid = UUID.constant("051c6bff-d491-4e5a-8b77-6f4244da52ee");
-    };
-
-    pub const RadioButton = opaque {
-        pub const uuid = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
-    };
-};
+}

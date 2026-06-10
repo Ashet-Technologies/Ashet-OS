@@ -1319,8 +1319,14 @@ namespace gui {
 
     /// Triggers the `control` event of the widget with the given `message` as a payload.
     syscall control_widget {
-        in    widget: Widget;
+        in    widget:  Widget;
+
+        /// The message that shall be sent to the widget.
         in    message: WidgetControlMessage;
+
+        /// A widget-dependent message returned from the widget.
+        out   result:  usize;
+
         error SystemResources;
         error InvalidHandle;
     }
@@ -2616,7 +2622,7 @@ bitstruct CreateWindowFlags : u32 {
     reserve u31 = 0;
 }
 
-typedef WidgetEventHandler = fnptr (WidgetType, Widget, *const WidgetEvent) void;
+typedef WidgetEventHandler = fnptr (WidgetType, Widget, *const WidgetEvent) usize;
 
 
 struct WidgetDescriptor {
@@ -2908,6 +2914,8 @@ union WidgetEvent {
     field mouse: MouseEvent;
     field keyboard: KeyboardEvent;
     field control: WidgetControlMessage;
+    field resize_requested: LimitSizeEvent;
+    field clicked: ClickEvent;
 
     //? TODO: Add event data
 
@@ -3038,26 +3046,70 @@ union WidgetEvent {
 
         //? widget specific:
 
-        //? TODO: Implement ResizedArgs with "desired size, actual size"
+        /// The widget is about to be resized, and shall now restrict the provided
+        /// size into the widget constraints.
+        ///
+        /// NOTE: This event will fire *before* resizing a widget, and
+        ///       `get_widget_bounds` will still remove the old value.
+        ///
+        ///       This means the widget framebuffer also retains the old size,
+        ///       and will only be resized after this event was handled.
+        item resize_requested = 20;
+
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
         item resized = 21;
 
         /// The widget should draw itself.
-        item paint = 20;
+        item paint = 22;
 
         /// User pressed the "context menu" button or did a
         /// secondary mouse button click on the  widget.
-        item context_menu_request = 22;
+        item context_menu_request = 23;
 
         /// The widget received focus via mouse or keyboard.
-        item focus_enter = 23;
+        item focus_enter = 24;
 
         /// The widget lost focus after receiving it.
-        item focus_leave = 24;
+        item focus_leave = 25;
 
         ...
+    }
+
+    struct LimitSizeEvent {
+        field event_type: Type; //? TODO: = Type.resize_requested;
+
+        /// A pointer to the new size of the widget.
+        ///
+        /// The widget server shall modify the pointed `Size` such that it
+        /// fulfils the size constraints of the widget type.
+        field requested_size: *Size;
+    }
+
+    struct ClickEvent {
+        field event_type: Type; //? TODO: = Type.clicked;
+
+        /// The source of the click event
+        field source: Source;
+
+        /// The position of the event, if applicable.
+        ///
+        /// Currently only valid if `.source == Source.mouse`.
+        field position: Point;
+
+
+        enum Source : u8 {
+            /// The click event was not created through an input device.
+            item synthetic = 0;
+
+            /// The click event was created through a keyboard interaction.
+            item keyboard = 1;
+
+            /// The click event was created through a mouse interaction.
+            item mouse = 2;
+        }
+
     }
 }
 

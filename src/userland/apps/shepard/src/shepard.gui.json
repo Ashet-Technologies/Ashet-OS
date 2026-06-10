@@ -1,0 +1,72 @@
+{
+  "design_size": {
+    "width": 150,
+    "height": 200
+  },
+  "min_size": {
+    "width": 0,
+    "height": 0
+  },
+  "max_size": {
+    "width": 32767,
+    "height": 32767
+  },
+  "widgets": [
+    {
+      "identifier": "",
+      "bounds": {
+        "x": 128,
+        "y": 10,
+        "width": 12,
+        "height": 12
+      },
+      "anchor": {
+        "top": true,
+        "bottom": false,
+        "left": false,
+        "right": true
+      },
+      "visible": true,
+      "class": "ToolButton",
+      "properties": {}
+    },
+    {
+      "identifier": "",
+      "bounds": {
+        "x": 10,
+        "y": 10,
+        "width": 114,
+        "height": 12
+      },
+      "anchor": {
+        "top": true,
+        "bottom": false,
+        "left": true,
+        "right": true
+      },
+      "visible": true,
+      "class": "TextBox",
+      "properties": {
+        "text": ""
+      }
+    },
+    {
+      "identifier": "",
+      "bounds": {
+        "x": 10,
+        "y": 30,
+        "width": 130,
+        "height": 160
+      },
+      "anchor": {
+        "top": true,
+        "bottom": true,
+        "left": true,
+        "right": true
+      },
+      "visible": true,
+      "class": "Panel",
+      "properties": {}
+    }
+  ]
+}

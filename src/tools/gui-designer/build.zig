@@ -8,7 +8,12 @@ pub fn build(b: *std.Build) void {
 
     const args_dep = b.dependency("args", .{});
 
+    const agp_dep = b.dependency("agp", .{});
+    const agp_swrast_dep = b.dependency("agp_swrast", .{});
+    const ashet_dep = b.dependency("AshetOS", .{ .module_only = true });
     const abi_dep = b.dependency("abi", .{});
+    const libgui_dep = b.dependency("libgui", .{});
+    const assets_dep = b.dependency("os_assets", .{});
 
     const zgui_dep = b.dependency("zgui", .{
         .shared = false,
@@ -26,22 +31,55 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
+    const nfd = b.dependency("nfd", .{
+        .target = target,
+        .optimize = .ReleaseSafe,
+    });
+    const nfd_mod = nfd.module("nfd");
+    const ashet_mod = ashet_dep.module("ashet");
+
+    const standard_widgets_dep = b.dependency("widgets", .{
+        .target = .x86,
+        .optimize = optimize,
+    });
+    const standard_widgets_mod = b.createModule(.{
+        .root_source_file = standard_widgets_dep.path("src/standard-widgets.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "ashet", .module = ashet_mod },
+        },
+    });
+
+    const asset_source = assets_dep.namedWriteFiles("assets");
+    const mono_8_font = asset_source.getDirectory().path(b, "system/fonts/mono-8.font");
+    const sans_6_font = asset_source.getDirectory().path(b, "system/fonts/sans-6.font");
+
     const editor_mod = b.addModule("gui-editor", .{
         .root_source_file = b.path("src/gui-editor.zig"),
 
         .target = target,
         .optimize = optimize,
+
+        .imports = &.{
+            .{ .name = "standard-widgets", .module = standard_widgets_mod },
+            .{ .name = "zgui", .module = zgui_dep.module("root") },
+            .{ .name = "zglfw", .module = zglfw_dep.module("root") },
+            .{ .name = "zopengl", .module = zopengl_dep.module("root") },
+            .{ .name = "ashet", .module = ashet_mod },
+            .{ .name = "agp", .module = agp_dep.module("agp") },
+            .{ .name = "agp-swrast", .module = agp_swrast_dep.module("agp-swrast") },
+            .{ .name = "ashet-abi", .module = abi_dep.module("ashet-abi") },
+            .{ .name = "args", .module = args_dep.module("args") },
+            .{ .name = "libgui", .module = libgui_dep.module("gui") },
+            .{ .name = "mono-8.font", .module = b.createModule(.{ .root_source_file = mono_8_font }) },
+            .{ .name = "nfd", .module = nfd_mod },
+            .{ .name = "sans-6.font", .module = b.createModule(.{ .root_source_file = sans_6_font }) },
+        },
     });
 
-    editor_mod.addImport("zgui", zgui_dep.module("root"));
     editor_mod.linkLibrary(zgui_dep.artifact("imgui"));
-
-    editor_mod.addImport("zglfw", zglfw_dep.module("root"));
     editor_mod.linkLibrary(zglfw_dep.artifact("glfw"));
-
-    editor_mod.addImport("zopengl", zopengl_dep.module("root"));
-    editor_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
-    editor_mod.addImport("args", args_dep.module("args"));
 
     const editor_exe = b.addExecutable(.{
         .name = "gui-editor",
@@ -60,6 +98,7 @@ pub fn build(b: *std.Build) void {
 
     compiler_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
     compiler_mod.addImport("args", args_dep.module("args"));
+    compiler_mod.addImport("libgui", libgui_dep.module("gui"));
 
     const compiler_exe = b.addExecutable(.{
         .name = "gui-compiler",

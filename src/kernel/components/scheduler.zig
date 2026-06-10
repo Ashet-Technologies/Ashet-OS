@@ -223,7 +223,12 @@ pub const Thread = struct {
     /// Stores runtime statistics of this thread.
     stats: Stats = .{},
 
+    /// The link into the owning process for this thread.
     process_link: ashet.multi_tasking.ProcessThreadList.Node,
+
+    /// If set, the thread is currently executing inside the context of another
+    /// thread. If set, this must be used to get the resource context:
+    alt_process_context: ?*ashet.multi_tasking.Process = null,
 
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
@@ -401,9 +406,24 @@ pub const Thread = struct {
         return thread.isStarted() and !thread.isFinished();
     }
 
-    /// returns the process this thread belongs to.
-    pub fn get_process(thread: *Thread) *ashet.multi_tasking.Process {
+    /// Returns the process that owns this thread.
+    ///
+    /// NOTE: This is not necessarily the process that must be used to resolve
+    ///       resource handles. As we can perform a virtual context switch on
+    ///       the same stack, the resource context can change for the current thread.
+    ///
+    ///       Use `get_executing_process` to get the process that is the current
+    ///       context.
+    pub fn get_owning_process(thread: *Thread) *ashet.multi_tasking.Process {
         return thread.process_link.data.process;
+    }
+
+    /// Returns the process that is currently executed by this thread.
+    ///
+    /// NOTE: This may change through a virtual context switch, and is not always the
+    ///       process that owns this thread.
+    pub fn get_executing_process(thread: *Thread) *ashet.multi_tasking.Process {
+        return thread.alt_process_context orelse thread.get_owning_process();
     }
 
     /// Starts the thread.
