@@ -41,6 +41,7 @@ else switch (platform_id) {
     .rv32 => @import("port/platform/rv32.zig"),
     .arm => @import("port/platform/arm.zig"),
     .x86 => @import("port/platform/x86.zig"),
+    .ppc => @import("port/platform/ppc.zig"),
 };
 
 pub const machine = switch (machine_id) {
@@ -50,6 +51,7 @@ pub const machine = switch (machine_id) {
     .@"arm-ashet-hc" => @import("port/machine/arm/ashet-hc/ashet-hc.zig"),
     .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
     .@"arm-qemu-virt" => @import("port/machine/arm/qemu-virt/arm-qemu-virt.zig"),
+    .@"ppc-nintendo-gc" => @import("port/machine/ppc/nintendo-gc/nintendo-gc.zig"),
     .@"x86-hosted-linux" => @import("port/machine/x86/hosted-linux/hosted-linux.zig"),
     .@"x86-hosted-windows" => @import("port/machine/x86/hosted-windows/hosted-windows.zig"),
 };

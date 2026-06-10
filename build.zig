@@ -230,16 +230,16 @@ pub fn build(b: *std.Build) void {
         };
 
         const apps: []const AppDef = &.{
-            .{ .name = "init.ashex", .exe = get_named_file(os_files, "apps/init.elf") },
-            .{ .name = "hello-world.ashex", .exe = get_named_file(os_files, "apps/hello-world.elf") },
-            .{ .name = "mtg-counter.ashex", .exe = get_named_file(os_files, "apps/mtg-counter.elf") },
-            .{ .name = "hello-fb.ashex", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
-            .{ .name = "classic.ashex", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
-            .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
-            .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
-            .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
-            .{ .name = "widgets.ashex", .exe = get_named_file(os_files, "apps/widgets.elf") },
-            .{ .name = "2048.ashex", .exe = get_named_file(os_files, "apps/2048.elf") },
+            // .{ .name = "init.ashex", .exe = get_named_file(os_files, "apps/init.elf") },
+            // .{ .name = "hello-world.ashex", .exe = get_named_file(os_files, "apps/hello-world.elf") },
+            // .{ .name = "mtg-counter.ashex", .exe = get_named_file(os_files, "apps/mtg-counter.elf") },
+            // .{ .name = "hello-fb.ashex", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
+            // .{ .name = "classic.ashex", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
+            // .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
+            // .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
+            // .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
+            // .{ .name = "widgets.ashex", .exe = get_named_file(os_files, "apps/widgets.elf") },
+            // .{ .name = "2048.ashex", .exe = get_named_file(os_files, "apps/2048.elf") },
         };
 
         var variables = Variables{
@@ -410,6 +410,9 @@ const platform_info_map = std.EnumArray(Platform, PlatformStartupConfig).init(.{
     .rv32 = .{
         .qemu_exe = "qemu-system-riscv32",
     },
+    .ppc = .{
+        .qemu_exe = "qemu-system-ppc",
+    },
 });
 
 const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
@@ -535,6 +538,10 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
         }),
     },
 
+    .@"ppc-nintendo-gc" = .{
+        // TODO
+    },
+
     // .@"pc-efi" = .{
     //     .qemu_cli = &.{
     //         "-cpu",     "qemu64",
@@ -636,6 +643,8 @@ pub const RunTarget = enum {
 
     @"x86-pc-generic-bios",
     @"x86-pc-generic-uefi",
+
+    @"ppc-nintendo-gc",
 
     pub fn get_machine(rt: RunTarget) Machine {
         return switch (rt) {

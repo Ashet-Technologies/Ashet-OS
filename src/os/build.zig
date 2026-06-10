@@ -7,21 +7,21 @@ const kernel_package = @import("kernel");
 const Machine = kernel_package.Machine;
 
 const app_packages = [_][]const u8{
-    "init",
-    "hello_world",
-    "hello_gui",
-    "gui_debugger",
-    "clock",
-    "paint",
-    "test_behaviour",
-    "desktop_classic",
-    "dungeon",
-    "ntp_client",
-    "i2c_scan",
-    "widgets",
-    "slideshow",
-    "2048",
-    "revision2026",
+    // "init",
+    // "hello_world",
+    // "hello_gui",
+    // "gui_debugger",
+    // "clock",
+    // "paint",
+    // "test_behaviour",
+    // "desktop_classic",
+    // "dungeon",
+    // "ntp_client",
+    // "i2c_scan",
+    // "widgets",
+    // "slideshow",
+    // "2048",
+    // "revision2026",
     // TODO: Include "wiki" again,
 };
 
@@ -373,6 +373,10 @@ const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.
     .@"arm-ashet-hc" = .{
         .disk_size = 0x0080_0000, // 4 MB, we store the disk inside the system image (upper half of the flash)
         .rom_size = 0x0080_0000, // 4 MB, we store the kernel inside the system image (lower half of the flash)
+    },
+    .@"ppc-nintendo-gc" = .{
+        .disk_size = 0x0400_0000,
+        .rom_size = null,
     },
 });
 

@@ -403,6 +403,9 @@ const platform_info_map = std.EnumArray(Platform, PlatformConfig).init(.{
     .rv32 = .{
         .source_file = "port/platform/riscv.zig",
     },
+    .ppc = .{
+        .source_file = "port/platform/ppc.zig",
+    },
 });
 
 const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
@@ -470,6 +473,21 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
 
         .source_file = "port/machine/x86/hosted-windows/hosted-windows.zig",
         .linker_script = "port/machine/x86/hosted-windows/linker.ld",
+    },
+
+    .@"ppc-nintendo-gc" = .{
+        .target = constructTargetQuery(.{
+            .cpu_arch = .powerpc,
+            .abi = .eabihf,
+            .cpu_model = .{ .explicit = &std.Target.powerpc.cpu.@"750" },
+            .cpu_features_add = std.Target.powerpc.featureSet(&.{
+                .hard_float,
+                // .privileged,
+            }),
+        }),
+
+        .source_file = "port/machine/ppc/nintendo-gc/nintendo-gc.zig",
+        .linker_script = "port/machine/ppc/nintendo-gc/linker.ld",
     },
 });
 

@@ -4,6 +4,7 @@ pub const Platform = enum {
     x86,
     arm,
     rv32,
+    ppc,
 
     /// Returns the display name for the current platform.
     pub fn get_display_name(target: Platform) []const u8 {
@@ -21,6 +22,7 @@ const app_display_name_map = std.EnumArray(Platform, []const u8).init(.{
     .x86 = "Intel x86",
     .arm = "Arm 32-bit",
     .rv32 = "RISC-V 32-bit",
+    .ppc = "PowerPC 32-bit",
 });
 
 const build = struct {
@@ -88,6 +90,15 @@ const build = struct {
                 .c,
                 .m,
                 .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
+            }),
+        }),
+
+        .ppc = constructTargetQuery(.{
+            .cpu_arch = .powerpc,
+            .abi = .eabihf,
+            .cpu_model = .{ .explicit = &std.Target.powerpc.cpu.generic },
+            .cpu_features_add = std.Target.powerpc.featureSet(&.{
+                .hard_float,
             }),
         }),
     });

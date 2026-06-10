@@ -337,6 +337,7 @@ pub fn build(b: *std.Build) void {
         .arm => sub_build.addArg("-DPLATFORM_THUMB"),
         .rv32 => sub_build.addArg("-DPLATFORM_RISCV32"),
         .x86 => sub_build.addArg("-DPLATFORM_X86"),
+        .ppc => sub_build.addArg("-DPLATFORM_PPC"),
     }
 
     sub_build.addPrefixedFileArg("@", lib_build_dir.path(b, "assembly-files.rsp"));

@@ -45,6 +45,9 @@ SYMBOL_NAME:
 .align 2 // align word to to 4 so we have sane pointer semantics:
 .set .syscall_address, SYMBOL_NAME + 1
 
+#elif defined(PLATFORM_PPC)
+    trap // TODO: Implement this
+
 #else
     #error "Unsupported Platform!"
 #endif
