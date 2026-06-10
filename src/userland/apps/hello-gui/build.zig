@@ -25,4 +25,12 @@ pub fn build(b: *std.Build) void {
         },
     });
     sdk.installApp(widgets_app, .{});
+
+    const ashetris_app = sdk.addApp(.{
+        .name = "ashetris",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/ashetris/ashetris.zig"),
+    });
+    sdk.installApp(ashetris_app, .{});
 }
