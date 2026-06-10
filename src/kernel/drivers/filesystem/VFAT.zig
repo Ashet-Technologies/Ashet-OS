@@ -224,7 +224,7 @@ const Instance = struct {
             if (root.len > 0) {
                 const index = std.mem.indexOfScalar(u8, root, ':').?;
                 for (root[0..index]) |c| {
-                    std.debug.assert(c >= '0' or c <= '9');
+                    std.debug.assert(c >= '0' and c <= '9');
                 }
 
                 writer.writeAll(root) catch return error.SystemResources;
