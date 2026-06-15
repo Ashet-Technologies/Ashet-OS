@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(zig build)",
+      "Bash(riscv64-unknown-elf-objdump)",
+      "Bash(riscv64-unknown-elf-gcc)",
+      "Bash(riscv64-unknown-elf-objcopy)",
+      "Bash(riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_mem.elf test_mem.s)",
+      "Bash(riscv64-unknown-elf-objcopy -O binary test_mem.elf test_mem.bin)",
+      "Bash(riscv64-unknown-elf-objdump -d -M no-aliases test_mem.elf)",
+      "Bash(xxd)",
+      "Bash(ls)",
+      "Bash(zig build test)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(zig build test --summary all)",
+      "Bash(grep -c '^test ' /workspaces/ashet-os/src/tools/emulator/tests/testsuite.zig /workspaces/ashet-os/src/tools/emulator/tests/peripherals/*.zig)",
+      "Bash(zig build install)",
+      "Bash(git stash)",
+      "Bash(git stash pop)",
+      "Bash(zig build test -- --summary all)",
+      "Bash(zig build install test)"
+    ]
+  }
+}

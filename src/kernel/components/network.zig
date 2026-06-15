@@ -245,10 +245,11 @@ pub fn start() !void {
         logger.info("Network adapters found, starting network task...", .{});
 
         // we found a network adapter, start the backgruond thread
-        const network_thread = try ashet.scheduler.Thread.spawn(networkThread, null, .{});
+        const network_thread = try ashet.scheduler.Thread.spawn(networkThread, null, .{
+            .name = "ashet.network",
+        });
         errdefer network_thread.kill();
 
-        try network_thread.setName("ashet.network");
         try network_thread.start();
         network_thread.detach();
     }

@@ -1,6 +1,11 @@
 const std = @import("std");
 const ashet = @import("ashet-abi");
 
+const libgui = @import("libgui");
+
+pub const Anchor = libgui.Anchor;
+pub const Alignment = libgui.Alignment;
+
 pub const Rectangle = ashet.Rectangle;
 pub const Size = ashet.Size;
 pub const Point = ashet.Point;
@@ -11,6 +16,9 @@ pub const Window = struct {
 
     min_size: Size = .new(0, 0),
     max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
+
+    title: Value.String = .empty,
+    icon_path: Value.String = .empty,
 
     widgets: std.ArrayListUnmanaged(Widget) = .empty,
 
@@ -91,8 +99,32 @@ pub const Class = struct {
 };
 
 pub const PropertyDescriptor = struct {
+    pub const EnumOption = struct {
+        name: [:0]const u8,
+        value: Value.String,
+    };
+
     name: [:0]const u8,
     default_value: Value,
+    enum_options: []const EnumOption = &.{},
+
+    pub fn is_valid_enum_value(prop: *const PropertyDescriptor, value: []const u8) bool {
+        for (prop.enum_options) |option| {
+            if (std.mem.eql(u8, option.value.slice(), value))
+                return true;
+        }
+
+        return false;
+    }
+
+    pub fn get_enum_option_name(prop: *const PropertyDescriptor, value: []const u8) ?[:0]const u8 {
+        for (prop.enum_options) |option| {
+            if (std.mem.eql(u8, option.value.slice(), value))
+                return option.name;
+        }
+
+        return null;
+    }
 };
 
 pub const Type = enum {
@@ -101,6 +133,7 @@ pub const Type = enum {
     float,
     bool,
     color,
+    @"enum",
 };
 
 pub const Value = union(Type) {
@@ -109,6 +142,7 @@ pub const Value = union(Type) {
     float: f32,
     bool: bool,
     color: ashet.Color,
+    @"enum": String,
 
     pub const String = struct {
         pub const empty: String = .{ .data = @splat(0) };
@@ -127,75 +161,6 @@ pub const Value = union(Type) {
             return std.mem.sliceTo(&string.data, 0);
         }
     };
-};
-
-/// The anchor defines which side of a widget should stick to the parent boundary.
-pub const Anchor = struct {
-    pub const all: Anchor = .{ .top = true, .bottom = true, .left = true, .right = true };
-    pub const top_left: Anchor = .{ .top = true, .bottom = false, .left = true, .right = false };
-    pub const top_right: Anchor = .{ .top = true, .bottom = false, .left = false, .right = true };
-    pub const bottom_left: Anchor = .{ .top = false, .bottom = true, .left = true, .right = false };
-    pub const bottom_right: Anchor = .{ .top = false, .bottom = true, .left = false, .right = true };
-    pub const none: Anchor = .{ .top = false, .bottom = false, .left = false, .right = false };
-
-    top: bool,
-    bottom: bool,
-    left: bool,
-    right: bool,
-};
-
-pub const Alignment = enum {
-    /// Aligns to the near edge of the frame.
-    near,
-
-    /// Aligns with the far edge of the frame.
-    far,
-
-    /// Aligns between the near and the far edge, keeping size.
-    center,
-
-    /// Aligns between the near and the far edge, keeping the margins to each edge.
-    margin,
-
-    pub fn from_anchor(near: bool, far: bool) Alignment {
-        if (near) {
-            return if (far) .margin else .near;
-        } else {
-            return if (far) .far else .center;
-        }
-    }
-
-    pub const Bounds = struct {
-        near_margin: i16,
-        size: u16,
-        far_margin: i16,
-        limit: u16,
-    };
-
-    pub fn compute_pos(al: Alignment, bounds: Bounds) i16 {
-        switch (al) {
-            .near, .margin => return bounds.near_margin,
-            .far => return @intCast(std.math.clamp(
-                @as(i32, bounds.limit) -| bounds.far_margin -| bounds.size,
-                std.math.minInt(i16),
-                std.math.maxInt(i16),
-            )),
-            .center => @panic("no"),
-        }
-    }
-
-    pub fn compute_size(al: Alignment, bounds: Bounds) u16 {
-        switch (al) {
-            .near, .far, .center => return bounds.size,
-            .margin => {
-                return @intCast(std.math.clamp(
-                    @as(i32, bounds.limit) - bounds.near_margin - bounds.far_margin,
-                    std.math.minInt(u16),
-                    std.math.maxInt(u16),
-                ));
-            },
-        }
-    }
 };
 
 pub const Metadata = struct {
@@ -233,6 +198,12 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
         min_size: ?Size = null,
         max_size: ?Size = null,
         properties: std.json.Value = .null,
+    };
+
+    const JEnumProperty = struct {
+        type: []const u8,
+        values: std.json.Value,
+        default: ?[]const u8 = null,
     };
 
     const arena: *std.heap.ArenaAllocator = blk: {
@@ -276,22 +247,54 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
 
             .object => |jprops| {
                 for (jprops.keys(), jprops.values()) |propkey, value| {
-                    if (value != .string)
-                        return error.TypeMismatch;
-
-                    const proptype = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
-
                     const prop = try arena.allocator().create(PropertyDescriptor);
-                    prop.* = .{
-                        .name = try arena.allocator().dupeZ(u8, propkey),
-                        .default_value = switch (proptype) {
-                            .bool => .{ .bool = false },
-                            .color => .{ .color = .white },
-                            .int => .{ .int = 0 },
-                            .float => .{ .float = 0 },
-                            .string => .{ .string = .empty },
+                    prop.* = .{ .name = try arena.allocator().dupeZ(u8, propkey), .default_value = .{ .string = .empty } };
+
+                    switch (value) {
+                        .string => {
+                            const proptype = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
+                            prop.default_value = switch (proptype) {
+                                .bool => .{ .bool = false },
+                                .color => .{ .color = .white },
+                                .int => .{ .int = 0 },
+                                .float => .{ .float = 0 },
+                                .string => .{ .string = .empty },
+                                .@"enum" => return error.InvalidType,
+                            };
                         },
-                    };
+
+                        .object => {
+                            const jenum = try std.json.parseFromValueLeaky(JEnumProperty, arena.allocator(), value, parse_options);
+                            const proptype = std.meta.stringToEnum(Type, jenum.type) orelse return error.InvalidType;
+                            if (proptype != .@"enum")
+                                return error.InvalidType;
+                            if (jenum.values != .object)
+                                return error.TypeMismatch;
+                            if (jenum.values.object.count() == 0)
+                                return error.InvalidData;
+
+                            const options = try arena.allocator().alloc(PropertyDescriptor.EnumOption, jenum.values.object.count());
+                            for (jenum.values.object.keys(), jenum.values.object.values(), 0..) |option_name, option_value, index| {
+                                if (option_value != .string)
+                                    return error.TypeMismatch;
+
+                                options[index] = .{
+                                    .name = try arena.allocator().dupeZ(u8, option_name),
+                                    .value = try .from_slice(option_value.string),
+                                };
+                            }
+
+                            prop.enum_options = options;
+
+                            const default_value = jenum.default orelse options[0].value.slice();
+                            if (!prop.is_valid_enum_value(default_value))
+                                return error.InvalidData;
+
+                            prop.default_value = .{ .@"enum" = try .from_slice(default_value) };
+                        },
+
+                        else => return error.TypeMismatch,
+                    }
 
                     try class.properties.putNoClobber(arena.allocator(), prop.name, prop);
                 }
@@ -366,6 +369,12 @@ pub fn save_design(window: Window, stream: *std.Io.Writer) !void {
     try json.objectField("max_size");
     try json.write(window.max_size);
 
+    try json.objectField("title");
+    try json.write(window.title.slice());
+
+    try json.objectField("icon");
+    try json.write(window.icon_path.slice());
+
     try json.objectField("widgets");
     try json.beginArray();
 
@@ -394,7 +403,7 @@ pub fn save_design(window: Window, stream: *std.Io.Writer) !void {
             switch (value) {
                 inline .bool, .int, .float => |val| try json.write(val),
 
-                .string => |val| try json.write(val.slice()),
+                .string, .@"enum" => |val| try json.write(val.slice()),
 
                 .color => |color| {
                     const rgb = color.to_rgb888();
@@ -442,6 +451,9 @@ pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadat
         min_size: Size = .new(0, 0),
         max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
 
+        title: []const u8 = "",
+        icon: []const u8 = "",
+
         widgets: []const JWidget,
     };
 
@@ -455,6 +467,8 @@ pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadat
         .design_size = jdesign.value.design_size,
         .min_size = jdesign.value.min_size,
         .max_size = jdesign.value.max_size,
+        .title = try .from_slice(jdesign.value.title),
+        .icon_path = try .from_slice(jdesign.value.icon),
     };
     errdefer window.deinit(allocator);
 
@@ -479,6 +493,15 @@ pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadat
                     const value: Value = switch (prop.value_ptr.*.default_value) {
                         .string => .{
                             .string = try .from_slice(try jcast(jvalue, .string)),
+                        },
+
+                        .@"enum" => blk: {
+                            const raw = try jcast(jvalue, .string);
+                            if (!prop.value_ptr.*.is_valid_enum_value(raw))
+                                return error.BadProperty;
+                            break :blk .{
+                                .@"enum" = try .from_slice(raw),
+                            };
                         },
 
                         .int => .{

@@ -51,6 +51,10 @@ const installed_tools: []const ToolDep = &.{
         .artifacts = &.{ "gui-editor", "gui-compiler" },
     },
     .{
+        .dependency = "emulator",
+        .artifacts = &.{ "emulator-web", "emulator" },
+    },
+    .{
         .dependency = "abi_mapper",
         .artifacts = &.{"abi-parser"},
     },
@@ -230,11 +234,12 @@ pub fn build(b: *std.Build) void {
         };
 
         const apps: []const AppDef = &.{
-            .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf") },
-            .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
-            .{ .name = "mtg-counter", .exe = get_named_file(os_files, "apps/mtg-counter.elf") },
-            .{ .name = "hello-fb", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
-            .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
+            .{ .name = "init.ashex", .exe = get_named_file(os_files, "apps/init.elf") },
+            .{ .name = "hello-world.ashex", .exe = get_named_file(os_files, "apps/hello-world.elf") },
+            .{ .name = "mtg-counter.ashex", .exe = get_named_file(os_files, "apps/mtg-counter.elf") },
+            .{ .name = "hello-fb.ashex", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
+            .{ .name = "ashetris.ashex", .exe = get_named_file(os_files, "apps/ashetris.elf") },
+            .{ .name = "classic.ashex", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
             .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
             .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
@@ -453,6 +458,22 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
         },
     },
+    .@"rv32-ashet-base" = .{
+        // .qemu_cli = &.{
+        //     "-cpu",    "rv32",
+        //     "-M",      "virt",
+        //     "-m",      "32M",
+        //     "-netdev", "user,id=hostnet",
+        //     "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
+        //     "-device", "virtio-gpu-device,id=screen,xres=640,yres=400",
+        //     "-device", "virtio-keyboard-device",
+        //     "-device", "virtio-mouse-device",
+        //     "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
+        //     "-bios",   "none",
+        //     "-drive",  "if=pflash,index=0,format=raw,file=${BOOTROM}",
+        //     "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
+        // },
+    },
     .@"arm-qemu-virt" = .{
         .qemu_cli = &.{
             "-cpu",    "cortex-a7",
@@ -613,6 +634,7 @@ pub const RunTarget = enum {
     @"arm-qemu-virt",
 
     @"rv32-qemu-virt",
+    @"rv32-ashet-base",
 
     @"x86-hosted-linux",
     @"x86-hosted-windows",

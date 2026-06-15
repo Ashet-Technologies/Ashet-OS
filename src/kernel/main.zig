@@ -46,6 +46,7 @@ else switch (platform_id) {
 pub const machine = switch (machine_id) {
     .@"x86-pc-generic" => @import("port/machine/x86/pc-generic/pc-generic.zig"),
     .@"rv32-qemu-virt" => @import("port/machine/rv32/qemu-virt/rv32-qemu-virt.zig"),
+    .@"rv32-ashet-base" => @import("port/machine/rv32/ashet-base/rv32-ashet-base.zig"),
     .@"arm-ashet-hc" => @import("port/machine/arm/ashet-hc/ashet-hc.zig"),
     .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
     .@"arm-qemu-virt" => @import("port/machine/arm/qemu-virt/arm-qemu-virt.zig"),
@@ -253,8 +254,8 @@ fn main() !void {
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
             .stack_size = 32 * 1024,
+            .name = "os.tick",
         });
-        try thread.setName("os.tick");
         try thread.start();
         thread.detach();
     }
@@ -267,8 +268,8 @@ fn main() !void {
 
         const thread = try scheduler.Thread.spawn(threaded_kernel_init_unchecked, null, .{
             .stack_size = 32 * 1024,
+            .name = "os.entrypoint",
         });
-        try thread.setName("os.entrypoint");
         try thread.start();
         thread.detach();
     }
@@ -349,9 +350,38 @@ pub const global_hotkeys = struct {
     pub fn handle(event: abi.KeyboardEvent) bool {
         if (!event.pressed)
             return false;
+
         if (event.modifiers.alt) {
             switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
+                .f8 => {
+                    if (event.modifiers.shift) {
+                        graphics.use_perfctrl = !graphics.use_perfctrl;
+
+                        std.log.warn("graphics perfcounters are now {s}", .{
+                            if (graphics.use_perfctrl)
+                                "enabled"
+                            else
+                                "disabled",
+                        });
+                    } else {
+                        const options = std.enums.values(graphics.RasterizerBackend);
+
+                        const current = std.mem.indexOfScalar(graphics.RasterizerBackend, options, graphics.selected_rasterizer).?;
+
+                        const next = if (current + 1 == options.len)
+                            0
+                        else
+                            current + 1;
+
+                        graphics.selected_rasterizer = options[next];
+
+                        std.log.warn("Switched rasterizer from {t} to {t}", .{
+                            options[current],
+                            options[next],
+                        });
+                    }
+                },
                 .f9 => {
                     scheduler.use_live_stack_pattern_probing = !scheduler.use_live_stack_pattern_probing;
                     if (scheduler.use_live_stack_pattern_probing) {
@@ -734,13 +764,24 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
             Debug.print("  [!] {f}\r\n\r\n", .{thread});
         }
 
-        Debug.write("waiting threads:\r\n");
-        var index: usize = 0;
-        var queue = scheduler.ThreadIterator.init();
-        while (queue.next()) |thread| : (index += 1) {
-            Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+        {
+            Debug.write("waiting threads:\r\n");
+            var index: usize = 0;
+            var queue: scheduler.ThreadIterator = .init(.waiting);
+            while (queue.next()) |thread| : (index += 1) {
+                Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+            }
+            Debug.write("\r\n");
         }
-        Debug.write("\r\n");
+        {
+            Debug.write("suspended threads:\r\n");
+            var index: usize = 0;
+            var queue: scheduler.ThreadIterator = .init(.suspended);
+            while (queue.next()) |thread| : (index += 1) {
+                Debug.print("  [{d}] {f}\r\n", .{ index, thread });
+            }
+            Debug.write("\r\n");
+        }
     }
 
     {
@@ -842,11 +883,29 @@ export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
 }
 
 test {
+    // Bring unit test dependencies into existence:
     _ = resources;
+
+    _ = filesystem;
+    _ = drivers.filesystem.VFAT; // required to bring VFAT impl into existence
+
+    @export(&__primitive_kernel_hang, .{ .name = "hang" });
+}
+
+fn __primitive_kernel_hang() callconv(.c) void {
+    while (true) {
+        asm volatile ("" ::: .{ .memory = true });
+    }
 }
 
 export fn __ashet_os_panic(msg: [*]const u8, len: usize, ra: usize) noreturn {
-    panic(msg[0..len], null, ra);
+    machine_config.debug_write("\r\nPANIC: ");
+    machine_config.debug_write(msg[0..len]);
+    machine_config.debug_write("\r\n");
+    @breakpoint();
+    hang();
+    _ = ra;
+    // panic(msg[0..len], null, if (ra != 0) ra else null);
 }
 
 // The following code is necessary to manage the compiler_rt stack checking.

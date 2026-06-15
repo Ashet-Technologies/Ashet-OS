@@ -15,9 +15,9 @@ var work_queues: [work_queue_count]WorkQueue = undefined;
 pub fn initialize() !void {
     var buffer: [32]u8 = undefined;
     for (&work_queues, 0..) |*wq, index| {
-        const thread = try ashet.scheduler.Thread.spawn(background_worker_loop, wq, .{});
-
-        try thread.setName(try std.fmt.bufPrint(&buffer, "background{}", .{index}));
+        const thread = try ashet.scheduler.Thread.spawn(background_worker_loop, wq, .{
+            .name = std.fmt.bufPrint(&buffer, "background{}", .{index}) catch &buffer,
+        });
 
         wq.* = WorkQueue{ .wakeup_thread = thread };
 
@@ -348,15 +348,16 @@ pub fn cancel(arc: *ARC) error{
     Completed,
 }!void {
     _, const context = get_context();
-    return cancel_with_context(arc, context);
+
+    const call, const queue_name = context.get_call_object(arc) orelse return error.Unscheduled;
+
+    return cancel_with_context(call, context, queue_name);
 }
 
-pub fn cancel_with_context(arc: *ARC, context: *Context) error{
+pub fn cancel_with_context(call: *AsyncCall, context: *Context, queue_name: Context.QueueName) error{
     Unscheduled,
     Completed,
 }!void {
-    const call, const queue_name = context.get_call_object(arc) orelse return error.Unscheduled;
-
     switch (queue_name) {
         .completed => {
             std.debug.assert(!node_in_queue(context.in_flight, &call.owner_link));
@@ -372,7 +373,10 @@ pub fn cancel_with_context(arc: *ARC, context: *Context) error{
                 cancel_fn(call);
             } else {
                 // TODO: Implement actual cancelling of events
-                logger.err("non-implemented cancel of type {}", .{arc.type});
+                logger.err("non-implemented cancel of type {!} ({})", .{
+                    std.meta.intToEnum(ARC.Type, @intFromEnum(call.arc.type)),
+                    @intFromEnum(call.arc.type),
+                });
                 @panic("AshetOS has no idea how to cancel this!");
             }
         },
@@ -626,8 +630,9 @@ pub const WorkQueue = struct {
 
     /// Inserts an ARC into the WorkQueue based on a priority. The priority is determined
     /// by calling `comparer.lt(arc, node)`, with `node` being any node in the list.
-    /// If `arc` is less than node, it will be scheduled before the first `node` that meets
-    /// that requirement.
+    /// ARCs which are lower according to the comparer have higher priority.
+    /// The new node is inserted before the first node in the queue with a lower priority,
+    /// or at the end if no such node exists.
     pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, item: Item, comparer: anytype) void {
         std.debug.assert(arc.work_link.next == null);
         std.debug.assert(arc.work_link.prev == null);
@@ -638,11 +643,11 @@ pub const WorkQueue = struct {
             var iter = wq.queue.first;
 
             while (iter) |node| : (iter = node.next) {
-                // check if the new node is "more important" then
+                // check if the new node is "more important" (lower according to comparer) than
                 // the one we're iterating. If so, insert the node
                 // before the current node as it's higher priority:
                 const point = AsyncCall.from_work_link(node);
-                if (!comparer.lt(arc, point)) {
+                if (comparer.lt(arc, point)) {
                     wq.queue.insertBefore(node, &arc.work_link);
                     break;
                 }

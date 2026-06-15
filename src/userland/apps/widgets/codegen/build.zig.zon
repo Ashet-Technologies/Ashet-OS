@@ -1,0 +1,11 @@
+.{
+    .name = .widgets_codegen,
+    .fingerprint = 0xbd22a1c612eeb0a5,
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .dependencies = .{
+        .libgui = .{
+            .path = "../../../libs/libgui",
+        },
+    },
+}

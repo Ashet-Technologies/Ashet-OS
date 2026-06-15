@@ -24,6 +24,7 @@ pub const DeviceProperties = struct {
 pub const VideoDevice = struct {
     flush_fn: *const fn (*ashet.drivers.Driver) void,
     get_properties_fn: *const fn (*ashet.drivers.Driver) DeviceProperties,
+    get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO: Go through all drivers and see which actually support this
 
     pub fn flush(vd: *VideoDevice) void {
         vd.flush_fn(ashet.drivers.resolveDriver(.video, vd));
@@ -31,6 +32,18 @@ pub const VideoDevice = struct {
 
     pub fn get_properties(vd: *VideoDevice) DeviceProperties {
         return vd.get_properties_fn(ashet.drivers.resolveDriver(.video, vd));
+    }
+
+    pub fn supports_vblank_event(vd: *VideoDevice) bool {
+        return vd.get_one_vblank_event_fn != null;
+    }
+
+    pub fn get_one_vblank_event(vd: *VideoDevice) bool {
+        if (vd.get_one_vblank_event_fn) |get_one_vblank_event_fn| {
+            return get_one_vblank_event_fn(ashet.drivers.resolveDriver(.video, vd));
+        } else {
+            @panic("invalid API use");
+        }
     }
 };
 
@@ -84,8 +97,9 @@ pub const Output = struct {
     ///
     /// NOTE: This function will forcefully flip the buffers and might cost
     ///       a good amount of time.
-    pub fn force_flush(output: Output) void {
+    pub fn force_flush(output: *Output) void {
         output.video_driver.flush();
+        output.flush_required = false;
     }
 
     /// Notifies all overlapped events that wait for V-Blank on this output.
@@ -133,9 +147,12 @@ pub fn initialize() !void {
 }
 
 fn flush_all() void {
+    // Go through all video outputs that no support vertical blanking
+    // notifications with a periodic interval and manually flush them:
     for (video_outputs) |*video_output| {
+        if (video_output.video_driver.supports_vblank_event())
+            continue;
         if (video_output.auto_flush or video_output.flush_required) {
-            video_output.flush_required = false;
             video_output.force_flush();
         }
         video_output.notify_vblank_awaiters();
@@ -144,6 +161,18 @@ fn flush_all() void {
 
 ///Ticks the video subsystem
 pub fn tick() void {
+    for (video_outputs) |*video_output| {
+        // Go through all video outputs that support vertical blanking
+        // notifications and complete the awaiters:
+        if (!video_output.video_driver.supports_vblank_event())
+            continue;
+
+        if (video_output.video_driver.get_one_vblank_event()) {
+            video_output.force_flush();
+            video_output.notify_vblank_awaiters();
+        }
+    }
+
     if (video_flush_deadline.is_reached()) {
         video_flush_deadline.move_forward(frame_rate);
         flush_all();

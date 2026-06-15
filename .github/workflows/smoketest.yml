@@ -1,5 +1,9 @@
 name: Smoke Test
 
+env:
+  ZIG_VERSION: "0.15.2"
+  ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-global-cache
+
 on:
   push:
     branches: [master]
@@ -38,7 +42,17 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: "0.15.2"
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache Zig package cache
+        uses: actions/cache@v4
+        with:
+          # Zig stores downloaded packages in the p subdirectory of the global cache.
+          path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
+          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
+          restore-keys: |
+            zig-pkg-cache-${{ env.ZIG_VERSION }}-
+          enableCrossOsArchive: true
 
       - name: Install QEMU
         uses: awalsh128/cache-apt-pkgs-action@latest
@@ -48,14 +62,14 @@ jobs:
 
       - name: Build ${{ matrix.platform.kernel }}
         run: |
-          zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} ${{ matrix.platform.kernel }}
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" -Doptimize-kernel=${{ matrix.optimize_kernel }} ${{ matrix.platform.kernel }}
 
       - name: Perform Smoke Test ${{ matrix.platform.runner }}
         run: |
-          zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless install
+          zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless install
 
           # this command is allowed to fail, we're doing checks by grep.
-          timeout 20s zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless run 2>&1 | tee kernel.log || true
+          timeout 20s zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform.runner }} -Dgui=headless run 2>&1 | tee kernel.log || true
 
           # Test if the desktop application did start:
           if ! grep -F "classic desktop ready!" kernel.log; then

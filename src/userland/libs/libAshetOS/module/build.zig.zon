@@ -1,10 +1,12 @@
 .{
     .name = .ashet_abi,
+    .fingerprint = 0xda22a364e9d80143,
     .version = "0.1.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
+        "tools",
     },
     .dependencies = .{
         .abi = .{
@@ -15,6 +17,9 @@
         },
         .agp = .{
             .path = "../../agp",
+        },
+        .libgui = .{
+            .path = "../../libgui",
         },
     },
 }

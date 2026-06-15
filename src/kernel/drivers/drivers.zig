@@ -11,6 +11,7 @@ pub const block = struct {
     pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
     pub const Virtio_Block_Device = @import("block/Virtio_Block_Device.zig");
     pub const Memory_Mapped_Flash = @import("block/Memory_Mapped_Flash.zig");
+    pub const Ashet_Block_Dev = @import("block/Ashet_Block_Dev.zig");
 };
 
 pub const serial = struct {
@@ -34,6 +35,7 @@ pub const rtc = struct {
     pub const Goldfish = @import("rtc/Goldfish.zig");
     pub const PL031 = @import("rtc/PL031.zig");
     pub const HostedSystemClock = @import("rtc/HostedSystemClock.zig");
+    pub const Ashet_RTC = @import("rtc/Ashet_RTC.zig");
 };
 
 pub const video = struct {
@@ -49,6 +51,7 @@ pub const video = struct {
     pub const HSTX_DVI_2 = @import("video/HSTX_DVI_2.zig");
     pub const Multiboot_Framebuffer = @import("video/Multiboot_Framebuffer.zig");
     pub const Memory_Mapped_Framebuffer = @import("video/Memory_Mapped_Framebuffer.zig");
+    pub const Ashet_Framebuffer = @import("video/Ashet_Framebuffer.zig");
 };
 
 pub const network = struct {
@@ -70,6 +73,8 @@ pub const input = struct {
 
     pub const Generic_PS2_Device = @import("input/Generic_PS2_Device.zig");
     pub const PropIO_PS2_Device = @import("input/PropIO_PS2_Device.zig");
+
+    pub const Ashet_Input = @import("input/Ashet_Input.zig");
 };
 
 pub const i2c_device = struct {
@@ -300,7 +305,6 @@ pub const FileSystemDriver = struct {
     pub const StatFileError = AccessError || error{InvalidHandle};
     pub const ResizeError = AccessError || error{ InvalidHandle, NoSpaceLeft };
     pub const OpenDirAbsError = AccessError || error{ FileNotFound, InvalidPath };
-    pub const OpenDirRelError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle };
     pub const OpenFileError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle, WriteProtected, FileAlreadyExists };
     pub const FlushFileError = AccessError || error{InvalidHandle};
     pub const CreateEnumeratorError = AccessError;
@@ -313,9 +317,6 @@ pub const FileSystemDriver = struct {
 
         pub fn openDirFromRoot(instance: *Instance, path: []const u8) !DirectoryHandle {
             return instance.vtable.openDirFromRootFn(instance, path);
-        }
-        pub fn openDirRelative(instance: *Instance, base_dir: DirectoryHandle, path: []const u8) !DirectoryHandle {
-            return instance.vtable.openDirRelativeFn(instance, base_dir, path);
         }
         pub fn closeDir(instance: *Instance, handle: DirectoryHandle) void {
             return instance.vtable.closeDirFn(instance, handle);
@@ -368,7 +369,6 @@ pub const FileSystemDriver = struct {
 
         pub const VTable = struct {
             openDirFromRootFn: *const fn (*Instance, []const u8) OpenDirAbsError!DirectoryHandle,
-            openDirRelativeFn: *const fn (*Instance, DirectoryHandle, []const u8) OpenDirRelError!DirectoryHandle,
             closeDirFn: *const fn (*Instance, DirectoryHandle) void,
             createEnumeratorFn: *const fn (*Instance, DirectoryHandle) CreateEnumeratorError!*Enumerator,
             destroyEnumeratorFn: *const fn (*Instance, *Enumerator) void,

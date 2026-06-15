@@ -2,7 +2,7 @@
     .name = .standard_widgets,
     .fingerprint = 0xb6fd0a976830635c,
     .version = "0.1.0",
-    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "codegen" },
     .dependencies = .{
         .AshetOS = .{
             .path = "../../libs/libAshetOS",
@@ -12,6 +12,12 @@
         },
         .abi = .{
             .path = "../../../abi",
+        },
+        .libgui = .{
+            .path = "../../libs/libgui",
+        },
+        .widgets_codegen = .{
+            .path = "codegen",
         },
     },
 }

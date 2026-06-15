@@ -17,6 +17,8 @@ pub const BlockDevice = struct {
     pub const WriteError = DeviceError || error{NotSupported};
 
     name: []const u8,
+
+    // TODO: Refactor block_size, num_blocks and isPresent into a single "queryDevice" function
     block_size: u32, // typically 512
     num_blocks: u64 align(4), // number
 

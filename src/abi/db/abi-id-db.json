@@ -2415,6 +2415,34 @@
     {
       "fqn": "overlapped.ARC.Type",
       "uid": 604
+    },
+    {
+      "fqn": "get_demo_mode",
+      "uid": 605
+    },
+    {
+      "fqn": "draw.invalidate_framebuffer.InvalidHandle",
+      "uid": 606
+    },
+    {
+      "fqn": "draw.Render.SystemResources",
+      "uid": 607
+    },
+    {
+      "fqn": "WidgetEvent.LimitSizeEvent",
+      "uid": 608
+    },
+    {
+      "fqn": "WidgetEvent.ClickEvent.Source",
+      "uid": 609
+    },
+    {
+      "fqn": "WidgetEvent.ClickEvent",
+      "uid": 610
+    },
+    {
+      "fqn": "Rectangle.everything",
+      "uid": 611
     }
   ]
 }

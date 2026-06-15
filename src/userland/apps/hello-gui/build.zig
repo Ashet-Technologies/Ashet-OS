@@ -20,6 +20,17 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/mtg-counter.zig"),
+        .icon = .{
+            .convert = b.path("../../../../legacy-stuff/artwork/icons/small-icons/32x32-free-design-icons/32x32/Wizard.png"),
+        },
     });
     sdk.installApp(widgets_app, .{});
+
+    const ashetris_app = sdk.addApp(.{
+        .name = "ashetris",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/ashetris/ashetris.zig"),
+    });
+    sdk.installApp(ashetris_app, .{});
 }

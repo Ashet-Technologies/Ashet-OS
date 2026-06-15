@@ -163,6 +163,7 @@ const patterns = blk: {
         .create(.number, match.sequenceOf(.{ match.literal("0x"), matchHexDigits })),
         .create(.number, match.sequenceOf(.{ match.literal("0b"), matchBinaryDigits })),
         .create(.number, matchDecimalDigits),
+        .create(.number, match.sequenceOf(.{ match.literal("-"), matchDecimalDigits })),
 
         .create(.whitespace, match.whitespace),
     };

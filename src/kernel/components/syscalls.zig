@@ -42,6 +42,87 @@ noinline fn not_implemented_yet(location: std.builtin.SourceLocation) noreturn {
     @panic("Syscall not implemented yet!");
 }
 
+fn resolve_base_resource(handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
+    const process = get_current_process();
+
+    const resource = try ashet.resources.resolve_untyped(process, handle);
+
+    return .{ process, resource };
+}
+
+fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *Resource } {
+    const process, const resource = resolve_base_resource(handle) catch return error.InvalidHandle;
+
+    const typed = resource.cast(Resource) catch return error.InvalidHandle;
+
+    return .{ process, typed };
+}
+
+fn resolve_process_handle(handle: ashet.resources.Handle) error{ InvalidHandle, DeadProcess }!struct { *ashet.multi_tasking.Process, *ashet.multi_tasking.Process } {
+    const kproc, const uproc = try resolve_typed_resource(ashet.multi_tasking.Process, handle);
+    if (uproc.is_zombie())
+        return error.DeadProcess;
+    return .{ kproc, uproc };
+}
+
+fn get_current_thread() *ashet.scheduler.Thread {
+    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a thread");
+}
+
+/// Returns the current contextual process, not the process owning the executing thread.
+fn get_current_process() *ashet.multi_tasking.Process {
+    const thread = get_current_thread();
+    const kproc = thread.get_executing_process();
+    if (kproc.is_zombie())
+        @panic("zombie process called a system call!");
+    return kproc;
+}
+
+/// A virtual context switch for a thread.
+///
+/// When `enter` is called, all syscalls executed on the *current* thread will then
+/// use the passed `new_process` as their execution context.
+///
+/// This includes resource resolution, but also queries for the current' process data.
+///
+/// When `leave` is called, the previous context is restored and the thread will behave
+/// as if it would not been changed.
+///
+/// NOTE: A virtual context switch can be performed recursively.
+pub const VirtualContextSwitch = struct {
+    thread: *ashet.scheduler.Thread,
+
+    previous_process: ?*ashet.multi_tasking.Process,
+    current_process: *ashet.multi_tasking.Process, // TODO(fqu): Make this optional in release modes, it's just for safety checks
+
+    /// Changes the execution context for the current thread into `new_process`.
+    ///
+    /// NOTE: The call to `leave` must happen in the same thread as `enter` is called,
+    ///       otherwise the system is corrupted.
+    pub fn enter(new_process: *ashet.multi_tasking.Process) VirtualContextSwitch {
+        const thread = get_current_thread();
+
+        const previous_process = thread.alt_process_context;
+        thread.alt_process_context = new_process;
+        return .{
+            .thread = thread,
+            .previous_process = previous_process,
+            .current_process = new_process,
+        };
+    }
+
+    /// Restores the previous context.
+    ///
+    /// NOTE: This should be preferrably called with a `defer`.
+    pub fn leave(vcs: *VirtualContextSwitch) void {
+        std.debug.assert(vcs.thread == get_current_thread());
+        std.debug.assert(vcs.thread.alt_process_context == vcs.current_process);
+        std.debug.assert(vcs.current_process == get_current_process()); // effectively the same as the line before, but prevents bugs
+        vcs.thread.alt_process_context = vcs.previous_process;
+        vcs.* = undefined;
+    }
+};
+
 const callbacks = struct {
     pub inline fn before_syscall(sc: SystemCall) void {
         ashet.stackCheck();
@@ -57,6 +138,13 @@ const callbacks = struct {
 };
 
 pub const syscalls = struct {
+    pub fn get_demo_mode() u8 {
+        if (ashet.machine_id == .@"arm-ashet-hc") {
+            return ashet.machine.get_demo_mode();
+        }
+        return 0;
+    }
+
     pub const resources = struct {
         pub fn get_type(src_handle: abi.SystemResource) error{InvalidHandle}!abi.SystemResource.Type {
             _, const resource = resolve_base_resource(src_handle) catch return error.InvalidHandle;
@@ -456,23 +544,36 @@ pub const syscalls = struct {
 
         pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.VideoMemory {
             _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
-            switch (fb.type) {
-                .memory => |mem| return .{
+            return switch (fb.type) {
+                .memory => |mem| .{
                     .width = mem.width,
                     .height = mem.height,
                     .stride = mem.stride,
                     .base = mem.pixels,
                 },
-                else => return error.Unsupported,
-            }
+                .video => |vdev| vdev.memory, // TODO: Temporary hack until a true "create_buffer_mapping" syscall is available
+                else => error.Unsupported,
+            };
         }
 
         /// Marks a portion of the framebuffer as changed and forces the OS to
         /// perform an update action if necessary.
-        pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, rect: abi.Rectangle) void {
-            _ = framebuffer;
-            _ = rect;
-            not_implemented_yet(@src());
+        pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, region: abi.Rectangle) error{InvalidHandle}!void {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+
+            switch (fb.type) {
+                .video => |vdev| vdev.output.flush(), // TODO: Decide if asynchronous or synchronous flush
+
+                .memory => {}, // always ok
+
+                .widget => |widget| widget.window.invalidate_region(.{
+                    .x = widget.bounds.x +| region.x,
+                    .y = widget.bounds.y +| region.y,
+                    .width = region.width,
+                    .height = region.height,
+                }),
+                .window => |window| window.invalidate_region(region),
+            }
         }
 
         // Drawing:
@@ -613,9 +714,9 @@ pub const syscalls = struct {
         }
 
         /// Triggers the `control` event of the widget with the given `message` as a payload.
-        pub fn control_widget(widget: abi.Widget, message: abi.WidgetControlMessage) error{ InvalidHandle, SystemResources }!void {
+        pub fn control_widget(widget: abi.Widget, message: abi.WidgetControlMessage) error{ InvalidHandle, SystemResources }!usize {
             _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
-            wid.control(message);
+            return wid.control(message);
         }
 
         /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
@@ -1018,64 +1119,4 @@ pub const syscalls = struct {
             }
         };
     };
-};
-
-fn resolve_base_resource(handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
-    const process = get_current_process();
-
-    const resource = try ashet.resources.resolve_untyped(process, handle);
-
-    return .{ process, resource };
-}
-
-fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *Resource } {
-    const process, const resource = resolve_base_resource(handle) catch return error.InvalidHandle;
-
-    const typed = resource.cast(Resource) catch return error.InvalidHandle;
-
-    return .{ process, typed };
-}
-
-fn resolve_process_handle(handle: ashet.resources.Handle) error{ InvalidHandle, DeadProcess }!struct { *ashet.multi_tasking.Process, *ashet.multi_tasking.Process } {
-    const kproc, const uproc = try resolve_typed_resource(ashet.multi_tasking.Process, handle);
-    if (uproc.is_zombie())
-        return error.DeadProcess;
-    return .{ kproc, uproc };
-}
-
-fn get_current_thread() *ashet.scheduler.Thread {
-    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a thread");
-}
-
-var current_process_overwrite: ?*ashet.multi_tasking.Process = null;
-
-/// TODO: This function is broken as a virtual process overwrite is still per-thread
-///       and not globally.
-///       Any call to `yield()` in this context will also overwrite the process
-///       which is unrelated to our local overwrite.
-fn get_current_process() *ashet.multi_tasking.Process {
-    const kproc = current_process_overwrite orelse get_current_thread().get_process();
-    if (kproc.is_zombie())
-        @panic("zombie process called a system call!");
-    return kproc;
-}
-
-pub const VirtualContextSwitch = struct {
-    previous_process: ?*ashet.multi_tasking.Process,
-    current_process: *ashet.multi_tasking.Process, // TODO(fqu): Make this optional in release modes, it's just for
-
-    pub fn enter(new_process: *ashet.multi_tasking.Process) VirtualContextSwitch {
-        const previous_process = current_process_overwrite;
-        current_process_overwrite = new_process;
-        return .{
-            .previous_process = previous_process,
-            .current_process = new_process,
-        };
-    }
-
-    pub fn leave(vcs: *VirtualContextSwitch) void {
-        std.debug.assert(get_current_process() == vcs.current_process);
-        std.debug.assert(current_process_overwrite == vcs.current_process);
-        current_process_overwrite = vcs.previous_process;
-    }
 };

@@ -1,0 +1,264 @@
+{
+  "name": "Ashet Widget Definition",
+  "scopeName": "source.ashetwidgets",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#widgetDeclaration"
+    },
+    {
+      "include": "#messageDeclaration"
+    },
+    {
+      "include": "#typeDeclaration"
+    },
+    {
+      "include": "#docsDeclaration"
+    },
+    {
+      "include": "#continuationLine"
+    },
+    {
+      "include": "#builtinTypes"
+    },
+    {
+      "include": "#uuidString"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.ashetwidgets",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "widgetDeclaration": {
+      "patterns": [
+        {
+          "name": "meta.definition.widget.ashetwidgets",
+          "match": "^(\\s*)(widget)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(=)\\s*(\"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\")",
+          "captures": {
+            "2": {
+              "name": "storage.type.ashetwidgets"
+            },
+            "3": {
+              "name": "entity.name.type.ashetwidgets"
+            },
+            "4": {
+              "name": "keyword.operator.assignment.ashetwidgets"
+            },
+            "5": {
+              "name": "constant.other.uuid.ashetwidgets"
+            }
+          }
+        }
+      ]
+    },
+    "messageDeclaration": {
+      "patterns": [
+        {
+          "name": "meta.definition.message.ashetwidgets",
+          "begin": "^(\\s*)(control|event)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
+          "beginCaptures": {
+            "2": {
+              "name": "storage.type.function.ashetwidgets"
+            },
+            "3": {
+              "name": "entity.name.function.ashetwidgets"
+            },
+            "4": {
+              "name": "punctuation.section.parameters.begin.ashetwidgets"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "name": "punctuation.section.parameters.end.ashetwidgets",
+              "match": "\\)"
+            },
+            {
+              "name": "variable.parameter.ashetwidgets",
+              "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*:)"
+            },
+            {
+              "include": "#builtinTypes"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#identifiers"
+            }
+          ]
+        }
+      ]
+    },
+    "typeDeclaration": {
+      "patterns": [
+        {
+          "name": "meta.definition.type.ashetwidgets",
+          "begin": "^(\\s*)(type)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+          "beginCaptures": {
+            "2": {
+              "name": "storage.type.ashetwidgets"
+            },
+            "3": {
+              "name": "entity.name.type.ashetwidgets"
+            },
+            "4": {
+              "name": "keyword.operator.assignment.ashetwidgets"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#builtinTypes"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#identifiers"
+            }
+          ]
+        }
+      ]
+    },
+    "docsDeclaration": {
+      "patterns": [
+        {
+          "name": "meta.documentation.ashetwidgets",
+          "begin": "^(\\s*)(docs)(:)",
+          "beginCaptures": {
+            "2": {
+              "name": "keyword.other.documentation.ashetwidgets"
+            },
+            "3": {
+              "name": "punctuation.separator.key-value.ashetwidgets"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            }
+          ]
+        }
+      ]
+    },
+    "continuationLine": {
+      "patterns": [
+        {
+          "name": "meta.continuation.ashetwidgets",
+          "begin": "^(\\s*)(\\|)",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.continuation.ashetwidgets"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#builtinTypes"
+            },
+            {
+              "include": "#uuidString"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#identifiers"
+            }
+          ]
+        }
+      ]
+    },
+    "builtinTypes": {
+      "patterns": [
+        {
+          "name": "support.type.builtin.ashetwidgets",
+          "match": "\\b(bool|i8|i16|i32|u8|u16|u32|isize|usize|str|strbuf|contextptr)\\b"
+        }
+      ]
+    },
+    "uuidString": {
+      "patterns": [
+        {
+          "name": "constant.other.uuid.ashetwidgets",
+          "match": "\"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\""
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.ashetwidgets",
+          "match": "(?<![A-Za-z0-9_])-?\\b\\d+\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ashetwidgets",
+          "match": "\"([^\"\\\\]|\\\\.)*\""
+        },
+        {
+          "name": "string.quoted.single.ashetwidgets",
+          "match": "'([^'\\\\]|\\\\.)*'"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.ashetwidgets",
+          "match": "[=:,]"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.ashetwidgets",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

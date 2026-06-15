@@ -1,4 +1,12 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
+pub const accessible = builtin.cpu.has(.riscv, .zicsr);
+
+inline fn assert_csr_extension() void {
+    if (!accessible)
+        @compileError("Cannot access CSRs without Zicsr extension on the target!");
+}
 
 pub const ControlStatusRegister = enum(u12) {
 
@@ -258,6 +266,7 @@ pub const ControlStatusRegister = enum(u12) {
     _,
 
     pub fn read(comptime csr: ControlStatusRegister) usize {
+        assert_csr_extension();
         return asm ("csrr %[out], %[csr]"
             : [out] "=r" (-> usize),
             : [csr] "in" (@as(u32, @intFromEnum(csr))),
@@ -265,6 +274,7 @@ pub const ControlStatusRegister = enum(u12) {
     }
 
     pub fn write(comptime csr: ControlStatusRegister, value: usize) void {
+        assert_csr_extension();
         asm volatile ("csrw %[csr], %[value]"
             :
             : [csr] "in" (@as(u32, @intFromEnum(csr))),

@@ -19,14 +19,14 @@ const SFE_SEC_TO_FS = 1_000_000_000_000_000;
 // Additionally, the MAX select is in units of 64 clock cycles - will use a constant that
 // takes this into account - so 8000e6 fs / 64 = 125e6 fs
 
-const SFE_PSRAM_MAX_SELECT_FS64 = 125000000;
+const SFE_PSRAM_MAX_SELECT_FS64 = 125_000_000;
 
 // min deselect pulse width = 50ns => 50 * 1e6 fs => 50e7 fs
-const SFE_PSRAM_MIN_DESELECT_FS = 50000000;
+const SFE_PSRAM_MIN_DESELECT_FS = 50_000_000;
 
 // from psram datasheet - max Freq with VDDat 3.3v - SparkFun RP2350 boards run at 3.3v.
 // If VDD = 3.0 Max Freq is 133 Mhz
-const SFE_PSRAM_MAX_SCK_HZ = 109000000;
+const SFE_PSRAM_MAX_SCK_HZ = 109_000_000; // 109000000;
 
 // PSRAM SPI command codes
 const PSRAM_CMD_QUAD_END: u8 = 0xF5;

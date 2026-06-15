@@ -171,7 +171,7 @@ mkexp:
     ./zig-out/bin/mkexp encode examples/quad-ps2.json | hexdump -C
 
 
-
+# build the project for the RP2350
 rp2350-build:
     {{zig}} build {{default_params}} -Doptimize-kernel -Dmachine=arm-ashet-hc tools install 
     llvm-size zig-out/arm-ashet-hc/kernel.elf
@@ -196,7 +196,8 @@ rp2350-build:
         zig-out/arm-ashet-hc/disk.uf2 \
         --verbose
 
-rp2350-upload: rp2350-build
+# upload rp2350 code through UF2 interface
+rp2350-upload-kernel: rp2350-build
     picotool load \
         --family 0xe48bff59 \
         --update \
@@ -204,8 +205,9 @@ rp2350-upload: rp2350-build
         --execute \
         zig-out/arm-ashet-hc/kernel.uf2
 
-rp2350-launch:  openocd-bootloader rp2350-upload 
+rp2350-launch:  openocd-bootloader rp2350-upload-kernel
 
+# upload rp2350 file system through UF2 interface
 rp2350-upload-fs: rp2350-build
     picotool load \
         --update \
@@ -223,6 +225,7 @@ rp2350-flash: rp2350-build
 #     -c 'adapter speed 5000' \
 #     -c "program zig-out/arm-ashet-hc/kernel.elf verify reset exit"
 
+# launch openocd for attached rp2350
 rp2350-openocd:
     openocd -s tcl \
         -f interface/cmsis-dap.cfg \
@@ -275,3 +278,24 @@ openocd-bootloader:
         -f target/rp2350.cfg \
         -c '{{cmd_bootloader}}'
     sleep 0.5
+
+
+slideshow:
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/debris.abm             assets/slides/debris.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/heritages.abm          assets/slides/heritages.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/hoody.abm              assets/slides/hoody.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/opium.abm              assets/slides/opium.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/r-cade.abm             assets/slides/r-cade.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/velocity.abm           assets/slides/velocity.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/modern-furnishing.abm  assets/slides/modern-furnishing.png
+
+
+trace:
+    python scripts/profiler.py \
+        > .tmp/trace.log
+    
+    cut -d " " -f 3 .tmp/trace.log \
+        | sort \
+        | uniq -c \
+        | sort -h \
+        > .tmp/trace.stat

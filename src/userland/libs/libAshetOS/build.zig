@@ -90,6 +90,14 @@ pub const AshetSdk = struct {
         _ = sdk.app_files.addCopyFile(path, file[1..]);
     }
 
+    pub fn convert_image(sdk: *AshetSdk, image: std.Build.LazyPath, options: mkicon.ConvertOptions) std.Build.LazyPath {
+        const converter: mkicon.Converter = .{
+            .builder = sdk.owning_builder,
+            .exe = sdk.mkicon_exe,
+        };
+        return converter.convert(image, "image.abm", options);
+    }
+
     pub fn addApp(sdk: *AshetSdk, options: ExecutableOptions) *AshetApp {
         const b = sdk.owning_builder;
 
@@ -144,13 +152,7 @@ pub const AshetSdk = struct {
         const maybe_icon_file: ?std.Build.LazyPath = switch (options.icon) {
             .none => null,
             .abm => |path| path,
-            .convert => |raw_image| blk: {
-                const converter: mkicon.Converter = .{
-                    .builder = b,
-                    .exe = sdk.mkicon_exe,
-                };
-                break :blk converter.convert(raw_image, b.fmt("{s}.abm", .{options.name}), sdk.desktop_icon_conv_options);
-            },
+            .convert => |raw_image| sdk.convert_image(raw_image, sdk.desktop_icon_conv_options),
         };
 
         if (maybe_icon_file) |icon_file| {

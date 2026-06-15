@@ -5,11 +5,14 @@
 const std = @import("std");
 const ashet = @import("ashet-abi");
 
+const logger = std.log.scoped(.agp);
+
 pub const text_format = @import("text_format.zig");
 
 pub const Color = ashet.Color;
 pub const Framebuffer = ashet.Framebuffer;
 pub const Font = ashet.Font;
+const Rectangle = ashet.Rectangle;
 
 /// A bitmap is a typical row-major organized data structure
 /// that stores pixel data in host memory.
@@ -17,7 +20,7 @@ pub const Font = ashet.Font;
 /// The memory it points to is read-only to allow static bitmaps,
 /// but it isn't required to be never mutated.
 pub const Bitmap = extern struct {
-    pixels: [*]align(4) const Color,
+    pixels: [*]const Color, // TODO: can we somehow get align(4) back?
     width: u16,
     height: u16,
     stride: usize,
@@ -43,7 +46,18 @@ pub fn encoder(enc: *std.Io.Writer) Encoder {
     return .{ .writer = enc };
 }
 
-pub fn decoder(allocator: std.mem.Allocator, dec: anytype) Decoder(@TypeOf(dec)) {
+pub fn optimizingEncoder(enc: *Encoder) OptimizingEncoder {
+    return .{ .inner = enc };
+}
+
+pub fn optimizingEncoderForImage(enc: *Encoder, width: u16, height: u16) OptimizingEncoder {
+    return .{
+        .inner = enc,
+        .state = OptimizingEncoder.State.initForImage(width, height),
+    };
+}
+
+pub fn streamDecoder(allocator: std.mem.Allocator, dec: anytype) StreamDecoder(@TypeOf(dec)) {
     return .init(allocator, dec);
 }
 
@@ -351,7 +365,474 @@ pub const Encoder = struct {
     }
 };
 
-pub fn Decoder(Reader: type) type {
+pub const OptimizingEncoder = struct {
+    const EncError = Encoder.EncError;
+    const SkipReason = enum {
+        clipped,
+        inherent_noop,
+    };
+
+    const Analysis = union(enum) {
+        emitted,
+        skipped: SkipReason,
+    };
+
+    pub const Emission = enum {
+        skipped,
+        emitted,
+    };
+
+    pub const State = struct {
+        clip_rect: Rectangle = .everything,
+        image_rect: Rectangle = .everything,
+
+        pub fn initForImage(width: u16, height: u16) State {
+            const image_rect: Rectangle = .{
+                .x = 0,
+                .y = 0,
+                .width = width,
+                .height = height,
+            };
+            return .{
+                .clip_rect = image_rect,
+                .image_rect = image_rect,
+            };
+        }
+
+        pub fn classify(state: *State, cmd: Command) Emission {
+            return switch (state.analyze(cmd)) {
+                .emitted => .emitted,
+                .skipped => .skipped,
+            };
+        }
+
+        fn analyze(state: *State, cmd: Command) Analysis {
+            return switch (cmd) {
+                .clear => if (state.clip_rect.empty()) .{ .skipped = .clipped } else .emitted,
+                .set_clip_rect => |data| blk: {
+                    const requested: Rectangle = .{
+                        .x = data.x,
+                        .y = data.y,
+                        .width = data.width,
+                        .height = data.height,
+                    };
+                    state.clip_rect = state.image_rect.overlappedRegion(requested);
+                    break :blk .emitted;
+                },
+                .set_pixel => |data| state.analyzeArea(.{
+                    .x = data.x,
+                    .y = data.y,
+                    .width = 1,
+                    .height = 1,
+                }),
+                .draw_line => |data| state.analyzeArea(lineBounds(data.x1, data.y1, data.x2, data.y2)),
+                .draw_rect => |data| state.analyzeArea(.{
+                    .x = data.x,
+                    .y = data.y,
+                    .width = data.width,
+                    .height = data.height,
+                }),
+                .fill_rect => |data| state.analyzeArea(.{
+                    .x = data.x,
+                    .y = data.y,
+                    .width = data.width,
+                    .height = data.height,
+                }),
+                .draw_text => |data| if (data.text.len == 0)
+                    .{ .skipped = .inherent_noop }
+                else
+                    .emitted,
+                .blit_bitmap => |data| if (data.bitmap.width == 0 or data.bitmap.height == 0)
+                    .{ .skipped = .inherent_noop }
+                else
+                    state.analyzeArea(.{
+                        .x = data.x,
+                        .y = data.y,
+                        .width = data.bitmap.width,
+                        .height = data.bitmap.height,
+                    }),
+                .blit_framebuffer => .emitted,
+                .blit_partial_bitmap => |data| if (data.bitmap.width == 0 or data.bitmap.height == 0 or data.width == 0 or data.height == 0)
+                    .{ .skipped = .inherent_noop }
+                else
+                    state.analyzeArea(.{
+                        .x = data.x,
+                        .y = data.y,
+                        .width = data.width,
+                        .height = data.height,
+                    }),
+                .blit_partial_framebuffer => |data| state.analyzeArea(.{
+                    .x = data.x,
+                    .y = data.y,
+                    .width = data.width,
+                    .height = data.height,
+                }),
+            };
+        }
+
+        fn analyzeArea(state: *State, area: Rectangle) Analysis {
+            const overlap = area.overlappedRegion(state.clip_rect);
+            if (!overlap.empty())
+                return .emitted;
+            return .{ .skipped = .clipped };
+        }
+    };
+
+    inner: *Encoder,
+    state: State = .{},
+
+    pub fn encode(enc: *OptimizingEncoder, cmd: Command) (EncError || error{Overflow})!Emission {
+        return enc.emitCommand(cmd);
+    }
+
+    pub fn clear(enc: *OptimizingEncoder, color: Color) EncError!Emission {
+        const cmd: Command = .{ .clear = .{ .color = color } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.clear(color);
+        return .emitted;
+    }
+
+    pub fn set_clip_rect(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+    ) EncError!Emission {
+        const cmd: Command = .{ .set_clip_rect = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+        } };
+        _ = enc.analyzeAndLog(cmd);
+        try enc.inner.set_clip_rect(x, y, width, height);
+        return .emitted;
+    }
+
+    pub fn set_pixel(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        color: Color,
+    ) EncError!Emission {
+        const cmd: Command = .{ .set_pixel = .{
+            .x = x,
+            .y = y,
+            .color = color,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.set_pixel(x, y, color);
+        return .emitted;
+    }
+
+    pub fn draw_line(
+        enc: *OptimizingEncoder,
+        x1: i16,
+        y1: i16,
+        x2: i16,
+        y2: i16,
+        color: Color,
+    ) EncError!Emission {
+        const cmd: Command = .{ .draw_line = .{
+            .x1 = x1,
+            .y1 = y1,
+            .x2 = x2,
+            .y2 = y2,
+            .color = color,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.draw_line(x1, y1, x2, y2, color);
+        return .emitted;
+    }
+
+    pub fn draw_rect(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        color: Color,
+    ) EncError!Emission {
+        const cmd: Command = .{ .draw_rect = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .color = color,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.draw_rect(x, y, width, height, color);
+        return .emitted;
+    }
+
+    pub fn fill_rect(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        color: Color,
+    ) EncError!Emission {
+        const cmd: Command = .{ .fill_rect = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .color = color,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.fill_rect(x, y, width, height, color);
+        return .emitted;
+    }
+
+    pub fn draw_text(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        font: Font,
+        color: Color,
+        text: []const u8,
+    ) (EncError || error{Overflow})!Emission {
+        return enc.emitCommand(.{ .draw_text = .{
+            .x = x,
+            .y = y,
+            .font = font,
+            .color = color,
+            .text = text,
+        } });
+    }
+
+    pub fn blit_bitmap(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        bitmap: *const Bitmap,
+    ) EncError!Emission {
+        const cmd: Command = .{ .blit_bitmap = .{
+            .x = x,
+            .y = y,
+            .bitmap = bitmap.*,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.blit_bitmap(x, y, bitmap);
+        return .emitted;
+    }
+
+    pub fn blit_framebuffer(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        framebuffer: Framebuffer,
+    ) EncError!Emission {
+        const cmd: Command = .{ .blit_framebuffer = .{
+            .x = x,
+            .y = y,
+            .framebuffer = framebuffer,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.blit_framebuffer(x, y, framebuffer);
+        return .emitted;
+    }
+
+    pub fn blit_partial_bitmap(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        src_x: i16,
+        src_y: i16,
+        bitmap: *const Bitmap,
+    ) EncError!Emission {
+        const cmd: Command = .{ .blit_partial_bitmap = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .src_x = src_x,
+            .src_y = src_y,
+            .bitmap = bitmap.*,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.blit_partial_bitmap(x, y, width, height, src_x, src_y, bitmap);
+        return .emitted;
+    }
+
+    pub fn blit_partial_framebuffer(
+        enc: *OptimizingEncoder,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        src_x: i16,
+        src_y: i16,
+        framebuffer: Framebuffer,
+    ) EncError!Emission {
+        const cmd: Command = .{ .blit_partial_framebuffer = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .src_x = src_x,
+            .src_y = src_y,
+            .framebuffer = framebuffer,
+        } };
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+        try enc.inner.blit_partial_framebuffer(x, y, width, height, src_x, src_y, framebuffer);
+        return .emitted;
+    }
+
+    fn emitCommand(enc: *OptimizingEncoder, cmd: Command) (EncError || error{Overflow})!Emission {
+        const emission = enc.analyzeAndLog(cmd);
+        if (emission == .skipped)
+            return .skipped;
+
+        switch (cmd) {
+            .clear => |data| try enc.inner.clear(data.color),
+            .set_clip_rect => |data| try enc.inner.set_clip_rect(data.x, data.y, data.width, data.height),
+            .set_pixel => |data| try enc.inner.set_pixel(data.x, data.y, data.color),
+            .draw_line => |data| try enc.inner.draw_line(data.x1, data.y1, data.x2, data.y2, data.color),
+            .draw_rect => |data| try enc.inner.draw_rect(data.x, data.y, data.width, data.height, data.color),
+            .fill_rect => |data| try enc.inner.fill_rect(data.x, data.y, data.width, data.height, data.color),
+            .draw_text => |data| try enc.inner.draw_text(data.x, data.y, data.font, data.color, data.text),
+            .blit_bitmap => |data| try enc.inner.blit_bitmap(data.x, data.y, &data.bitmap),
+            .blit_framebuffer => |data| try enc.inner.blit_framebuffer(data.x, data.y, data.framebuffer),
+            .blit_partial_bitmap => |data| try enc.inner.blit_partial_bitmap(
+                data.x,
+                data.y,
+                data.width,
+                data.height,
+                data.src_x,
+                data.src_y,
+                &data.bitmap,
+            ),
+            .blit_partial_framebuffer => |data| try enc.inner.blit_partial_framebuffer(
+                data.x,
+                data.y,
+                data.width,
+                data.height,
+                data.src_x,
+                data.src_y,
+                data.framebuffer,
+            ),
+        }
+        return .emitted;
+    }
+
+    fn analyzeAndLog(enc: *OptimizingEncoder, cmd: Command) Emission {
+        const analysis = enc.state.analyze(cmd);
+        switch (analysis) {
+            .emitted => return .emitted,
+            .skipped => |reason| {
+                if (reason == .clipped) {
+                    const area = commandArea(cmd).?;
+                    logger.warn("dropped {s}: area={f}, clip={f}", .{
+                        commandName(cmd),
+                        area,
+                        enc.state.clip_rect,
+                    });
+                }
+                return .skipped;
+            },
+        }
+    }
+
+    fn lineBounds(x1: i16, y1: i16, x2: i16, y2: i16) Rectangle {
+        const left = @min(x1, x2);
+        const right = @max(x1, x2);
+        const top = @min(y1, y2);
+        const bottom = @max(y1, y2);
+
+        return Rectangle.new(
+            .new(left, top),
+            .new(@intCast(right - left + 1), @intCast(bottom - top + 1)),
+        );
+    }
+
+    fn commandName(cmd: Command) []const u8 {
+        return switch (cmd) {
+            .clear => "clear",
+            .set_clip_rect => "set_clip_rect",
+            .set_pixel => "set_pixel",
+            .draw_line => "draw_line",
+            .draw_rect => "draw_rect",
+            .fill_rect => "fill_rect",
+            .draw_text => "draw_text",
+            .blit_bitmap => "blit_bitmap",
+            .blit_framebuffer => "blit_framebuffer",
+            .blit_partial_bitmap => "blit_partial_bitmap",
+            .blit_partial_framebuffer => "blit_partial_framebuffer",
+        };
+    }
+
+    fn commandArea(cmd: Command) ?Rectangle {
+        return switch (cmd) {
+            .clear => .everything,
+            .set_clip_rect => null,
+            .set_pixel => |data| .{
+                .x = data.x,
+                .y = data.y,
+                .width = 1,
+                .height = 1,
+            },
+            .draw_line => |data| lineBounds(data.x1, data.y1, data.x2, data.y2),
+            .draw_rect => |data| .{
+                .x = data.x,
+                .y = data.y,
+                .width = data.width,
+                .height = data.height,
+            },
+            .fill_rect => |data| .{
+                .x = data.x,
+                .y = data.y,
+                .width = data.width,
+                .height = data.height,
+            },
+            .draw_text => null,
+            .blit_bitmap => |data| .{
+                .x = data.x,
+                .y = data.y,
+                .width = data.bitmap.width,
+                .height = data.bitmap.height,
+            },
+            .blit_framebuffer => null,
+            .blit_partial_bitmap => |data| .{
+                .x = data.x,
+                .y = data.y,
+                .width = data.width,
+                .height = data.height,
+            },
+            .blit_partial_framebuffer => |data| .{
+                .x = data.x,
+                .y = data.y,
+                .width = data.width,
+                .height = data.height,
+            },
+        };
+    }
+};
+
+// TODO: Refactor to use the std.Io.Reader
+pub fn StreamDecoder(Reader: type) type {
     return struct {
         const Dec = @This();
 
@@ -434,7 +915,6 @@ pub fn Decoder(Reader: type) type {
                         const y = try dec.fetch_coord();
                         const font = try dec.fetch_handle(Font);
                         const color = try dec.fetch_color();
-                        // const text_ptr = try dec.fetch_ptr([*]const u8);
                         const text_len = try dec.fetch_int(u16);
 
                         try dec.heap.resize(text_len +| 1);
@@ -540,14 +1020,198 @@ pub fn Decoder(Reader: type) type {
         fn fetch_int(dec: Dec, Int: type) !Int {
             return try dec.reader.readInt(Int, .little);
         }
-
-        fn fetch_ptr(dec: Dec, Pointer: type) !Pointer {
-            return @ptrFromInt(
-                @as(usize, @intCast(try dec.reader.readInt(usize, .little))),
-            );
-        }
     };
 }
+
+pub const BufferDecoder = struct {
+    const Dec = @This();
+
+    buffer: []const u8,
+    cursor: usize = 0,
+
+    pub const NextError = error{ InvalidCommand, EndOfStream };
+
+    pub fn init(buffer: []const u8) Dec {
+        return .{ .buffer = buffer };
+    }
+
+    pub fn next(dec: *Dec) NextError!?Command {
+        const cmd_byte = dec.fetch_int(u8) catch |err| switch (err) {
+            error.EndOfStream => return null,
+        };
+
+        const cmd = std.meta.intToEnum(CommandByte, cmd_byte) catch return error.InvalidCommand;
+
+        return switch (cmd) {
+            .clear => .{
+                .clear = .{
+                    .color = try dec.fetch_color(),
+                },
+            },
+            .set_clip_rect => .{
+                .set_clip_rect = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .width = try dec.fetch_size(),
+                    .height = try dec.fetch_size(),
+                },
+            },
+            .set_pixel => .{
+                .set_pixel = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .color = try dec.fetch_color(),
+                },
+            },
+            .draw_line => .{
+                .draw_line = .{
+                    .x1 = try dec.fetch_coord(),
+                    .y1 = try dec.fetch_coord(),
+                    .x2 = try dec.fetch_coord(),
+                    .y2 = try dec.fetch_coord(),
+                    .color = try dec.fetch_color(),
+                },
+            },
+            .draw_rect => .{
+                .draw_rect = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .width = try dec.fetch_size(),
+                    .height = try dec.fetch_size(),
+                    .color = try dec.fetch_color(),
+                },
+            },
+            .fill_rect => .{
+                .fill_rect = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .width = try dec.fetch_size(),
+                    .height = try dec.fetch_size(),
+                    .color = try dec.fetch_color(),
+                },
+            },
+            .draw_text => .{
+                .draw_text = blk: {
+                    const x = try dec.fetch_coord();
+                    const y = try dec.fetch_coord();
+                    const font = try dec.fetch_handle(Font);
+                    const color = try dec.fetch_color();
+                    const text_len = try dec.fetch_int(u16);
+                    const string = try dec.fetch_slice(text_len);
+
+                    break :blk .{
+                        .x = x,
+                        .y = y,
+                        .font = font,
+                        .color = color,
+                        .text = string,
+                    };
+                },
+            },
+            .blit_bitmap => .{ .blit_bitmap = .{
+                .x = try dec.fetch_coord(),
+                .y = try dec.fetch_coord(),
+                .bitmap = try dec.fetch_bitmap(),
+            } },
+            .blit_framebuffer => .{
+                .blit_framebuffer = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .framebuffer = try dec.fetch_handle(Framebuffer),
+                },
+            },
+            .blit_partial_bitmap => .{
+                .blit_partial_bitmap = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .width = try dec.fetch_size(),
+                    .height = try dec.fetch_size(),
+                    .src_x = try dec.fetch_coord(),
+                    .src_y = try dec.fetch_coord(),
+                    .bitmap = try dec.fetch_bitmap(),
+                },
+            },
+            .blit_partial_framebuffer => .{
+                .blit_partial_framebuffer = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .width = try dec.fetch_size(),
+                    .height = try dec.fetch_size(),
+                    .src_x = try dec.fetch_coord(),
+                    .src_y = try dec.fetch_coord(),
+                    .framebuffer = try dec.fetch_handle(Framebuffer),
+                },
+            },
+        };
+    }
+
+    /// NOTE: Returned bitmap is valid until next call to any `fetch_*` function.
+    fn fetch_bitmap(dec: *Dec) !Bitmap {
+        const flags = try dec.fetch_int(u8);
+
+        const has_transparency = (flags & 1) != 0;
+
+        const tkey: Color = if (has_transparency)
+            try dec.fetch_color()
+        else
+            .black;
+
+        const width = try dec.fetch_size();
+        const height = try dec.fetch_size();
+        const stride = try dec.fetch_int(usize);
+
+        const size = height * stride * @sizeOf(Color);
+
+        const pixels = try dec.fetch_slice(size);
+
+        return .{
+            .has_transparency = has_transparency,
+            .transparency_key = tkey,
+            .width = width,
+            .height = height,
+            .stride = stride,
+            .pixels = @ptrCast(pixels),
+        };
+    }
+
+    fn fetch_coord(dec: *Dec) !i16 {
+        return try dec.fetch_int(i16);
+    }
+
+    fn fetch_size(dec: *Dec) !u16 {
+        return try dec.fetch_int(u16);
+    }
+
+    fn fetch_color(dec: *Dec) !Color {
+        return Color.from_u8(
+            try dec.fetch_int(u8),
+        );
+    }
+
+    fn fetch_handle(dec: *Dec, Handle: type) !Handle {
+        return @ptrFromInt(
+            try dec.fetch_int(usize),
+        );
+    }
+
+    fn fetch_int(dec: *Dec, Int: type) error{EndOfStream}!Int {
+        const bytes = try dec.fetch_bytes(@sizeOf(Int));
+        return std.mem.readInt(Int, bytes, .little);
+    }
+
+    fn fetch_bytes(dec: *Dec, comptime size: usize) error{EndOfStream}!*const [size]u8 {
+        const slice = try dec.fetch_slice(size);
+        return slice[0..size];
+    }
+
+    fn fetch_slice(dec: *Dec, size: usize) error{EndOfStream}![]const u8 {
+        if (dec.cursor + size > dec.buffer.len)
+            return error.EndOfStream;
+        const slice = dec.buffer[dec.cursor..][0..size];
+        dec.cursor += size;
+        return slice;
+    }
+};
 
 pub const Command = union(CommandByte) {
     pub fn type_map(byte: CommandByte) type {
@@ -578,8 +1242,19 @@ pub const Command = union(CommandByte) {
     blit_partial_bitmap: BlitPartialBitmap,
     blit_partial_framebuffer: BlitPartialFramebuffer,
 
+    pub fn get_area_of_effect(cmd: *const Command) ashet.Rectangle {
+        return switch (cmd.*) {
+            inline else => |item| item.get_area_of_effect(),
+        };
+    }
+
     pub const Clear = struct {
         color: Color,
+
+        pub fn get_area_of_effect(cmd: Clear) ashet.Rectangle {
+            _ = cmd;
+            return .everything;
+        }
     };
 
     pub const SetClipRect = struct {
@@ -587,12 +1262,22 @@ pub const Command = union(CommandByte) {
         y: i16,
         width: u16,
         height: u16,
+
+        pub fn get_area_of_effect(cmd: SetClipRect) ashet.Rectangle {
+            _ = cmd;
+            // The clip effect is always a global effect, not a local one:
+            return .everything;
+        }
     };
 
     pub const SetPixel = struct {
         x: i16,
         y: i16,
         color: Color,
+
+        pub fn get_area_of_effect(cmd: SetPixel) ashet.Rectangle {
+            return .new(.new(cmd.x, cmd.y), .new(1, 1));
+        }
     };
 
     pub const DrawLine = struct {
@@ -601,6 +1286,19 @@ pub const Command = union(CommandByte) {
         x2: i16,
         y2: i16,
         color: Color,
+
+        pub fn get_area_of_effect(cmd: DrawLine) ashet.Rectangle {
+            const left = @min(cmd.x1, cmd.x2);
+            const right = @max(cmd.x1, cmd.x2);
+
+            const top = @min(cmd.y1, cmd.y2);
+            const bottom = @max(cmd.y1, cmd.y2);
+
+            return .new(
+                .new(left, top),
+                .new(@intCast(right - left + 1), @intCast(bottom - top + 1)),
+            );
+        }
     };
 
     pub const DrawRect = struct {
@@ -609,6 +1307,15 @@ pub const Command = union(CommandByte) {
         width: u16,
         height: u16,
         color: Color,
+
+        pub fn get_area_of_effect(cmd: DrawRect) ashet.Rectangle {
+            return .{
+                .x = cmd.x,
+                .y = cmd.y,
+                .width = cmd.width,
+                .height = cmd.height,
+            };
+        }
     };
 
     pub const FillRect = struct {
@@ -617,6 +1324,15 @@ pub const Command = union(CommandByte) {
         width: u16,
         height: u16,
         color: Color,
+
+        pub fn get_area_of_effect(cmd: FillRect) ashet.Rectangle {
+            return .{
+                .x = cmd.x,
+                .y = cmd.y,
+                .width = cmd.width,
+                .height = cmd.height,
+            };
+        }
     };
 
     pub const DrawText = struct {
@@ -625,18 +1341,37 @@ pub const Command = union(CommandByte) {
         font: Font,
         color: Color,
         text: []const u8,
+
+        pub fn get_area_of_effect(cmd: DrawText) ashet.Rectangle {
+            _ = cmd;
+            @panic("Not possible in the state of things. This must be fixed.");
+        }
     };
 
     pub const BlitBitmap = struct {
         x: i16,
         y: i16,
         bitmap: Bitmap,
+
+        pub fn get_area_of_effect(cmd: BlitBitmap) ashet.Rectangle {
+            return .{
+                .x = cmd.x,
+                .y = cmd.y,
+                .width = cmd.bitmap.width,
+                .height = cmd.bitmap.height,
+            };
+        }
     };
 
     pub const BlitFramebuffer = struct {
         x: i16,
         y: i16,
         framebuffer: Framebuffer,
+
+        pub fn get_area_of_effect(cmd: BlitFramebuffer) ashet.Rectangle {
+            _ = cmd;
+            @panic("Not possible in the state of things. This must be fixed.");
+        }
     };
 
     pub const BlitPartialBitmap = struct {
@@ -647,6 +1382,15 @@ pub const Command = union(CommandByte) {
         src_x: i16,
         src_y: i16,
         bitmap: Bitmap,
+
+        pub fn get_area_of_effect(cmd: BlitPartialBitmap) ashet.Rectangle {
+            return .{
+                .x = cmd.x,
+                .y = cmd.y,
+                .width = cmd.width,
+                .height = cmd.height,
+            };
+        }
     };
 
     pub const BlitPartialFramebuffer = struct {
@@ -657,5 +1401,14 @@ pub const Command = union(CommandByte) {
         src_x: i16,
         src_y: i16,
         framebuffer: Framebuffer,
+
+        pub fn get_area_of_effect(cmd: BlitPartialFramebuffer) ashet.Rectangle {
+            return .{
+                .x = cmd.x,
+                .y = cmd.y,
+                .width = cmd.width,
+                .height = cmd.height,
+            };
+        }
     };
 };

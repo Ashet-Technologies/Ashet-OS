@@ -68,7 +68,7 @@ pub fn spawn_blocking(
 
     process.executable_memory = loaded.process_memory;
 
-    logger.debug("loaded '{s}' to 0x{X:0>8}, entry point is 0x{X:0>8}", .{
+    logger.info("loaded '{s}' to 0x{X:0>8}, entry point is 0x{X:0>8}", .{
         proc_name,
         @intFromPtr(loaded.process_memory.ptr),
         loaded.entry_point,
@@ -77,13 +77,13 @@ pub fn spawn_blocking(
     const thread = try ashet.scheduler.Thread.spawn(
         @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
         null,
-        .{ .process = process, .stack_size = 128 * 1024 },
+        .{
+            .process = process,
+            .stack_size = 128 * 1024,
+            .name = proc_name,
+        },
     );
     errdefer thread.kill();
-
-    thread.setName(proc_name) catch {
-        logger.err("TODO(0.15.2): Remove setName() error possibility but truncate errors", .{});
-    };
 
     thread.start() catch |err| switch (err) {
         error.AlreadyStarted => unreachable,
@@ -157,10 +157,10 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         ashet.filesystem.File,
         call.resource_owner,
         open_file.outputs.handle.as_resource(),
-    ) catch @panic("unrecoverage resource leak");
+    ) catch @panic("unrecoverable resource leak");
     defer ashet.resources.destroy(&kernel_file_handle.system_resource);
 
-    const bg_process = ashet.scheduler.Thread.current().?.get_process();
+    const bg_process = ashet.scheduler.Thread.current().?.get_executing_process();
 
     const local_resource_handle = try ashet.resources.add_to_process(bg_process, &kernel_file_handle.system_resource);
     defer ashet.resources.remove_from_process(bg_process, &kernel_file_handle.system_resource);
@@ -253,7 +253,7 @@ pub const Process = struct {
     /// The IO context for scheduling IOPs
     async_context: ashet.overlapped.Context = .{},
 
-    /// unfreeable process allocations
+    /// non-releasable process allocations
     memory_arena: std.heap.ArenaAllocator,
 
     /// All associated threads.
@@ -392,7 +392,7 @@ pub const Process = struct {
                 const first = proc.async_context.in_flight.first.?;
                 const call = ashet.overlapped.AsyncCall.from_owner_link(first);
 
-                ashet.overlapped.cancel_with_context(call.arc, &proc.async_context) catch |err| {
+                ashet.overlapped.cancel_with_context(call, &proc.async_context, .in_flight) catch |err| {
                     logger.err("unexpected error {} from cancelling overlapped operation", .{err});
                     @panic("This is a kernel bug!");
                 };

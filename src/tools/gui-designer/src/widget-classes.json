@@ -3,38 +3,71 @@
         "Panel": {},
         "Label": {
             "properties": {
-                "text": "string"
+                "text": "string",
+                "horizontal_alignment": {
+                    "type": "enum",
+                    "default": "middle",
+                    "values": {
+                        "Left": "near",
+                        "Center": "middle",
+                        "Right": "far"
+                    }
+                },
+                "vertical_alignment": {
+                    "type": "enum",
+                    "default": "middle",
+                    "values": {
+                        "Top": "near",
+                        "Middle": "middle",
+                        "Bottom": "far"
+                    }
+                }
             }
         },
         "Button": {
-            "min_size": { "width": 3, "height": 12 },
-            "max_size": { "width": 32767, "height":12  },
+            "min_size": { "width": 0, "height": 15 },
+            "max_size": { "width": 32767, "height": 15 },
             "properties": {
                 "text": "string"
             }
+        },
+        "ToolButton": {
+            "min_size": { "width": 9, "height": 9 },
+            "max_size": { "width": 9, "height": 9 }
         },
         "TextBox": {
-            "min_size": { "width": 3, "height": 12 },
-            "max_size": { "width": 32767, "height":12  },
+            "min_size": { "width": 0, "height": 15 },
+            "max_size": { "width": 32767, "height": 15 },
             "properties": {
                 "text": "string"
             }
         },
-        "Picture": {},
+        "ListBox": {},
+        "ProgressBar": {
+            "min_size": { "width": 0, "height": 15 },
+            "max_size": { "width": 32767, "height": 15 },
+            "properties": {
+                "value": "int",
+                "limit": "int"
+            }
+        },
         "CheckBox": {
-            "min_size": { "width": 3, "height": 12 },
-            "max_size": { "width": 32767, "height":12  },
+            "min_size": { "width": 9, "height": 9 },
+            "max_size": { "width": 32767, "height": 9 },
             "properties": {
                 "checked": "bool"
             }
         },
         "RadioButton": {
-            "min_size": { "width": 3, "height": 12 },
-            "max_size": { "width": 32767, "height":12  }
+            "min_size": { "width": 9, "height": 9 },
+            "max_size": { "width": 32767, "height": 9 },
+            "properties": {
+                "checked": "bool"
+            }
         },
         "HScrollBar": {
-            "min_size": { "width": 30, "height": 10 },
-            "max_size": { "width": 32767, "height":10  },
+            "min_size": { "width": 27, "height": 11 },
+            "max_size": { "width": 32767, "height": 11 },
             "properties": {
                 "minimum": "int",
                 "maximum": "int",
@@ -42,17 +75,13 @@
             }
         },
         "VScrollBar": {
-            "min_size": { "width": 10, "height": 30 },
-            "max_size": { "width": 10, "height": 32767 },
+            "min_size": { "width": 11, "height": 27 },
+            "max_size": { "width": 11, "height": 32767 },
             "properties": {
                 "minimum": "int",
                 "maximum": "int",
                 "value": "int"
             }
-        },
-        "ToolButton": {
-            "min_size": { "width": 12, "height": 12 },
-            "max_size": { "width": 12, "height":12  }
         }
     }
 }

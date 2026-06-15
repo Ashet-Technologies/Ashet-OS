@@ -36,6 +36,9 @@
         .agp_swrast = .{
             .path = "../userland/libs/agp-swrast",
         },
+        .agp_tiled_rast = .{
+            .path = "../userland/libs/agp-tiled-rast",
+        },
 
         .ashex = .{
             .path = "../tools/exe-tool",
