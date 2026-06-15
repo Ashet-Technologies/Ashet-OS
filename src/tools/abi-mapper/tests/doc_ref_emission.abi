@@ -1,0 +1,28 @@
+namespace resources {
+    syscall destroy {
+        in @"resource": usize;
+    }
+
+    enum BindOperation : u8 {
+        item weak = 0;
+
+        /// This operation ensures that the binding is at least @`weak`.
+        item at_least_weak = 1;
+    }
+
+    /// NOTE: @`destroy` always succeeds; destroying an invalid handle is a no-op.
+    syscall bind {}
+}
+
+namespace link {
+    struct Route {
+        field prefix_len: u8;
+    }
+
+    /// NOTE: The derived route is configured as follows:
+    ///       - @`link.Route.prefix_len` set to `0`.
+    ///       - `::` remains inline code.
+    struct Router {
+        field address: u8;
+    }
+}

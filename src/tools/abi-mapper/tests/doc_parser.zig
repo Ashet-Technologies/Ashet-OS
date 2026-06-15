@@ -118,6 +118,16 @@ test "cross-reference @`fqn`" {
     try std.testing.expectEqualStrings(" for details.", content[2].text.value);
 }
 
+test "legacy @ref syntax stays plain text" {
+    var parsed = try parse_doc(&.{" See @ref foo.bar.Baz for details."});
+    defer parsed.deinit();
+
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
+    try std.testing.expectEqual(@as(usize, 1), content.len);
+    try std.testing.expect(content[0] == .text);
+    try std.testing.expectEqualStrings("See @ref foo.bar.Baz for details.", content[0].text.value);
+}
+
 test "emphasis *text*" {
     var parsed = try parse_doc(&.{" This is *important* text."});
     defer parsed.deinit();

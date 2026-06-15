@@ -1,5 +1,6 @@
 comptime {
     _ = @import("doc_parser.zig");
+    _ = @import("doc_ref_emission.zig");
     _ = @import("doc_ref_resolution.zig");
     _ = @import("digit_separator.zig");
     _ = @import("constant_ordering.zig");
