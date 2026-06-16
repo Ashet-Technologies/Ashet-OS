@@ -4,7 +4,7 @@ const kernel_package = @import("kernel");
 
 const Machine = kernel_package.Machine;
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) void { // $ls root_id 1
     const install_step = b.getInstallStep();
 
     const os_dep = b.dependency("os", .{

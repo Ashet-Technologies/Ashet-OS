@@ -3,6 +3,7 @@ name: Build
 env:
   ZIG_VERSION: "0.15.2"
   ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-global-cache
+  ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache
 
 on:
   push:
@@ -34,12 +35,18 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      - name: Compute Zig package cache key
+        id: zig-pkg-cache-key
+        shell: bash
+        run: |
+          python scripts/zig_package_cache_key.py >> "$GITHUB_OUTPUT"
+
       - name: Cache Zig package cache
         uses: actions/cache@v4
         with:
           # Zig stores downloaded packages in the p subdirectory of the global cache.
           path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
-          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
+          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ steps.zig-pkg-cache-key.outputs.key }}
           restore-keys: |
             zig-pkg-cache-${{ env.ZIG_VERSION }}-
           enableCrossOsArchive: true
@@ -47,6 +54,16 @@ jobs:
       - name: Build ${{ matrix.platform }}
         run: |
           zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" ${{ matrix.platform }}
+
+      - name: Upload .zig-cache on failure
+        uses: actions/upload-artifact@v4
+        if: ${{ failure() && (matrix.os == 'windows-latest' || matrix.os == 'macos-latest') }}
+        with:
+          name: zig-cache-build-${{ matrix.os }}-${{ matrix.platform }}
+          path: ${{ env.ZIG_LOCAL_CACHE_DIR }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload disk image
         uses: actions/upload-artifact@v4
@@ -73,19 +90,41 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
+      - name: Compute Zig package cache key
+        id: zig-pkg-cache-key
+        shell: bash
+        run: |
+          python scripts/zig_package_cache_key.py >> "$GITHUB_OUTPUT"
+
       - name: Cache Zig package cache
         uses: actions/cache@v4
         with:
           # Zig stores downloaded packages in the p subdirectory of the global cache.
           path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}/p
-          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ hashFiles('**/build.zig.zon') }}
+          key: zig-pkg-cache-${{ env.ZIG_VERSION }}-${{ steps.zig-pkg-cache-key.outputs.key }}
           restore-keys: |
             zig-pkg-cache-${{ env.ZIG_VERSION }}-
           enableCrossOsArchive: true
 
+      - name: Install Linux GUI dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+
       - name: Build Tools
         run: |
           zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" tools
+
+      - name: Upload .zig-cache on failure
+        uses: actions/upload-artifact@v4
+        if: ${{ failure() && (matrix.os == 'windows-latest' || matrix.os == 'macos-latest') }}
+        with:
+          name: zig-cache-tools-${{ matrix.os }}
+          path: ${{ env.ZIG_LOCAL_CACHE_DIR }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload tools
         uses: actions/upload-artifact@v4

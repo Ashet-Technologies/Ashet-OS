@@ -1,0 +1,36 @@
+typedef Syscall_ID = <<syscall_enum:u32>>;
+enum SystemResource : usize
+{
+    ...
+
+    typedef Type = <<resource_enum:u32>>;
+}
+
+namespace resources {
+    syscall release {
+        in @"resource": SystemResource;
+    }
+
+}
+
+resource Thread {} 
+
+//? Must be properly escaped as @"suspend"
+syscall suspend {
+    in    target:    ?Thread;
+    error InvalidHandle;
+    error ThreadStopped;
+}
+
+struct resume {}
+
+namespace embedded {
+    //? Must not be as @"escaped_suspend"
+    syscall suspend {
+        in    target:    ?Thread;
+        error InvalidHandle;
+        error ThreadStopped;
+    }
+
+    struct resume {}
+}

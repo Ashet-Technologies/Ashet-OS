@@ -55,6 +55,63 @@ const TokenType = enum {
     }
 };
 
+fn matchHexDigits(str: []const u8) ?usize {
+    var i: usize = 0;
+    var has_digit = false;
+    while (i < str.len) : (i += 1) {
+        const c = str[i];
+        if (std.ascii.isHex(c)) {
+            has_digit = true;
+        } else if (c == '_') {
+            // digit separator — allowed
+        } else break;
+    }
+    return if (has_digit) i else null;
+}
+
+fn matchBinaryDigits(str: []const u8) ?usize {
+    var i: usize = 0;
+    var has_digit = false;
+    while (i < str.len) : (i += 1) {
+        const c = str[i];
+        if (c == '0' or c == '1') {
+            has_digit = true;
+        } else if (c == '_') {
+            // digit separator — allowed
+        } else break;
+    }
+    return if (has_digit) i else null;
+}
+
+fn matchDecimalDigits(str: []const u8) ?usize {
+    if (str.len == 0) return null;
+    if (!std.ascii.isDigit(str[0])) return null;
+    var i: usize = 1;
+    while (i < str.len) : (i += 1) {
+        const c = str[i];
+        if (std.ascii.isDigit(c)) {
+            // ok
+        } else if (c == '_') {
+            // digit separator — allowed
+        } else break;
+    }
+    return i;
+}
+
+fn parse_number_token(text: []const u8) u64 {
+    var stripped_buf: [128]u8 = undefined;
+    std.debug.assert(text.len <= stripped_buf.len);
+
+    var stripped_len: usize = 0;
+    for (text) |c| {
+        if (c != '_') {
+            stripped_buf[stripped_len] = c;
+            stripped_len += 1;
+        }
+    }
+    return std.fmt.parseInt(u64, stripped_buf[0..stripped_len], 0) catch unreachable;
+}
+
 pub fn match_identifier(str: []const u8) ?usize {
     const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const all_chars = first_char ++ "0123456789.";
@@ -117,10 +174,10 @@ const patterns = blk: {
         .create(.comment, match.sequenceOf(.{ match.literal("//?"), match.takeNoneOf("\r\n") })),
         .create(.comment, match.literal("//?")),
 
-        .create(.number, match.sequenceOf(.{ match.literal("0x"), match.hexadecimalNumber })),
-        .create(.number, match.sequenceOf(.{ match.literal("0b"), match.binaryNumber })),
-        .create(.number, match.decimalNumber),
-        .create(.number, match.sequenceOf(.{ match.literal("-"), match.decimalNumber })),
+        .create(.number, match.sequenceOf(.{ match.literal("0x"), matchHexDigits })),
+        .create(.number, match.sequenceOf(.{ match.literal("0b"), matchBinaryDigits })),
+        .create(.number, matchDecimalDigits),
+        .create(.number, match.sequenceOf(.{ match.literal("-"), matchDecimalDigits })),
 
         .create(.whitespace, match.whitespace),
     };
@@ -436,7 +493,7 @@ pub const Parser = struct {
 
         const tok = try parser.accept(.number);
 
-        const num = std.fmt.parseInt(u64, tok.text, 0) catch unreachable;
+        const num = parse_number_token(tok.text);
 
         return .{
             .uint = num,
@@ -476,7 +533,7 @@ pub const Parser = struct {
             const num_tok = try parser.accept(.number);
             try parser.expect(.@")");
 
-            break :blk std.fmt.parseInt(u64, num_tok.text, 0) catch unreachable;
+            break :blk parse_number_token(num_tok.text);
         } else null;
 
         const child = try parser.accept_type();
@@ -566,7 +623,7 @@ pub const Parser = struct {
         }
 
         if (try parser.try_accept(.fnptr)) |_| {
-            var params: std.ArrayList(*const TypeNode) = .empty;
+            var params: std.ArrayList(FnPtrParam) = .empty;
             defer params.deinit(parser.allocator);
 
             try parser.expect(.@"(");
@@ -574,9 +631,29 @@ pub const Parser = struct {
                 if (try parser.try_accept(.@")")) |_|
                     break :blk;
                 while (true) {
-                    const param = try parser.accept_type();
+                    // Speculatively try to consume "name :" for a named parameter.
+                    const save = parser.core.saveState();
+                    const param_name: ?[]const u8 = name_blk: {
+                        const id_tok = parser.accept_any(&.{.identifier}) catch {
+                            parser.core.restoreState(save);
+                            break :name_blk null;
+                        };
+                        if (try parser.try_accept(.@":")) |_| {
+                            // Named parameter — strip @"…" escaping if present.
+                            const raw = id_tok.text;
+                            break :name_blk if (std.mem.startsWith(u8, raw, "@\""))
+                                raw[2 .. raw.len - 1]
+                            else
+                                raw;
+                        }
+                        // No colon — what we consumed was the start of the type.
+                        // Restore and fall through to accept_type().
+                        parser.core.restoreState(save);
+                        break :name_blk null;
+                    };
 
-                    try params.append(parser.allocator, param);
+                    const param_type = try parser.accept_type();
+                    try params.append(parser.allocator, .{ .name = param_name, .type = param_type });
 
                     if (try parser.try_accept(.@")")) |_|
                         break :blk;
@@ -801,6 +878,12 @@ pub const NamedValue = enum {
     true,
 };
 
+pub const FnPtrParam = struct {
+    /// Optional parameter name.  `null` means the parameter is unnamed.
+    name: ?[]const u8,
+    type: *const TypeNode,
+};
+
 pub const TypeNode = union(enum) {
     builtin: BuiltinType,
     named: []const u8,
@@ -811,7 +894,7 @@ pub const TypeNode = union(enum) {
         size: *const ValueNode,
     },
     fnptr: struct {
-        parameters: []const *const TypeNode,
+        parameters: []const FnPtrParam,
         return_type: *const TypeNode,
     },
     unsigned_int: u8,

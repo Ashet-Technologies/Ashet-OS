@@ -47,8 +47,7 @@ pub fn build(b: *std.Build) void {
     });
     const assets_dep = b.dependency("assets", .{});
 
-    // const disk_image_dep = b.dependency("dimmer", .{ .release = true });
-    const disk_image_dep = b.dependency("dimmer", .{});
+    const disk_image_dep = b.dependency("dimmer", .{ .release = true });
 
     const limine_dep = b.dependency("zig_limine_install", .{ .target = b.graph.host, .optimize = .ReleaseSafe });
 

@@ -88,9 +88,26 @@ pub fn build(b: *std.Build) void {
 
     const abi_tests_run = b.addRunArtifact(abi_tests_exe);
     test_step.dependOn(&abi_tests_run.step);
+
+    const escaping_tests_json = abi_mapper.get_json_dump(null, b.path("tests/escaping.abi"));
+
+    for (std.enums.values(ConversionMode)) |mode| {
+        const escaping_tests_zig = convert_abi_file(b, render_zig_exe, escaping_tests_json, null, mode);
+
+        const escaping_tests_exe = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = escaping_tests_zig,
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
+        const escaping_tests_run = b.addRunArtifact(escaping_tests_exe);
+        test_step.dependOn(&escaping_tests_run.step);
+    }
 }
 
-pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, patch: ?std.Build.LazyPath, mode: enum { kernel, definition }) std.Build.LazyPath {
+const ConversionMode = enum { kernel, definition };
+pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, patch: ?std.Build.LazyPath, mode: ConversionMode) std.Build.LazyPath {
     const generate_core_abi = b.addRunArtifact(render);
     generate_core_abi.addArg(@tagName(mode));
     generate_core_abi.addFileArg(input);

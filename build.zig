@@ -54,6 +54,10 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "emulator",
         .artifacts = &.{ "emulator-web", "emulator" },
     },
+    .{
+        .dependency = "abi_mapper",
+        .artifacts = &.{"abi-parser"},
+    },
     // .{
     //     .dependency = "agp_tester",
     //     .artifacts = &.{"agp-tester"},
