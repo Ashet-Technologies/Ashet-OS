@@ -5,7 +5,6 @@ const code_writer = @import("code_writer.zig");
 
 const patch_parser = @import("patch_parser.zig");
 
-const fmt_id = std.zig.fmtId;
 const fmt_escapes = std.zig.fmtString;
 
 const model = abi_parser.model;
@@ -856,6 +855,7 @@ const ZigRenderer = struct {
                 try zr.writer.writeln("}");
             }
             if (arc.native_outputs.len == 1) {
+                assert_unpadded_name(arc.native_outputs[0].name);
                 try zr.writer.writeln("");
                 try zr.writer.println("pub fn get_output(arc: *const @This()) !*const @FieldType(Outputs, \"{s}\") {{", .{arc.native_outputs[0].name});
                 zr.writer.indent();
@@ -1278,6 +1278,15 @@ const FqnFmt = struct {
         }
     }
 };
+
+fn assert_unpadded_name(name: []const u8) void {
+    std.debug.assert(std.mem.trim(u8, name, " \r\n\t").len == name.len);
+}
+
+fn fmt_id(id: []const u8) @TypeOf(std.zig.fmtId(id)) {
+    assert_unpadded_name(id);
+    return std.zig.fmtId(id);
+}
 
 fn fmt_local(id: []const u8) std.fmt.Formatter([]const u8, format_local) {
     return .{ .data = id };
