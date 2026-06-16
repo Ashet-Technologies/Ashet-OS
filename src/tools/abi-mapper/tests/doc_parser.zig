@@ -104,6 +104,40 @@ test "inline code span" {
     try std.testing.expectEqualStrings(" now.", content[2].text.value);
 }
 
+test "inline code span applies escapes" {
+    var parsed = try parse_doc(&.{" Call `\\`` now."});
+    defer parsed.deinit();
+
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
+    try std.testing.expectEqual(@as(usize, 3), content.len);
+    try std.testing.expect(content[1] == .code);
+    try std.testing.expectEqualStrings("`", content[1].code.value);
+}
+
+test "inline code span keeps lone backslash" {
+    var parsed = try parse_doc(&.{" Path `\\` separator."});
+    defer parsed.deinit();
+
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
+    try std.testing.expectEqual(@as(usize, 3), content.len);
+    try std.testing.expect(content[1] == .code);
+    try std.testing.expectEqualStrings("\\", content[1].code.value);
+}
+
+test "adjacent inline code spans do not swallow a backslash span" {
+    var parsed = try parse_doc(&.{" Keys `\\` `|`."});
+    defer parsed.deinit();
+
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
+    try std.testing.expectEqual(@as(usize, 5), content.len);
+    try std.testing.expect(content[1] == .code);
+    try std.testing.expectEqualStrings("\\", content[1].code.value);
+    try std.testing.expect(content[2] == .text);
+    try std.testing.expectEqualStrings(" ", content[2].text.value);
+    try std.testing.expect(content[3] == .code);
+    try std.testing.expectEqualStrings("|", content[3].code.value);
+}
+
 test "cross-reference @`fqn`" {
     var parsed = try parse_doc(&.{" See @`foo.bar.Baz` for details."});
     defer parsed.deinit();
@@ -200,6 +234,32 @@ test "autolink <mailto:...>" {
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[1] == .link);
     try std.testing.expectEqualStrings("mailto:foo@example.com", content[1].link.url);
+}
+
+test "unclosed inline code span is rejected" {
+    try std.testing.expectError(error.UnclosedInlineCode, parse_doc(&.{" Broken `code"}));
+}
+
+test "unclosed inline reference is rejected" {
+    try std.testing.expectError(error.UnclosedInlineReference, parse_doc(&.{" Broken @`Type.member"}));
+}
+
+test "unclosed titled link is rejected" {
+    try std.testing.expectError(error.UnclosedInlineLink, parse_doc(&.{" Broken [docs](https://example.com"}));
+}
+
+test "unclosed autolink is rejected" {
+    try std.testing.expectError(error.UnclosedAutolink, parse_doc(&.{" Broken <https://example.com"}));
+}
+
+test "literal brackets stay plain text" {
+    var parsed = try parse_doc(&.{" Range is events[0..count]."});
+    defer parsed.deinit();
+
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
+    try std.testing.expectEqual(@as(usize, 1), content.len);
+    try std.testing.expect(content[0] == .text);
+    try std.testing.expectEqualStrings("Range is events[0..count].", content[0].text.value);
 }
 
 // ── Admonitions ──────────────────────────────────────────────────────────────
@@ -396,4 +456,11 @@ test "code fence preceded and followed by text" {
     try std.testing.expect(parsed.comment.sections[0].blocks[0] == .paragraph);
     try std.testing.expect(parsed.comment.sections[0].blocks[1] == .code_block);
     try std.testing.expect(parsed.comment.sections[0].blocks[2] == .paragraph);
+}
+
+test "unclosed code fence is rejected" {
+    try std.testing.expectError(error.UnclosedCodeFence, parse_doc(&.{
+        " ```zig",
+        " const x = 42;",
+    }));
 }

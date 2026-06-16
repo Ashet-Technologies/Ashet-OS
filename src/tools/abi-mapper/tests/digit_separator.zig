@@ -64,3 +64,22 @@ test "binary digit separators" {
     try std.testing.expectEqual(@as(i65, 0b1111_0000), doc.enums[0].items[0].value);
     try std.testing.expectEqual(@as(i65, 0b0000_1111), doc.enums[0].items[1].value);
 }
+
+test "pointer alignment accepts digit separators" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const source =
+        \\struct Buffer {
+        \\    field data: [*]align(1_6_4) u8;
+        \\}
+    ;
+    const doc = try parse_and_analyze(allocator, source);
+    try std.testing.expectEqual(@as(usize, 1), doc.structs.len);
+
+    const field = doc.structs[0].logic_fields[0];
+    const field_type = doc.types[@intFromEnum(field.type)];
+    try std.testing.expect(field_type == .ptr);
+    try std.testing.expectEqual(@as(?u64, 164), field_type.ptr.alignment);
+}

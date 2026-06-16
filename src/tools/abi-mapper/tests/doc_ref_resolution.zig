@@ -76,6 +76,38 @@ test "doc references resolve to contained syscall elements" {
     try std.testing.expect(!has_ref_fqn(wait_all_item.docs, "thread_affinity"));
 }
 
+test "doc references reject invalid trailing members after a resolved prefix" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const source =
+        \\struct Type {
+        \\    field member: u32;
+        \\}
+        \\
+        \\/// See @`Type.not_a_member`.
+        \\struct Container {
+        \\    field value: u32;
+        \\}
+    ;
+
+    var tokenizer: abi_parser.syntax.Tokenizer = .init(source, "test");
+    var parser: abi_parser.syntax.Parser = .{
+        .allocator = allocator,
+        .core = .init(&tokenizer),
+    };
+    const ast_document = try parser.accept_document();
+
+    var errors: std.ArrayList(abi_parser.sema.AnalysisError) = .empty;
+    defer errors.deinit(allocator);
+
+    const result = abi_parser.sema.analyze(allocator, ast_document, null, &errors);
+    try std.testing.expectError(error.AnalysisFailed, result);
+    try std.testing.expect(errors.items.len > 0);
+    try std.testing.expect(error_messages_contain(errors.items, "unknown doc reference '@`Type.not_a_member`'"));
+}
+
 fn find_syscall_by_fqn(
     syscalls: []const model.GenericCall,
     expected: []const u8,
@@ -143,6 +175,15 @@ fn has_ref_fqn(docs: model.DocComment, expected: []const u8) bool {
                 },
                 .code_block => {},
             }
+        }
+    }
+    return false;
+}
+
+fn error_messages_contain(errors: []const abi_parser.sema.AnalysisError, needle: []const u8) bool {
+    for (errors) |item| {
+        if (std.mem.indexOf(u8, item.message, needle) != null) {
+            return true;
         }
     }
     return false;

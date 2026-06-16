@@ -50,16 +50,13 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_data
 
     // TODO: Compute type sizes, field offsets
 
-    if (analyzer.errors.items.len > 0) {
-        for (analyzer.errors.items) |msg| {
-            try errors_out.append(allocator, .{ .message = msg });
-        }
-        return error.AnalysisFailed;
-    }
+    try analyzer.fail_if_errors(errors_out);
 
     // TODO: Implement garbage collection for unreferenced things
 
     try analyzer.validate_constraints();
+
+    try analyzer.fail_if_errors(errors_out);
 
     return .{
         .root = try analyzer.root.toOwnedSlice(analyzer.allocator),
@@ -603,9 +600,7 @@ const Analyzer = struct {
                                         try list.append(a.allocator, param.*);
                                     },
                                     else => {
-                                        try a.emit_error(Location.empty,
-                                            "parameter '{s}' has optional type '?{s}' which cannot appear in a native call signature",
-                                            .{ param.name, @tagName(id) });
+                                        try a.emit_error(Location.empty, "parameter '{s}' has optional type '?{s}' which cannot appear in a native call signature", .{ param.name, @tagName(id) });
                                     },
                                 },
                                 .ptr => |ptr| switch (ptr.size) {
@@ -633,9 +628,7 @@ const Analyzer = struct {
                                     try list.append(a.allocator, param.*);
                                 },
                                 else => {
-                                    try a.emit_error(Location.empty,
-                                        "parameter '{s}' has optional type '?{s}' which cannot appear in a native call signature",
-                                        .{ param.name, @tagName(inner) });
+                                    try a.emit_error(Location.empty, "parameter '{s}' has optional type '?{s}' which cannot appear in a native call signature", .{ param.name, @tagName(inner) });
                                 },
                             }
                         },
@@ -901,6 +894,16 @@ const Analyzer = struct {
         return error.FatalAnalysisError;
     }
 
+    fn fail_if_errors(ana: *Analyzer, errors_out: *std.ArrayList(AnalysisError)) !void {
+        if (ana.errors.items.len == 0) {
+            return;
+        }
+        for (ana.errors.items) |msg| {
+            try errors_out.append(ana.allocator, .{ .message = msg });
+        }
+        return error.AnalysisFailed;
+    }
+
     fn emit_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{OutOfMemory}!void {
         const msg = try std.fmt.allocPrint(
             ana.allocator,
@@ -920,7 +923,6 @@ const Analyzer = struct {
     };
 
     fn map_node(ana: *Analyzer, node: syntax.Node) MapError!model.Declaration {
-
         return switch (node.type) {
             .declaration => try ana.map_decl(node),
             .typedef => try ana.map_typedef(node),
@@ -1019,7 +1021,21 @@ const Analyzer = struct {
         return doc_comment_parser.parse_into_arena(&arena, raw_lines, .{
             .ref_lookup = lookup_doc_comment_ref,
             .ref_lookup_context = @ptrCast(ana),
-        });
+        }) catch |err| switch (err) {
+            error.OutOfMemory => |e| return e,
+            error.UnclosedCodeFence,
+            error.UnclosedInlineReference,
+            error.UnclosedInlineCode,
+            error.UnclosedInlineLink,
+            error.MalformedInlineLink,
+            error.UnclosedAutolink,
+            => |parse_err| {
+                try ana.emit_error(Location.empty, "invalid doc comment markup: {s}", .{
+                    doc_comment_parser.describe_parse_error(parse_err),
+                });
+                return .empty;
+            },
+        };
     }
 
     fn lookup_doc_comment_ref(context: ?*anyopaque, allocator: std.mem.Allocator, local_qn: []const u8) error{OutOfMemory}!?[]const u8 {
@@ -1067,20 +1083,12 @@ const Analyzer = struct {
             return null;
         }
 
-        if (ana.resolve_scope_prefix(declared_scope, local_parts.items)) |resolved| {
-            const resolved_fqn = try ana.scope_to_fqn_string(allocator, resolved.scope);
-            if (resolved.matched_parts == local_parts.items.len) {
-                return @as(?[]const u8, resolved_fqn);
-            }
-
-            var full: std.ArrayList(u8) = .empty;
-            defer full.deinit(allocator);
-            try full.appendSlice(allocator, resolved_fqn);
-            for (local_parts.items[resolved.matched_parts..]) |part| {
-                try full.append(allocator, '.');
-                try full.appendSlice(allocator, part);
-            }
-            return @as(?[]const u8, try full.toOwnedSlice(allocator));
+        if (try ana.resolve_prefixed_doc_reference(
+            allocator,
+            declared_scope,
+            local_parts.items,
+        )) |resolved| {
+            return resolved;
         }
 
         if (try ana.resolve_contained_doc_reference(
@@ -1100,12 +1108,12 @@ const Analyzer = struct {
         return null;
     }
 
-    const ScopePrefixMatch = struct {
-        scope: *Scope,
-        matched_parts: usize,
-    };
-
-    fn resolve_scope_prefix(ana: *Analyzer, declared_scope: []const []const u8, local_parts: []const []const u8) ?ScopePrefixMatch {
+    fn resolve_prefixed_doc_reference(
+        ana: *Analyzer,
+        allocator: std.mem.Allocator,
+        declared_scope: []const []const u8,
+        local_parts: []const []const u8,
+    ) error{OutOfMemory}!?[]const u8 {
         var search_scope: ?*Scope = ana.resolve_declared_scope_or_parent(declared_scope);
 
         while (search_scope) |base_scope| : (search_scope = base_scope.parent) {
@@ -1118,14 +1126,50 @@ const Analyzer = struct {
             }
 
             if (matched_parts > 0) {
-                return .{
-                    .scope = resolved_scope,
-                    .matched_parts = matched_parts,
-                };
+                if (try ana.build_doc_reference_from_scope(
+                    allocator,
+                    resolved_scope,
+                    local_parts[matched_parts..],
+                )) |resolved| {
+                    return resolved;
+                }
             }
         }
 
         return null;
+    }
+
+    fn build_doc_reference_from_scope(
+        ana: *Analyzer,
+        allocator: std.mem.Allocator,
+        scope: *Scope,
+        remaining_parts: []const []const u8,
+    ) error{OutOfMemory}!?[]const u8 {
+        const scope_fqn = try ana.scope_to_fqn_string(allocator, scope);
+        errdefer allocator.free(scope_fqn);
+
+        if (remaining_parts.len == 0) {
+            return scope_fqn;
+        }
+
+        if (remaining_parts.len != 1) {
+            return null;
+        }
+
+        const link = scope.link orelse return null;
+        if (!ana.link_contains_doc_reference_target(link, remaining_parts[0])) {
+            return null;
+        }
+
+        var full: std.ArrayList(u8) = .empty;
+        defer full.deinit(allocator);
+        if (scope_fqn.len > 0) {
+            try full.appendSlice(allocator, scope_fqn);
+            try full.append(allocator, '.');
+        }
+        try full.appendSlice(allocator, remaining_parts[0]);
+        allocator.free(scope_fqn);
+        return @as(?[]const u8, try full.toOwnedSlice(allocator));
     }
 
     fn resolve_declared_scope_or_parent(ana: *Analyzer, declared_scope: []const []const u8) ?*Scope {
@@ -1639,9 +1683,7 @@ const Analyzer = struct {
         }
 
         if (mode == .syscall and outputs.fields.items.len > 1) {
-            return ana.fatal_error(info.location,
-                "syscall '{s}' has {d} 'out' parameters, but syscalls can have at most one",
-                .{ info.full_name[info.full_name.len - 1], outputs.fields.items.len });
+            return ana.fatal_error(info.location, "syscall '{s}' has {d} 'out' parameters, but syscalls can have at most one", .{ info.full_name[info.full_name.len - 1], outputs.fields.items.len });
         }
 
         const output: model.GenericCall = .{
@@ -2055,9 +2097,7 @@ const Analyzer = struct {
                         return constant.value;
                     }
                 }
-                return ana.fatal_error(Location.empty,
-                    "constant '{s}' must be defined before it is used here",
-                    .{symbol_name});
+                return ana.fatal_error(Location.empty, "constant '{s}' must be defined before it is used here", .{symbol_name});
             },
             .uint => |int| .{ .int = int },
             .compound => |compound| {
@@ -2430,3 +2470,75 @@ const DotJoin = struct {
         }
     }
 };
+
+test "validate_constraints failures are surfaced through fail_if_errors" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var analyzer: Analyzer = .{
+        .allocator = allocator,
+        .scope_stack = .empty,
+        .scope_map = .init(allocator),
+        .errors = .empty,
+        .root = .empty,
+        .structs = .init(allocator),
+        .unions = .init(allocator),
+        .enums = .init(allocator),
+        .bitstructs = .init(allocator),
+        .syscalls = .init(allocator),
+        .async_calls = .init(allocator),
+        .resources = .init(allocator),
+        .constants = .init(allocator),
+        .types = .init(allocator),
+        .uid_db = null,
+    };
+
+    const u8_type = try analyzer.types.append(.{ .well_known = .u8 });
+    const ptr_type = try analyzer.types.append(.{ .ptr = .{
+        .child = u8_type,
+        .is_const = true,
+        .alignment = null,
+        .size = .unknown,
+    } });
+
+    const logic_fields = try allocator.alloc(model.StructField, 1);
+    logic_fields[0] = .{
+        .docs = .empty,
+        .name = "actual",
+        .type = u8_type,
+        .default = null,
+        .role = .default,
+    };
+
+    const native_fields = try allocator.alloc(model.StructField, 1);
+    native_fields[0] = .{
+        .docs = .empty,
+        .name = "broken_ptr",
+        .type = ptr_type,
+        .default = null,
+        .role = .{ .slice_ptr = "missing" },
+    };
+
+    _ = try analyzer.structs.append(.{
+        .uid = @enumFromInt(1),
+        .docs = .empty,
+        .full_qualified_name = &.{"Broken"},
+        .logic_fields = logic_fields,
+        .native_fields = native_fields,
+    });
+
+    try analyzer.validate_constraints();
+    try std.testing.expectEqual(@as(usize, 1), analyzer.errors.items.len);
+
+    var errors_out: std.ArrayList(AnalysisError) = .empty;
+    defer errors_out.deinit(allocator);
+
+    try std.testing.expectError(error.AnalysisFailed, analyzer.fail_if_errors(&errors_out));
+    try std.testing.expectEqual(@as(usize, 1), errors_out.items.len);
+    try std.testing.expect(std.mem.indexOf(
+        u8,
+        errors_out.items[0].message,
+        "native field 'broken_ptr' (slice_ptr) references unknown logic field 'missing'",
+    ) != null);
+}

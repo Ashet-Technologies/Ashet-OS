@@ -78,7 +78,7 @@ namespace resources {
     /// NOTE: This immediately triggers tether chains and destroys
     ///       all tethered resources as well.
     ///
-    /// NOTE: `destroy` always succeeds; destroying an invalid or already-destroyed handle is a no-op.
+    /// NOTE: @`destroy` always succeeds; destroying an invalid or already-destroyed handle is a no-op.
     syscall destroy {
         in @"resource": SystemResource;
     }
@@ -95,7 +95,7 @@ namespace resources {
         /// The resource will be bound weakly to the process.
         item weak = 2;
 
-        /// This operation ensures that the binding is at least `weak`,
+        /// This operation ensures that the binding is at least @`weak`,
         /// but may never be downgraded from `strong`.
         ///
         /// This gives the ability to ensure a process can definitely access a resource
@@ -1175,9 +1175,9 @@ namespace process {
             /// RANGE: 0 .. 12
             in    alignment_shift: u8;
 
-            /// A non-`null` pointer that points to exactly @ref size bytes.
+            /// A non-`null` pointer that points to exactly @`size` bytes.
             ///
-            /// NOTE: In practise, this might point to more than @ref size bytes,
+            /// NOTE: In practise, this might point to more than @`size` bytes,
             ///       but the code must not assume *any* excess bytes may exist.
             out   pointer:    [*]u8;
 
@@ -2174,6 +2174,11 @@ namespace input {
         field product_id:    u16;
     }
 
+    struct DeviceMetadataLengths {
+    field name_len:      usize;
+    field unique_id_len: usize;
+}
+
     /// Queries metadata about an input device.
     ///
     /// If `name_buf` is `null`, no name is written but `name_len` is still returned.
@@ -2192,8 +2197,7 @@ namespace input {
         /// If not `null`, the kernel will fill this structure with metadata for the device.
         in  descriptor:    ?*DeviceDescriptor;
 
-        out name_len:      usize;
-        out unique_id_len: usize;
+        out lengths: DeviceMetadataLengths;
 
         /// `id` is not valid anymore (e.g. device removed) or was never valid.
         error InvalidDevice;
@@ -4352,24 +4356,24 @@ namespace network {
             error InvalidInterface;
         }
 
-        /// Completes when a link changes its state.
-        async_call WaitForLinkState {
-            /// The interface for which a link state shall be awaited.
-            in interface: InterfaceId;
+        //? /// Completes when a link changes its state.
+        //? async_call WaitForLinkState {
+        //?     /// The interface for which a link state shall be awaited.
+        //?     in interface: InterfaceId;
 
-            /// If not `null`, the operation completes when the link becomes `desired`.
-            /// Otherwise, the operation completes on the next interface state change.
-            in desired: ?LinkState;
+        //?     /// If not `null`, the operation completes when the link becomes `desired`.
+        //?     /// Otherwise, the operation completes on the next interface state change.
+        //?     in desired: ?LinkState;
 
-            /// The new link state.
-            out current: LinkState;
+        //?     /// The new link state.
+        //?     out current: LinkState;
 
-            /// `interface` is not a valid interface id (anymore).
-            error InvalidInterface;
+        //?     /// `interface` is not a valid interface id (anymore).
+        //?     error InvalidInterface;
 
-            /// The underlying `interface` was removed during this operation.
-            error Gone;
-        }
+        //?     /// The underlying `interface` was removed during this operation.
+        //?     error Gone;
+        //? }
 
         /// Sends an ICMP or ICMPv6 echo request.
         ///
@@ -5750,25 +5754,25 @@ namespace network {
             error SubsystemDisabled;
         }
 
-        /// Completes when new lease was set, old lease was released or expired.
-        ///
-        /// NOTE: Multiple `WaitForUpdate` can be issued which will all complete at the
-        ///       same time when the status changes.
-        async_call WaitForUpdate {
-            /// The interface for which a new DHCP state shall be awaited.
-            in  interface: link.InterfaceId;
+        //? /// Completes when new lease was set, old lease was released or expired.
+        //? ///
+        //? /// NOTE: Multiple `WaitForUpdate` can be issued which will all complete at the
+        //? ///       same time when the status changes.
+        //? async_call WaitForUpdate {
+        //?     /// The interface for which a new DHCP state shall be awaited.
+        //?     in  interface: link.InterfaceId;
 
-            /// The new lease or `null` if the lease was removed.
-            out info: ?Lease;
+        //?     /// The new lease or `null` if the lease was removed.
+        //?     out info: ?Lease;
 
-            /// `interface` is not a valid interface id (anymore).
-            error InvalidInterface;
+        //?     /// `interface` is not a valid interface id (anymore).
+        //?     error InvalidInterface;
 
-            /// The underlying `interface` was removed during this operation.
-            error Gone;
+        //?     /// The underlying `interface` was removed during this operation.
+        //?     error Gone;
 
-            error SystemResources;
-        }
+        //?     error SystemResources;
+        //? }
     }
 
     namespace dhcp6 {
@@ -7515,7 +7519,7 @@ namespace gui {
         field uuid: UUID;
 
         /// Number of bytes allocated in a Widget for this widget type.
-        /// See @ref gui.get_widget_data function for further information.
+        /// See @`gui.get_widget_data` function for further information.
         field data_size: usize;
 
         field flags: Flags;
@@ -7606,7 +7610,7 @@ namespace gui {
 
     struct DesktopDescriptor {
         /// Number of bytes allocated in a Window for this desktop.
-        /// See @ref gui.get_desktop_data function for further information.
+        /// See @`gui.get_desktop_data` function for further information.
         field window_data_size: usize;
 
         /// A function pointer to the event handler of a desktop.
@@ -7695,13 +7699,13 @@ namespace gui {
 
     /// Dummy struct to satisfy the parser.
     struct MouseEvent {
-        field event_type: Type;
-    };
+        field event_type: input.InputEvent.Type;
+    }
 
     /// Dummy struct to satisfy the parser.
     struct KeyboardEvent {
-        field event_type: Type;
-    };
+        field event_type: input.InputEvent.Type;
+    }
 
     union WidgetEvent {
         field event_type: Type;
@@ -8696,80 +8700,80 @@ namespace io {
             error ResourceBusy;
         }
 
-        ///
-        /// Changes the configuration of a serial port and returns the new configuration.
-        ///
-        /// This function can also be used to query the current configuration by requesting no changes.
-        ///
-        async_call configure {
-            in  port: SerialPort;
+        //? ///
+        //? /// Changes the configuration of a serial port and returns the new configuration.
+        //? ///
+        //? /// This function can also be used to query the current configuration by requesting no changes.
+        //? ///
+        //? async_call configure {
+        //?     in  port: SerialPort;
 
-            in baud_rate:       ?u32;
-            in word_size:       ?u8;
-            in stop_bits:       ?StopBits;
-            in parity:          ?Parity;
-            in control_flow:    ?ControlFlow;
+        //?     in baud_rate:       ?u32;
+        //?     in word_size:       ?u8;
+        //?     in stop_bits:       ?StopBits;
+        //?     in parity:          ?Parity;
+        //?     in control_flow:    ?ControlFlow;
 
-            /// Selects which software control flow words control the transmitter
-            /// activity.
-            ///
-            /// NOTE: This is usually the same as `sw_control_flow_tx`.
-            in sw_control_flow_rx: ?SoftwareControlFlow;
+        //?     /// Selects which software control flow words control the transmitter
+        //?     /// activity.
+        //?     ///
+        //?     /// NOTE: This is usually the same as `sw_control_flow_tx`.
+        //?     in sw_control_flow_rx: ?SoftwareControlFlow;
 
-            /// Selects which software control flow words are transmitted when
-            /// the own receive buffer is full.
-            ///
-            /// NOTE: This is usually the same as `sw_control_flow_rx`.
-            in sw_control_flow_tx: ?SoftwareControlFlow;
+        //?     /// Selects which software control flow words are transmitted when
+        //?     /// the own receive buffer is full.
+        //?     ///
+        //?     /// NOTE: This is usually the same as `sw_control_flow_rx`.
+        //?     in sw_control_flow_tx: ?SoftwareControlFlow;
 
-            in acceptable_baud_error: f32;
+        //?     in acceptable_baud_error: f32;
 
-            out current_baud_rate:       u32;
-            out current_data_bits:       u8;
-            out current_stop_bits:       StopBits;
-            out current_parity:          Parity;
-            out current_control_flow:    ControlFlow;
-            out current_sw_control_flow_rx: SoftwareControlFlow;
-            out current_sw_control_flow_tx: SoftwareControlFlow;
+        //?     out current_baud_rate:       u32;
+        //?     out current_data_bits:       u8;
+        //?     out current_stop_bits:       StopBits;
+        //?     out current_parity:          Parity;
+        //?     out current_control_flow:    ControlFlow;
+        //?     out current_sw_control_flow_rx: SoftwareControlFlow;
+        //?     out current_sw_control_flow_tx: SoftwareControlFlow;
 
-            error InvalidHandle;
+        //?     error InvalidHandle;
 
-            /// The actual baud rate diverges more than `acceptable_baud_error` from the requested baud rate.
-            error ImpreciseBaudRate;
+        //?     /// The actual baud rate diverges more than `acceptable_baud_error` from the requested baud rate.
+        //?     error ImpreciseBaudRate;
 
-            /// The requested word size is not supported by this serial port.
-            error UnsupportedDataBits;
+        //?     /// The requested word size is not supported by this serial port.
+        //?     error UnsupportedDataBits;
 
-            /// The requested number of stop bits is not supported by this serial port.
-            error UnsupportedStopBits;
+        //?     /// The requested number of stop bits is not supported by this serial port.
+        //?     error UnsupportedStopBits;
 
-            /// The requested parity is not supported by this serial port.
-            error UnsupportedParity;
+        //?     /// The requested parity is not supported by this serial port.
+        //?     error UnsupportedParity;
 
-            /// The requested control flow (or its configuration) is not supported by this serial port.
-            error UnsupportedControlFlow;
-        }
+        //?     /// The requested control flow (or its configuration) is not supported by this serial port.
+        //?     error UnsupportedControlFlow;
+        //? }
 
-        /// Changes the output control lanes of the serial port.
-        async_call control {
-            in  port:    SerialPort;
+        //? /// Changes the output control lanes of the serial port.
+        //? async_call control {
+        //?     in  port:    SerialPort;
 
-            /// The new state that should be applied for DTR (Data Terminal Ready).
-            in  dtr: ?bool;
+        //?     /// The new state that should be applied for DTR (Data Terminal Ready).
+        //?     in  dtr: ?bool;
 
-            /// The new state that should be applied for RTS (Request To Send).
-            ///
-            /// NOTE: This is also called `RTR` when used for modern hardware control flow.
-            in  rts: ?bool;
+        //?     /// The new state that should be applied for RTS (Request To Send).
+        //?     ///
+        //?     /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+        //?     in  rts: ?bool;
 
-            error InvalidHandle;
+        //?     error InvalidHandle;
 
-            /// The serial port does not support changing the control flow mode.
-            error Unsupported;
+        //?     /// The serial port does not support changing the control flow mode.
+        //?     error Unsupported;
 
-            /// The control lanes cannot be changed as hardware control flow is active.
-            error ControlFlowActive;
-        }
+        //?     /// The control lanes cannot be changed as hardware control flow is active.
+        //?     error ControlFlowActive;
+        //? }
 
         /// Reads all control lanes of the serial port.
         async_call query_control {

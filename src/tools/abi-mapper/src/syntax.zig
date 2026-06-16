@@ -98,6 +98,20 @@ fn matchDecimalDigits(str: []const u8) ?usize {
     return i;
 }
 
+fn parse_number_token(text: []const u8) u64 {
+    var stripped_buf: [128]u8 = undefined;
+    std.debug.assert(text.len <= stripped_buf.len);
+
+    var stripped_len: usize = 0;
+    for (text) |c| {
+        if (c != '_') {
+            stripped_buf[stripped_len] = c;
+            stripped_len += 1;
+        }
+    }
+    return std.fmt.parseInt(u64, stripped_buf[0..stripped_len], 0) catch unreachable;
+}
+
 pub fn match_identifier(str: []const u8) ?usize {
     const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const all_chars = first_char ++ "0123456789.";
@@ -479,15 +493,7 @@ pub const Parser = struct {
 
         const tok = try parser.accept(.number);
 
-        var stripped_buf: [80]u8 = undefined;
-        var stripped_len: usize = 0;
-        for (tok.text) |c| {
-            if (c != '_') {
-                stripped_buf[stripped_len] = c;
-                stripped_len += 1;
-            }
-        }
-        const num = std.fmt.parseInt(u64, stripped_buf[0..stripped_len], 0) catch unreachable;
+        const num = parse_number_token(tok.text);
 
         return .{
             .uint = num,
@@ -527,7 +533,7 @@ pub const Parser = struct {
             const num_tok = try parser.accept(.number);
             try parser.expect(.@")");
 
-            break :blk std.fmt.parseInt(u64, num_tok.text, 0) catch unreachable;
+            break :blk parse_number_token(num_tok.text);
         } else null;
 
         const child = try parser.accept_type();

@@ -14,6 +14,26 @@ pub const ParseOptions = struct {
     ref_lookup_context: ?*anyopaque = null,
 };
 
+pub const ParseError = error{
+    UnclosedCodeFence,
+    UnclosedInlineReference,
+    UnclosedInlineCode,
+    UnclosedInlineLink,
+    MalformedInlineLink,
+    UnclosedAutolink,
+};
+
+pub fn describe_parse_error(err: ParseError) []const u8 {
+    return switch (err) {
+        error.UnclosedCodeFence => "unclosed fenced code block",
+        error.UnclosedInlineReference => "unclosed inline reference",
+        error.UnclosedInlineCode => "unclosed inline code span",
+        error.UnclosedInlineLink => "unclosed inline link",
+        error.MalformedInlineLink => "malformed inline link",
+        error.UnclosedAutolink => "unclosed autolink",
+    };
+}
+
 /// A parsed doc comment together with the arena that owns its memory.
 /// Call deinit() when the DocComment is no longer needed.
 pub const ParsedDocComment = struct {
@@ -29,7 +49,7 @@ pub const ParsedDocComment = struct {
 /// The caller owns the result and must call deinit() to release memory.
 ///
 /// Each raw line should be `token.text[3..]` where token.text starts with `///`.
-pub fn parse(backing_allocator: std.mem.Allocator, raw_lines: []const []const u8, options: ParseOptions) !ParsedDocComment {
+pub fn parse(backing_allocator: std.mem.Allocator, raw_lines: []const []const u8, options: ParseOptions) (ParseError || error{OutOfMemory})!ParsedDocComment {
     var result: ParsedDocComment = .{
         .arena = std.heap.ArenaAllocator.init(backing_allocator),
         .comment = undefined,
@@ -43,7 +63,7 @@ pub fn parse(backing_allocator: std.mem.Allocator, raw_lines: []const []const u8
 /// The caller owns the arena and is responsible for its lifetime.
 ///
 /// Each raw line should be `token.text[3..]` where token.text starts with `///`.
-pub fn parse_into_arena(arena: *std.heap.ArenaAllocator, raw_lines: []const []const u8, options: ParseOptions) !DocComment {
+pub fn parse_into_arena(arena: *std.heap.ArenaAllocator, raw_lines: []const []const u8, options: ParseOptions) (ParseError || error{OutOfMemory})!DocComment {
     if (raw_lines.len == 0) return .empty;
 
     var ctx: ParseContext = .{
@@ -61,7 +81,7 @@ const ParseContext = struct {
     ref_lookup: ?RefLookupFn,
     ref_lookup_context: ?*anyopaque,
 
-    fn parse_doc(ctx: *ParseContext, raw_lines: []const []const u8) !DocComment {
+    fn parse_doc(ctx: *ParseContext, raw_lines: []const []const u8) (ParseError || error{OutOfMemory})!DocComment {
         // Normalize lines: strip one optional leading space (the /// separator), right-trim.
         var norm_lines: std.ArrayList([]const u8) = .empty;
         defer norm_lines.deinit(ctx.allocator);
@@ -185,6 +205,10 @@ const ParseContext = struct {
             try para_lines.append(ctx.allocator, std.mem.trimLeft(u8, line, " \t"));
         }
 
+        if (in_fence) {
+            return error.UnclosedCodeFence;
+        }
+
         // Flush whatever remains
         try ctx.flush_acc(&blocks, &acc_kind, &para_lines, &list_items);
 
@@ -204,7 +228,7 @@ const ParseContext = struct {
         acc_kind: *AccKind,
         para_lines: *std.ArrayList([]const u8),
         list_items: *std.ArrayList(std.ArrayList([]const u8)),
-    ) !void {
+    ) (ParseError || error{OutOfMemory})!void {
         switch (acc_kind.*) {
             .none => {},
             .paragraph => {
@@ -233,7 +257,65 @@ const ParseContext = struct {
         acc_kind.* = .none;
     }
 
-    fn parse_inline(ctx: *ParseContext, text: []const u8) ![]const DocComment.Inline {
+    fn is_escapable_inline_char(c: u8) bool {
+        return switch (c) {
+            '`', '*', '[', '<', '@', '\\' => true,
+            else => false,
+        };
+    }
+
+    fn find_inline_code_end(_: *ParseContext, text: []const u8, code_start: usize) ?usize {
+        var i = code_start;
+        while (i < text.len) {
+            if (text[i] == '\\' and i + 1 < text.len and is_escapable_inline_char(text[i + 1])) {
+                if (text[i + 1] == '`') {
+                    if (i + 2 < text.len and text[i + 2] == '`') {
+                        i += 2;
+                        continue;
+                    }
+                    return i + 1;
+                }
+                i += 2;
+                continue;
+            }
+            if (text[i] == '`') {
+                return i;
+            }
+            i += 1;
+        }
+        return null;
+    }
+
+    fn unescape_inline_text(ctx: *ParseContext, text: []const u8) error{OutOfMemory}![]const u8 {
+        var i: usize = 0;
+        while (i + 1 < text.len) : (i += 1) {
+            if (text[i] == '\\' and is_escapable_inline_char(text[i + 1])) break;
+        }
+        if (i + 1 >= text.len) {
+            return text;
+        }
+
+        var unescaped: std.ArrayList(u8) = .empty;
+        defer unescaped.deinit(ctx.allocator);
+
+        var text_start: usize = 0;
+        i = 0;
+        while (i < text.len) {
+            if (i + 1 < text.len and text[i] == '\\' and is_escapable_inline_char(text[i + 1])) {
+                try unescaped.appendSlice(ctx.allocator, text[text_start..i]);
+                try unescaped.append(ctx.allocator, text[i + 1]);
+                i += 2;
+                text_start = i;
+                continue;
+            }
+            i += 1;
+        }
+
+        try unescaped.appendSlice(ctx.allocator, text[text_start..]);
+        return unescaped.toOwnedSlice(ctx.allocator);
+    }
+
+    fn parse_inline(ctx: *ParseContext, text: []const u8) (ParseError || error{OutOfMemory})![]const DocComment.Inline {
         var result: std.ArrayList(DocComment.Inline) = .empty;
         defer result.deinit(ctx.allocator);
 
@@ -246,11 +328,7 @@ const ParseContext = struct {
             // Escape sequence: \` \* \[ \< \@ \\
             if (c == '\\' and i + 1 < text.len) {
                 const next = text[i + 1];
-                const escapable = switch (next) {
-                    '`', '*', '[', '<', '@', '\\' => true,
-                    else => false,
-                };
-                if (escapable) {
+                if (is_escapable_inline_char(next)) {
                     if (i > text_start) {
                         try result.append(ctx.allocator, .{ .text = .{ .value = text[text_start..i] } });
                     }
@@ -277,8 +355,7 @@ const ParseContext = struct {
                     i = ref_start + rel_end + 1;
                     text_start = i;
                 } else {
-                    // Unmatched backtick — treat as literal text
-                    i += 1;
+                    return error.UnclosedInlineReference;
                 }
                 continue;
             }
@@ -289,13 +366,13 @@ const ParseContext = struct {
                     try result.append(ctx.allocator, .{ .text = .{ .value = text[text_start..i] } });
                 }
                 const code_start = i + 1;
-                if (std.mem.indexOfScalar(u8, text[code_start..], '`')) |rel_end| {
-                    const code_val = text[code_start .. code_start + rel_end];
+                if (ctx.find_inline_code_end(text, code_start)) |code_end| {
+                    const code_val = try ctx.unescape_inline_text(text[code_start..code_end]);
                     try result.append(ctx.allocator, .{ .code = .{ .value = code_val } });
-                    i = code_start + rel_end + 1;
+                    i = code_end + 1;
                     text_start = i;
                 } else {
-                    i += 1;
+                    return error.UnclosedInlineCode;
                 }
                 continue;
             }
@@ -338,18 +415,18 @@ const ParseContext = struct {
             if (c == '[') {
                 if (std.mem.indexOfScalarPos(u8, text, i + 1, ']')) |close_bracket| {
                     if (close_bracket + 1 < text.len and text[close_bracket + 1] == '(') {
-                        if (std.mem.indexOfScalarPos(u8, text, close_bracket + 2, ')')) |close_paren| {
-                            if (i > text_start) {
-                                try result.append(ctx.allocator, .{ .text = .{ .value = text[text_start..i] } });
-                            }
-                            const display = text[i + 1 .. close_bracket];
-                            const url = text[close_bracket + 2 .. close_paren];
-                            const content = try ctx.parse_inline(display);
-                            try result.append(ctx.allocator, .{ .link = .{ .url = url, .content = content } });
-                            i = close_paren + 1;
-                            text_start = i;
-                            continue;
+                        const close_paren = std.mem.indexOfScalarPos(u8, text, close_bracket + 2, ')') orelse
+                            return error.UnclosedInlineLink;
+                        if (i > text_start) {
+                            try result.append(ctx.allocator, .{ .text = .{ .value = text[text_start..i] } });
                         }
+                        const display = text[i + 1 .. close_bracket];
+                        const url = text[close_bracket + 2 .. close_paren];
+                        const content = try ctx.parse_inline(display);
+                        try result.append(ctx.allocator, .{ .link = .{ .url = url, .content = content } });
+                        i = close_paren + 1;
+                        text_start = i;
+                        continue;
                     }
                 }
             }
@@ -367,18 +444,18 @@ const ParseContext = struct {
                     }
                 }
                 if (matched_scheme) {
-                    if (std.mem.indexOfScalarPos(u8, text, i + 1, '>')) |close_angle| {
-                        if (i > text_start) {
-                            try result.append(ctx.allocator, .{ .text = .{ .value = text[text_start..i] } });
-                        }
-                        const url = text[i + 1 .. close_angle];
-                        const content = try ctx.allocator.alloc(DocComment.Inline, 1);
-                        content[0] = .{ .text = .{ .value = url } };
-                        try result.append(ctx.allocator, .{ .link = .{ .url = url, .content = content } });
-                        i = close_angle + 1;
-                        text_start = i;
-                        continue;
+                    const close_angle = std.mem.indexOfScalarPos(u8, text, i + 1, '>') orelse
+                        return error.UnclosedAutolink;
+                    if (i > text_start) {
+                        try result.append(ctx.allocator, .{ .text = .{ .value = text[text_start..i] } });
                     }
+                    const url = text[i + 1 .. close_angle];
+                    const content = try ctx.allocator.alloc(DocComment.Inline, 1);
+                    content[0] = .{ .text = .{ .value = url } };
+                    try result.append(ctx.allocator, .{ .link = .{ .url = url, .content = content } });
+                    i = close_angle + 1;
+                    text_start = i;
+                    continue;
                 }
             }
 

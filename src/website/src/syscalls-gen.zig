@@ -879,8 +879,8 @@ const DocFmt = struct {
     fn format_inlines(self: DocFmt, inlines: []const model.DocComment.Inline, writer: *std.Io.Writer) !void {
         for (inlines) |span| {
             switch (span) {
-                .text => |text| try writer.writeAll(text.value),
-                .code => |code| try writer.print("<code>{s}</code>", .{code.value}),
+                .text => |text| try writer.print("{f}", .{fmt_html(text.value)}),
+                .code => |code| try writer.print("<code>{f}</code>", .{fmt_html(code.value)}),
                 .emphasis => |emphasis| {
                     try writer.writeAll("<em>");
                     try self.format_inlines(emphasis.content, writer);
