@@ -95,6 +95,12 @@ jobs:
             zig-pkg-cache-${{ env.ZIG_VERSION }}-
           enableCrossOsArchive: true
 
+      - name: Install Linux GUI dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+
       - name: Build Tools
         run: |
           zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" tools
