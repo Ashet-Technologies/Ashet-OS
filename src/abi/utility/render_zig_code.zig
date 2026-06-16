@@ -857,7 +857,7 @@ const ZigRenderer = struct {
             if (arc.native_outputs.len == 1) {
                 assert_unpadded_name(arc.native_outputs[0].name);
                 try zr.writer.writeln("");
-                try zr.writer.println("pub fn get_output(arc: *const @This()) !*const @FieldType(Outputs, \"{s}\") {{", .{arc.native_outputs[0].name});
+                try zr.writer.println("pub fn get_output(arc: *const @This()) !*const @FieldType(Outputs, \"{f}\") {{", .{fmt_escapes(arc.native_outputs[0].name)});
                 zr.writer.indent();
                 try zr.writer.writeln("try arc.check_error();");
                 try zr.writer.println("return &arc.outputs.{f};", .{fmt_id(arc.native_outputs[0].name)});
