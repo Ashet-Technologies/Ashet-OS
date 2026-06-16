@@ -3,6 +3,7 @@ name: Build
 env:
   ZIG_VERSION: "0.15.2"
   ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-global-cache
+  ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache
 
 on:
   push:
@@ -54,6 +55,16 @@ jobs:
         run: |
           zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" ${{ matrix.platform }}
 
+      - name: Upload .zig-cache on failure
+        uses: actions/upload-artifact@v4
+        if: ${{ failure() && (matrix.os == 'windows-latest' || matrix.os == 'macos-latest') }}
+        with:
+          name: zig-cache-build-${{ matrix.os }}-${{ matrix.platform }}
+          path: ${{ env.ZIG_LOCAL_CACHE_DIR }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload disk image
         uses: actions/upload-artifact@v4
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -104,6 +115,16 @@ jobs:
       - name: Build Tools
         run: |
           zig build --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" tools
+
+      - name: Upload .zig-cache on failure
+        uses: actions/upload-artifact@v4
+        if: ${{ failure() && (matrix.os == 'windows-latest' || matrix.os == 'macos-latest') }}
+        with:
+          name: zig-cache-tools-${{ matrix.os }}
+          path: ${{ env.ZIG_LOCAL_CACHE_DIR }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload tools
         uses: actions/upload-artifact@v4
