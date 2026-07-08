@@ -14,7 +14,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_data
     var analyzer: Analyzer = .{
         .allocator = allocator,
         .scope_stack = .empty,
-        .scope_map = .init(allocator),
+        .scope_map = .empty,
         .errors = .empty,
 
         .root = .empty,
@@ -31,7 +31,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_data
         .uid_db = uid_database,
     };
 
-    try analyzer.scope_map.put(&.{}, &analyzer.root_scope);
+    try analyzer.scope_map.put(allocator, &.{}, &analyzer.root_scope);
 
     try analyzer.map(document);
     try analyzer.resolve_doc_comment_refs();
@@ -100,7 +100,7 @@ const ScopeContext = struct {
 const Analyzer = struct {
     allocator: std.mem.Allocator,
     scope_stack: std.ArrayList([]const u8),
-    scope_map: std.ArrayHashMap([]const []const u8, *Scope, ScopeContext, true),
+    scope_map: std.array_hash_map.Custom([]const []const u8, *Scope, ScopeContext, true),
     errors: std.ArrayList([]const u8),
 
     root_scope: Scope = .{
@@ -203,7 +203,7 @@ const Analyzer = struct {
         const scope_name = try ana.allocator.dupe([]const u8, ana.scope_stack.items);
 
         if (inserted) {
-            try ana.scope_map.putNoClobber(scope_name, scope);
+            try ana.scope_map.putNoClobber(ana.allocator, scope_name, scope);
         }
 
         return .{ scope_name, scope };
@@ -2087,12 +2087,12 @@ const Analyzer = struct {
                     }
                     // Also match fully qualified dot-joined name
                     var buf: [256]u8 = undefined;
-                    var fbs = std.io.fixedBufferStream(&buf);
+                    var writer: std.Io.Writer = .fixed(&buf);
                     for (constant.full_qualified_name, 0..) |part, i| {
-                        if (i > 0) fbs.writer().writeByte('.') catch {};
-                        fbs.writer().writeAll(part) catch {};
+                        if (i > 0) writer.writeByte('.') catch {};
+                        writer.writeAll(part) catch {};
                     }
-                    const fqn_str = fbs.getWritten();
+                    const fqn_str = writer.buffered();
                     if (std.mem.eql(u8, fqn_str, symbol_name)) {
                         return constant.value;
                     }
@@ -2102,17 +2102,17 @@ const Analyzer = struct {
             .uint => |int| .{ .int = int },
             .compound => |compound| {
                 var out: model.CompoundType = .{
-                    .fields = .init(ana.allocator),
+                    .fields = .empty,
                 };
-                errdefer out.fields.deinit();
+                errdefer out.fields.deinit(ana.allocator);
 
-                try out.fields.ensureTotalCapacity(compound.len);
+                try out.fields.ensureTotalCapacity(ana.allocator, compound.len);
 
-                var available_fields: std.StringArrayHashMap(void) = .init(ana.allocator);
-                defer available_fields.deinit();
+                var available_fields: std.array_hash_map.String(void) = .empty;
+                defer available_fields.deinit(ana.allocator);
 
                 for (compound) |field_init| {
-                    if (try available_fields.fetchPut(field_init.name, {}) != null) {
+                    if (try available_fields.fetchPut(ana.allocator, field_init.name, {}) != null) {
                         try ana.emit_error(field_init.location, "Duplicate field assignment '{s}'", .{field_init.name});
                         continue;
                     }
@@ -2360,7 +2360,7 @@ const Analyzer = struct {
         return .{
             .ana = ana,
             .fields = .empty,
-            .defined = .init(ana.allocator),
+            .defined = .empty,
         };
     }
 
@@ -2373,14 +2373,14 @@ const Analyzer = struct {
         return struct {
             ana: *Analyzer,
             fields: std.ArrayList(T),
-            defined: std.StringArrayHashMap(void),
+            defined: std.array_hash_map.String(void),
 
             pub fn append(col: *@This(), location: Location, item: T) !void {
                 const maybe_name: ?[]const u8 = @field(item, name_field);
                 try col.fields.append(col.ana.allocator, item);
 
                 if (maybe_name) |name| {
-                    if (try col.defined.fetchPut(name, {}) != null) {
+                    if (try col.defined.fetchPut(col.ana.allocator, name, {}) != null) {
                         try col.ana.emit_error(location, error_fmt, .{name});
                     }
                 }
@@ -2388,7 +2388,7 @@ const Analyzer = struct {
 
             pub fn resolve(col: *@This()) ![]T {
                 const result = try col.fields.toOwnedSlice(col.ana.allocator);
-                col.defined.clearAndFree();
+                col.defined.clearAndFree(col.ana.allocator);
                 return result;
             }
         };
