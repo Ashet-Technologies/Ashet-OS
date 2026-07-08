@@ -1,6 +1,7 @@
 .{
-    .name = "init",
+    .name = .init,
     .version = "0.1.0",
+    .fingerprint = 0xc674e4745df3dd80,
     .paths = .{ "build.zig", "build.zig.zon", "init.zig" },
     .dependencies = .{
         .AshetOS = .{
