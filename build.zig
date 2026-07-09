@@ -344,11 +344,11 @@ pub fn build(b: *std.Build) void {
         run_step.dependOn(&b.addFail(fail_msg.toOwnedSlice() catch @panic("out of memory")).step);
     }
 
-    {
-        const depz_step = b.step("depz", "Run depz build runner to get dependency graph.dot");
-        const run_depz = @import("depz").runDepz(b);
-        depz_step.dependOn(&run_depz.step);
-    }
+    // {
+    //     const depz_step = b.step("depz", "Run depz build runner to get dependency graph.dot");
+    //     const run_depz = @import("depz").runDepz(b);
+    //     depz_step.dependOn(&run_depz.step);
+    // }
 }
 
 const PlatformStartupConfig = struct {
@@ -502,8 +502,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-device", "virtio-blk-device,drive=disk",
 
             // we use the second serial for dumping binary data out of the system /o\
-            "-serial",
-            "file:zig-out/init-linked.bin",
+            "-serial", "file:zig-out/init-linked.bin",
 
             // "-serial",   "vc",
         },
