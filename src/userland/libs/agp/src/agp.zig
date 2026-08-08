@@ -1040,7 +1040,7 @@ pub const BufferDecoder = struct {
             error.EndOfStream => return null,
         };
 
-        const cmd = std.meta.intToEnum(CommandByte, cmd_byte) catch return error.InvalidCommand;
+        const cmd = std.enums.fromInt(CommandByte, cmd_byte) orelse return error.InvalidCommand;
 
         return switch (cmd) {
             .clear => .{
