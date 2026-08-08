@@ -9,8 +9,8 @@
     },
     .dependencies = .{
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
-            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+            .url = "git+https://github.com/der-teufel-programming/zig-args#4f4e484dc0fd5d26a96aee655972b32138f5f85d",
+            .hash = "args-0.0.0-CiLiqmHiAABlN6icC9sZHdp8HVplOXDxuUNz2VUY_K2X",
         },
     },
 }

@@ -96,8 +96,8 @@ pub fn write_log(
     std.log.defaultLog(message_level, scope, format, args);
 }
 
-fn print_usage(exe_name: ?[]const u8, target: std.fs.File) !void {
-    var file_writer = target.writer(&.{});
+fn print_usage(exe_name: ?[]const u8, io: std.Io, target: std.Io.File) !void {
+    var file_writer = target.writer(io, &.{});
     try args_parser.printHelp(
         CliOptions,
         exe_name orelse "ashet-exe",
@@ -105,35 +105,35 @@ fn print_usage(exe_name: ?[]const u8, target: std.fs.File) !void {
     );
 }
 
-fn error_and_exit(comptime fmt: []const u8, options: anytype) !noreturn {
+fn error_and_exit(comptime fmt: []const u8, options: anytype) noreturn {
     std.debug.print(fmt ++ "\n", options);
     std.process.exit(1);
 }
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     var arena_allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_allocator.deinit();
 
     const allocator = arena_allocator.allocator();
 
-    var cli_args = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, allocator, .print) catch return 1;
+    var cli_args = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, init, .print) catch return 1;
     defer cli_args.deinit();
 
     verbose_logging = cli_args.options.verbose;
 
     if (cli_args.options.help) {
-        try print_usage(cli_args.executable_name, .stdout());
+        try print_usage(cli_args.executable_name, init.io, .stdout());
         return 0;
     }
 
     const verb = cli_args.verb orelse {
-        try print_usage(cli_args.executable_name, .stderr());
+        try print_usage(cli_args.executable_name, init.io, .stderr());
         return 1;
     };
 
     return switch (verb) {
-        .convert => |options| return convert_file(allocator, cli_args.positionals, options),
-        .dump => |options| return dump_file(allocator, cli_args.positionals, options),
+        .convert => |options| return convert_file(allocator, init.io, cli_args.positionals, options),
+        .dump => |options| return dump_file(allocator, init.io, cli_args.positionals, options),
     };
 }
 
@@ -149,7 +149,12 @@ fn dump_header_slot(stream: anytype, prefix: []const u8, offset: u32, count: u32
     }
 }
 
-fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _options: CliVerb.DumpOptions) !u8 {
+fn dump_file(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    positionals: []const []const u8,
+    _options: CliVerb.DumpOptions,
+) !u8 {
     _ = allocator;
 
     if (positionals.len != 1) {
@@ -166,19 +171,21 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
     }
 
     var output_file_buffer: [1024]u8 = undefined;
-    var output_file_writer = std.fs.File.stdout().writer(&output_file_buffer);
+    var output_file_writer = std.Io.File.stdout().writer(io, &output_file_buffer);
     const output = &output_file_writer.interface;
 
     const input_file_path = positionals[0];
 
-    var file = try std.fs.cwd().openFile(input_file_path, .{});
-    defer file.close();
+    var file = try std.Io.Dir.cwd().openFile(io, input_file_path, .{});
+    defer file.close(io);
 
     const file_type: ashex.FileType, const file_platform: ashex.Platform, const header: ashex.Header = blk: {
         var header_chunk: [512]u8 = undefined;
 
-        try file.seekTo(0);
-        if (try file.read(&header_chunk) != 512)
+        var file_reader = file.reader(io, &.{});
+
+        try file_reader.seekTo(0);
+        if (try file_reader.interface.readSliceShort(&header_chunk) != 512)
             return error.InvalidAshexExecutable;
 
         var header_fbs: std.Io.Reader = .fixed(&header_chunk);
@@ -199,10 +206,10 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
         }
 
         const file_type_raw = try reader.takeInt(u8, .little);
-        const file_type = try std.meta.intToEnum(ashex.FileType, file_type_raw);
+        const file_type = std.enums.fromInt(ashex.FileType, file_type_raw) orelse return error.InvalidFileType;
 
         const file_platform_raw = try reader.takeInt(u8, .little);
-        const file_platform = try std.meta.intToEnum(ashex.Platform, file_platform_raw);
+        const file_platform = std.enums.fromInt(ashex.Platform, file_platform_raw) orelse return error.InvalidPlatform;
 
         try reader.discardAll(1);
 
@@ -274,7 +281,7 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
         try output.writeAll("\n");
         if (header.load_header_count > 0) {
             var buffer: [2048]u8 = undefined;
-            var file_reader = file.reader(&buffer);
+            var file_reader = file.reader(io, &buffer);
             try file_reader.seekTo(header.load_header_offset);
             const reader = &file_reader.interface;
 
@@ -299,7 +306,7 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
         try output.writeAll("\n");
         if (header.bss_header_count > 0) {
             var buffer: [2048]u8 = undefined;
-            var file_reader = file.reader(&buffer);
+            var file_reader = file.reader(io, &buffer);
             try file_reader.seekTo(header.bss_header_offset);
             const reader = &file_reader.interface;
 
@@ -324,7 +331,7 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
 
         if (header.syscall_count > 0) {
             var buffer: [2048]u8 = undefined;
-            var file_reader = file.reader(&buffer);
+            var file_reader = file.reader(io, &buffer);
             try file_reader.seekTo(header.syscall_offset);
             const reader = &file_reader.interface;
 
@@ -364,7 +371,7 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
 
         if (header.relocation_count > 0) {
             var buffer: [2048]u8 = undefined;
-            var file_reader = file.reader(&buffer);
+            var file_reader = file.reader(io, &buffer);
             try file_reader.seekTo(header.relocation_offset);
             const reader = &file_reader.interface;
 
@@ -407,7 +414,7 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
 
         if (header.icon_size > 0) {
             var buffer: [2048]u8 = undefined;
-            var file_reader = file.reader(&buffer);
+            var file_reader = file.reader(io, &buffer);
             try file_reader.seekTo(header.icon_offset);
             const reader = &file_reader.interface;
 
@@ -476,7 +483,12 @@ fn _fmt_rel_field_op(val: ashex.RelocationField, writer: *std.Io.Writer) !void {
     });
 }
 
-fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, options: CliVerb.ConvertOptions) !u8 {
+fn convert_file(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    positionals: []const []const u8,
+    options: CliVerb.ConvertOptions,
+) !u8 {
     if (positionals.len != 1) {
         try error_and_exit("convert requires a single executable to operate on.", .{});
     }
@@ -490,17 +502,19 @@ fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, o
     const icon_file_path = options.icon;
     const output_file_path = options.output;
 
-    const input_file_data = try std.fs.cwd().readFileAlloc(
-        allocator,
+    const input_file_data = try std.Io.Dir.cwd().readFileAlloc(
+        io,
         input_file_path,
-        @min(std.math.maxInt(usize), 4 << 30), // We can't support more than 4 GiB anyways
+        allocator,
+        .limited(@min(std.math.maxInt(usize), 4 << 30)), // We can't support more than 4 GiB anyways
     );
 
     const icon_file_data = if (icon_file_path) |path|
-        try std.fs.cwd().readFileAlloc(
-            allocator,
+        try std.Io.Dir.cwd().readFileAlloc(
+            io,
             path,
-            @min(std.math.maxInt(usize), 1 << 20), // 1 MiB should be enough for everyone!
+            allocator,
+            .limited(@min(std.math.maxInt(usize), 1 << 20)), // 1 MiB should be enough for everyone!
         )
     else
         null;
@@ -543,12 +557,13 @@ fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, o
     }
 
     {
-        var file = try std.fs.cwd().createFile(output_file_path, .{
+        var file = try std.Io.Dir.cwd().createFile(io, output_file_path, .{
             .read = true,
         });
-        defer file.close();
+        defer file.close(io);
 
         try write_ashex_file(
+            io,
             file,
             ashex_file,
             icon_file_data,
@@ -1127,14 +1142,15 @@ const AshexFile = struct {
 };
 
 fn write_ashex_file(
-    file: std.fs.File,
+    io: std.Io,
+    file: std.Io.File,
     exe: AshexFile,
     icon_data: ?[]const u8,
 ) !void {
     const endian: std.builtin.Endian = .little;
     const ashex_version = 0;
 
-    std.debug.assert(0 == try file.getPos());
+    // std.debug.assert(0 == try file.getPos());
 
     var icon_offset_pos: u64 = 0;
     var icon_offset: u64 = 0;
@@ -1152,7 +1168,8 @@ fn write_ashex_file(
     var relocations_offset: u64 = 0;
 
     var file_buffer: [1024]u8 = undefined;
-    var file_writer = file.writer(&file_buffer);
+    var file_writer = file.writer(io, &file_buffer);
+    try file_writer.seekTo(0);
     const writer = &file_writer.interface;
     {
 
@@ -1291,7 +1308,7 @@ fn write_ashex_file(
     // Patch checksum:
     {
         var header_block: [508]u8 = undefined;
-        const len = try file.preadAll(&header_block, 0);
+        const len = try file.readPositionalAll(io, &header_block, 0);
         std.debug.assert(len == header_block.len);
 
         var blob: [4]u8 = @splat(0);
@@ -1302,11 +1319,11 @@ fn write_ashex_file(
             std.hash.Crc32.hash(&header_block),
             endian,
         );
-        try file.pwriteAll(&blob, header_block.len);
+        try file.writePositionalAll(io, &blob, header_block.len);
     }
 }
 
-fn align_writer(file_writer: *std.fs.File.Writer, alignment: u32) !void {
+fn align_writer(file_writer: *std.Io.File.Writer, alignment: u32) !void {
     const writer = &file_writer.interface;
     const count = alignment - ((file_writer.pos + writer.end) % alignment);
     if (count == alignment)
@@ -1316,16 +1333,18 @@ fn align_writer(file_writer: *std.fs.File.Writer, alignment: u32) !void {
 
 const SyscallAllocator = struct {
     next_int: u16 = 0,
-    lut: std.StringArrayHashMap(u16),
+    allocator: std.mem.Allocator,
+    lut: std.array_hash_map.String(u16),
 
     pub fn init(allocator: std.mem.Allocator) SyscallAllocator {
         return .{
-            .lut = std.StringArrayHashMap(u16).init(allocator),
+            .allocator = allocator,
+            .lut = .empty,
         };
     }
 
     pub fn get_syscall_index(sca: *SyscallAllocator, name: []const u8) !usize {
-        const gop = try sca.lut.getOrPut(name);
+        const gop = try sca.lut.getOrPut(sca.allocator, name);
         if (!gop.found_existing) {
             gop.value_ptr.* = sca.next_int;
             sca.next_int += 1;
@@ -1486,9 +1505,11 @@ const Environment = struct {
     platform: ashex.Platform,
 
     pub fn resolveSymbol(env: Environment, index: usize) !u16 {
-        errdefer |err| logger.err("failed to resolve symbol {}: {s}", .{ index, @errorName(err) });
+        // errdefer |err| logger.err("failed to resolve symbol {}: {s}", .{ index, @errorName(err) });
         // logger.debug("resolve symbol {}", .{index});
-        const dynamic = env.dynamic orelse return error.NoDynamicSection;
+        const dynamic = env.dynamic orelse {
+            return error.NoDynamicSection;
+        };
 
         const syment = dynamic.syment orelse return error.NoSymEnt;
 
@@ -1506,7 +1527,7 @@ const Environment = struct {
         const info: SymbolInfo = @bitCast(sym.st_info);
 
         var symname: []const u8 = env.strtab_buf.?[sym.st_name..];
-        symname = symname[0..std.mem.indexOfScalar(u8, symname, 0).?];
+        symname = symname[0..std.mem.findScalar(u8, symname, 0).?];
 
         logger.debug(
             \\resolve symbol(name={}/'{f}', value={}, size={}, shndx={}, type={}, bind={}
@@ -1548,7 +1569,19 @@ const Environment = struct {
         logger.warn("Symbol '{f}' ({s}) could not be resolved. Does that syscall really exist?", .{
             std.zig.fmtString(symname),
             switch (info.type) {
-                .notype, .object, .func, .section, .file, .common, .tls, .num, .loos, .hios, .loproc, .hiproc => @tagName(info.type),
+                .notype,
+                .object,
+                .func,
+                .section,
+                .file,
+                .common,
+                .tls,
+                .num,
+                .loos,
+                .hios,
+                .loproc,
+                .hiproc,
+                => @tagName(info.type),
                 _ => try std.fmt.bufPrint(&buf, "{}", .{@intFromEnum(info.type)}),
             },
         });
@@ -1557,38 +1590,38 @@ const Environment = struct {
     }
 
     const SymbolType = enum(u4) {
-        notype = elf.STT_NOTYPE,
-        object = elf.STT_OBJECT,
-        func = elf.STT_FUNC,
-        section = elf.STT_SECTION,
-        file = elf.STT_FILE,
-        common = elf.STT_COMMON,
-        tls = elf.STT_TLS,
-        num = elf.STT_NUM,
-        loos = elf.STT_LOOS,
-        hios = elf.STT_HIOS,
-        loproc = elf.STT_LOPROC,
-        hiproc = elf.STT_HIPROC,
+        notype = @backingInt(elf.STT.NOTYPE),
+        object = @backingInt(elf.STT.OBJECT),
+        func = @backingInt(elf.STT.FUNC),
+        section = @backingInt(elf.STT.SECTION),
+        file = @backingInt(elf.STT.FILE),
+        common = @backingInt(elf.STT.COMMON),
+        tls = @backingInt(elf.STT.TLS),
+        num = elf.STT.NUM,
+        loos = @backingInt(elf.STT.LOOS),
+        hios = @backingInt(elf.STT.HIOS),
+        loproc = @backingInt(elf.STT.LOPROC),
+        hiproc = @backingInt(elf.STT.HIPROC),
         _,
     };
 
     const SymbolInfo = packed struct(u8) {
         type: SymbolType,
         bind: enum(u4) {
-            local = elf.STB_LOCAL,
-            global = elf.STB_GLOBAL,
-            weak = elf.STB_WEAK,
-            num = elf.STB_NUM,
-            loos = elf.STB_LOOS,
-            hios = elf.STB_HIOS,
-            loproc = elf.STB_LOPROC,
-            hiproc = elf.STB_HIPROC,
+            local = @backingInt(elf.STB.LOCAL),
+            global = @backingInt(elf.STB.GLOBAL),
+            weak = @backingInt(elf.STB.WEAK),
+            num = elf.STB.NUM,
+            loos = @backingInt(elf.STB.LOOS),
+            hios = @backingInt(elf.STB.HIOS),
+            loproc = @backingInt(elf.STB.LOPROC),
+            hiproc = @backingInt(elf.STB.HIPROC),
             _,
         },
     };
 };
 
-const Elf32_Addr = std.elf.Elf32_Addr;
+const Elf32_Addr = std.elf.Elf32.Addr;
 const Elf32_Word = std.elf.Word;
 const Elf32_Sword = std.elf.Sword;
 
@@ -1644,7 +1677,7 @@ const RelocationHandler = struct {
         return relocation;
     }
 
-    fn expand(comptime T: type, src: anytype) std.meta.Int(@typeInfo(@TypeOf(src)).Int.signedness, @bitSizeOf(T)) {
+    fn expand(comptime T: type, src: anytype) @Int(@typeInfo(@TypeOf(src)).int.signedness, @bitSizeOf(T)) {
         return src;
     }
 
@@ -1657,7 +1690,11 @@ const RelocationHandler = struct {
 const RelocationType = struct {
     const AddendMapping = enum { addend, self };
 
-    pub fn init(comptime addend_map: AddendMapping, comptime T: type, comptime script: []const u8) !ashex.RelocationType {
+    pub fn init(
+        comptime addend_map: AddendMapping,
+        comptime T: type,
+        comptime script: []const u8,
+    ) error{UnsupportedRelocation}!ashex.RelocationType {
         const size: ashex.RelocationSize = switch (T) {
             word8 => .word8,
             word16 => .word16,
@@ -1700,9 +1737,9 @@ const RelocationType = struct {
     }
 
     pub fn from_elf(platform: ashex.Platform, type_id: u8, comptime variant: AddendMapping) error{UnsupportedRelocation}!ashex.RelocationType {
-        errdefer |err| if (err == error.UnsupportedRelocation) {
-            logger.err("unsupported relocation type id: {}", .{type_id});
-        };
+        // errdefer |err| if (err == error.UnsupportedRelocation) {
+        //     logger.err("unsupported relocation type id: {}", .{type_id});
+        // };
 
         // Generally a good resource:
         //   musl libc dynamic linker:
