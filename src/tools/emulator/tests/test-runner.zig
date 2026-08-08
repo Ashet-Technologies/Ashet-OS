@@ -9,13 +9,8 @@ const emu = @import("emulator");
 /// Exit code 0 means all checks passed; non-zero indicates a mismatch or error.
 /// Designed to be invoked as a build-system run step so each assembly test gets
 /// its own process and failure message.
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+pub fn main(init: std.process.Init) !void {
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     if (args.len != 3) {
         std.debug.print("usage: test-runner <rom.bin> <test.json>\n", .{});
@@ -28,12 +23,17 @@ pub fn main() !void {
     // -----------------------------------------------------------------------
     // Load ROM binary, pad to 4-byte alignment
     // -----------------------------------------------------------------------
-    const rom_raw = try std.fs.cwd().readFileAlloc(allocator, rom_path, 1024 * 1024);
-    defer allocator.free(rom_raw);
+    const rom_raw = try std.Io.Dir.cwd().readFileAlloc(
+        init.io,
+        rom_path,
+        init.gpa,
+        .limited(1024 * 1024),
+    );
+    defer init.gpa.free(rom_raw);
 
     const padded_len = (rom_raw.len + 3) & ~@as(usize, 3);
-    const rom_buf = try allocator.alignedAlloc(u8, .@"4", padded_len);
-    defer allocator.free(rom_buf);
+    const rom_buf = try init.gpa.alignedAlloc(u8, .@"4", padded_len);
+    defer init.gpa.free(rom_buf);
     @memcpy(rom_buf[0..rom_raw.len], rom_raw);
     @memset(rom_buf[rom_raw.len..], 0);
 
@@ -42,10 +42,15 @@ pub fn main() !void {
     // heterogeneous types (register maps as objects, debug as string or array)
     // without needing custom parse methods.
     // -----------------------------------------------------------------------
-    const json_raw = try std.fs.cwd().readFileAlloc(allocator, json_path, 64 * 1024);
-    defer allocator.free(json_raw);
+    const json_raw = try std.Io.Dir.cwd().readFileAlloc(
+        init.io,
+        json_path,
+        init.gpa,
+        .limited(64 * 1024),
+    );
+    defer init.gpa.free(json_raw);
 
-    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json_raw, .{});
+    const parsed = try std.json.parseFromSlice(std.json.Value, init.gpa, json_raw, .{});
     defer parsed.deinit();
     const root = parsed.value.object;
 
@@ -59,14 +64,14 @@ pub fn main() !void {
         else => 4,
     } else 4;
 
-    const ram_buf = try allocator.alignedAlloc(u8, .@"4", ram_size);
-    defer allocator.free(ram_buf);
+    const ram_buf = try init.gpa.alignedAlloc(u8, .@"4", ram_size);
+    defer init.gpa.free(ram_buf);
     @memset(ram_buf, 0);
 
     // -----------------------------------------------------------------------
     // Set up debug capture
     // -----------------------------------------------------------------------
-    var debug_capture: std.Io.Writer.Allocating = .init(allocator);
+    var debug_capture: std.Io.Writer.Allocating = .init(init.gpa);
     defer debug_capture.deinit();
 
     // -----------------------------------------------------------------------
@@ -142,11 +147,11 @@ pub fn main() !void {
     // Validate expected debug output
     // -----------------------------------------------------------------------
     if (root.get("expected_debug")) |debug_val| {
-        const expected_debug = parseDebugExpectation(allocator, debug_val) catch |err| {
+        const expected_debug = parseDebugExpectation(init.gpa, debug_val) catch |err| {
             std.debug.print("FAIL [{s}]: cannot parse expected_debug: {s}\n", .{ test_name, @errorName(err) });
             std.process.exit(1);
         };
-        defer if (expected_debug) |d| allocator.free(d);
+        defer if (expected_debug) |d| init.gpa.free(d);
 
         const actual_debug = debug_capture.written();
         const expected = expected_debug orelse &[_]u8{};

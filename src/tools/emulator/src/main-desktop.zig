@@ -46,7 +46,7 @@ const DebugLog = struct {
     const LINE_LEN = 256;
 
     lines: [MAX_LINES][LINE_LEN]u8 = undefined,
-    lengths: [MAX_LINES]u16 = .{0} ** MAX_LINES,
+    lengths: [MAX_LINES]u16 = @splat(0),
     write_pos: usize = 0,
     line_count: usize = 0,
 
@@ -160,6 +160,8 @@ const EmulatorApp = struct {
     rom: []align(4) const u8,
     ram: []align(4) u8,
 
+    io: std.Io,
+
     // Emulator
     system: emu.System,
 
@@ -175,7 +177,7 @@ const EmulatorApp = struct {
 
     // Debug log
     stdout_write_buffer: [4096]u8 = undefined,
-    stdout_writer: std.fs.File.Writer,
+    stdout_writer: std.Io.File.Writer,
     debug_log: DebugLog,
 
     debug_writer_buf: [256]u8 = undefined,
@@ -183,15 +185,15 @@ const EmulatorApp = struct {
 
     // OpenGL framebuffer texture
     fb_texture: gl.Uint = 0,
-    rgba_buffer: [FB_PIXELS * 4]u8 = .{0} ** (FB_PIXELS * 4),
+    rgba_buffer: [FB_PIXELS * 4]u8 = @splat(0),
 
     // Execution state
     running: bool = true,
     speed_multiplier: f32 = 1.0,
-    start_time: std.time.Instant,
+    start_time: std.Io.Timestamp,
     last_trap: ?emu.CpuTrap = null,
     prev_instructions: u64 = 0,
-    prev_time: std.time.Instant,
+    prev_time: std.Io.Timestamp,
     ips: f64 = 0,
     ips_update_timer: f64 = 0,
     last_frame_time: u64 = 0,
@@ -207,30 +209,36 @@ const EmulatorApp = struct {
     live_video_update: bool = false,
 
     // Block device files
-    block_files: [2]?std.fs.File = .{ null, null },
+    block_files: [2]?std.Io.File = .{ null, null },
 
     // Input state
     last_mouse_buttons: u3 = 0,
 
     // Memory view state
     mem_view_addr: u32 = 0,
-    mem_view_addr_buf: [9:0]u8 = .{'0'} ** 9,
+    mem_view_addr_buf: [9:0]u8 = @splat('0'),
 
-    fn create(allocator: std.mem.Allocator, rom: []align(4) const u8, ram_size: u32, disk_paths: [2]?[]const u8) !*EmulatorApp {
+    fn create(io: std.Io, allocator: std.mem.Allocator, rom: []align(4) const u8, ram_size: u32, disk_paths: [2]?[]const u8) !*EmulatorApp {
         const ram = try allocator.alignedAlloc(u8, .@"4", ram_size);
         @memset(ram, 0);
+
+        {
+            const res = std.Io.Clock.awake.resolution(io) catch @panic("no monotonic clock");
+            if (res.nanoseconds == 0) @panic("no monotonic clock");
+        }
 
         const app = try allocator.create(EmulatorApp);
         app.* = .{
             .allocator = allocator,
+            .io = io,
 
-            .start_time = std.time.Instant.now() catch @panic("no monotonic clock"),
-            .prev_time = std.time.Instant.now() catch @panic("no monotonic clock"),
+            .start_time = .now(io, .awake),
+            .prev_time = .now(io, .awake),
 
             .debug_log = .{},
 
             .stdout_write_buffer = undefined,
-            .stdout_writer = std.fs.File.stdout().writer(&app.stdout_write_buffer),
+            .stdout_writer = std.Io.File.stdout().writer(io, &app.stdout_write_buffer),
 
             .debug_writer_buf = undefined,
             .debug_writer = .init(
@@ -258,12 +266,12 @@ const EmulatorApp = struct {
         // Open block device files and set block counts
         for (disk_paths, 0..) |maybe_path, i| {
             if (maybe_path) |path| {
-                const file = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
+                const file = std.Io.Dir.cwd().openFile(io, path, .{ .mode = .read_write }) catch |err| {
                     std.log.err("failed to open disk{d} '{s}': {}", .{ i, path, err });
                     app.block_devices[i] = emu.BlockDevice.init(false, 0);
                     continue;
                 };
-                const size = file.getEndPos() catch 0;
+                const size = file.length(io) catch 0;
                 const block_count: u32 = @intCast(size / emu.BlockDevice.BLOCK_SIZE);
                 app.block_devices[i] = emu.BlockDevice.init(true, block_count);
                 app.block_files[i] = file;
@@ -284,7 +292,7 @@ const EmulatorApp = struct {
         // Fill framebuffer with static noise so the screen pipeline is visible
         const pixels = app.framebuffer.pixels();
 
-        var rng = std.Random.DefaultPrng.init(@truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));
+        var rng = std.Random.DefaultPrng.init(@truncate(@as(u96, @bitCast(std.Io.Timestamp.now(io, .awake).nanoseconds))));
         for (pixels) |*p| {
             p.* = rng.random().int(u8);
         }
@@ -294,7 +302,7 @@ const EmulatorApp = struct {
 
     fn destroy(app: *EmulatorApp) void {
         for (&app.block_files) |*mf| {
-            if (mf.*) |f| f.close();
+            if (mf.*) |f| f.close(app.io);
             mf.* = null;
         }
         app.allocator.free(app.ram);
@@ -306,15 +314,13 @@ const EmulatorApp = struct {
     // -----------------------------------------------------------------------
 
     fn updateTimer(app: *EmulatorApp) void {
-        const now = std.time.Instant.now() catch return;
-        const elapsed_ns = now.since(app.start_time);
-        const mtime_us: u64 = elapsed_ns / 1000;
-        const rtc_s: u64 = @intCast(@max(0, std.time.timestamp()));
+        const mtime_us: u64 = @intCast(app.start_time.untilNow(app.io, .awake).toMicroseconds());
+        const rtc_s: u64 = @intCast(@max(0, std.Io.Timestamp.now(app.io, .awake).toSeconds()));
         app.timer.setTime(mtime_us, rtc_s);
     }
 
     fn runEmulation(app: *EmulatorApp) void {
-        const emu_start = std.time.Instant.now() catch @panic("no measurement");
+        const emu_start = std.Io.Timestamp.now(app.io, .awake);
 
         const batch: usize = @intFromFloat(@max(1.0, @as(f32, INSTRUCTIONS_PER_FRAME) * app.speed_multiplier));
 
@@ -324,8 +330,8 @@ const EmulatorApp = struct {
             app.stepEmulator(batch);
             app.pollBlockDevices();
 
-            const emu_end = std.time.Instant.now() catch @panic("no measurement");
-            app.last_frame_time = emu_end.since(emu_start) / std.time.ns_per_us;
+            const emu_end = std.Io.Timestamp.now(app.io, .awake);
+            app.last_frame_time = @intCast(emu_start.durationTo(emu_end).toMicroseconds());
             if (app.last_frame_time > app.emulation_time_threshold) {
                 break;
             }
@@ -408,21 +414,27 @@ const EmulatorApp = struct {
                 };
                 const offset = @as(u64, req.lba) * emu.BlockDevice.BLOCK_SIZE;
                 if (req.is_write) {
-                    file.seekTo(offset) catch {
+                    var file_writer = file.writer(app.io, &.{});
+                    file_writer.seekTo(offset) catch {
                         bd.complete(false) catch {};
                         continue;
                     };
-                    file.writeAll(bd.transferBuffer()) catch {
+                    file_writer.interface.writeAll(bd.transferBuffer()) catch {
+                        bd.complete(false) catch {};
+                        continue;
+                    };
+                    file_writer.flush() catch {
                         bd.complete(false) catch {};
                         continue;
                     };
                 } else {
-                    file.seekTo(offset) catch {
+                    var file_reader = file.reader(app.io, &.{});
+                    file_reader.seekTo(offset) catch {
                         bd.complete(false) catch {};
                         continue;
                     };
                     const buf = bd.transferBuffer();
-                    const n = file.readAll(buf) catch {
+                    const n = file_reader.interface.readSliceShort(buf) catch {
                         bd.complete(false) catch {};
                         continue;
                     };
@@ -449,8 +461,8 @@ const EmulatorApp = struct {
     }
 
     fn updateIps(app: *EmulatorApp) void {
-        const now = std.time.Instant.now() catch return;
-        const elapsed_ns = now.since(app.prev_time);
+        const now = std.Io.Timestamp.now(app.io, .awake);
+        const elapsed_ns = app.prev_time.durationTo(now).toNanoseconds();
         const elapsed_s: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
         app.ips_update_timer += elapsed_s;
         if (app.ips_update_timer >= 0.5) {
@@ -510,8 +522,8 @@ const EmulatorApp = struct {
                 app.last_trap = null;
                 app.prev_instructions = 0;
                 app.ips = 0;
-                app.start_time = std.time.Instant.now() catch app.start_time;
-                app.prev_time = std.time.Instant.now() catch app.prev_time;
+                app.start_time = .now(app.io, .awake);
+                app.prev_time = .now(app.io, .awake);
             }
 
             zgui.separator();
@@ -645,8 +657,8 @@ const EmulatorApp = struct {
             app.last_trap = null;
             app.prev_instructions = 0;
             app.ips = 0;
-            app.start_time = std.time.Instant.now() catch app.start_time;
-            app.prev_time = std.time.Instant.now() catch app.prev_time;
+            app.start_time = .now(app.io, .awake);
+            app.prev_time = .now(app.io, .awake);
         }
 
         // Speed control
@@ -950,17 +962,17 @@ fn glfwKeyToHid(key: glfw.Key) ?u16 {
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var cli = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
+    var cli = args_parser.parseForCurrentProcess(CliOptions, init, .print) catch return 1;
     defer cli.deinit();
 
     if (cli.options.help) {
         var stderr_buf: [1024]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buf);
+        var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buf);
         args_parser.printHelp(CliOptions, "emulator", &stderr_writer.interface) catch {};
         stderr_writer.interface.flush() catch {};
         return 0;
@@ -972,19 +984,19 @@ pub fn main() !u8 {
         return 1;
     };
 
-    const rom_file = std.fs.cwd().openFile(rom_path, .{}) catch |err| {
+    const rom_file = std.Io.Dir.cwd().openFile(init.io, rom_path, .{}) catch |err| {
         std.log.err("cannot open ROM '{s}': {}", .{ rom_path, err });
         return 1;
     };
-    defer rom_file.close();
+    defer rom_file.close(init.io);
 
-    const rom_stat = try rom_file.stat();
+    const rom_stat = try rom_file.stat(init.io);
     const rom_size = rom_stat.size;
     const rom = try allocator.alignedAlloc(u8, .@"4", rom_size);
     defer allocator.free(rom);
 
     var read_buf: [4096]u8 = undefined;
-    var reader = rom_file.reader(&read_buf);
+    var reader = rom_file.reader(init.io, &read_buf);
     reader.interface.readSliceAll(rom) catch {
         std.log.err("short read on ROM file", .{});
         return 1;
@@ -992,6 +1004,7 @@ pub fn main() !u8 {
 
     // Create emulator
     const app = try EmulatorApp.create(
+        init.io,
         allocator,
         @alignCast(rom),
         cli.options.@"ram-size",

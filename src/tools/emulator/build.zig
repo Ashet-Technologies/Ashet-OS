@@ -119,6 +119,7 @@ pub fn build(b: *std.Build) void {
 
 const rv32imc: std.Target.Query = .{
     .cpu_arch = .riscv32,
+    .os_tag = .freestanding,
     .abi = .ilp32,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
     .cpu_features_add = std.Target.riscv.featureSet(&.{
@@ -128,6 +129,7 @@ const rv32imc: std.Target.Query = .{
 
 const rv32im: std.Target.Query = .{
     .cpu_arch = .riscv32,
+    .os_tag = .freestanding,
     .abi = .ilp32,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
     .cpu_features_add = std.Target.riscv.featureSet(&.{
@@ -137,6 +139,7 @@ const rv32im: std.Target.Query = .{
 
 const rv32i: std.Target.Query = .{
     .cpu_arch = .riscv32,
+    .os_tag = .freestanding,
     .abi = .ilp32,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
     .cpu_features_add = std.Target.riscv.featureSet(&.{
@@ -230,7 +233,7 @@ fn addAsmTestSteps(
     const objcopy_step = b.addObjCopy(
         elf_file,
         .{
-            .format = .bin,
+            .format = .binary,
         },
     );
 
@@ -239,7 +242,7 @@ fn addAsmTestSteps(
     // Step 3: Extract header comment so we have the JSON data
     const extract_json_file = b.addRunArtifact(extract_header_comment_exe);
     extract_json_file.setStdIn(.{ .lazy_path = s_file });
-    const json_file = extract_json_file.captureStdOut();
+    const json_file = extract_json_file.captureStdOut(.{});
 
     // Step 4: run test-runner <rom.bin> <test.json>
     const run_cmd = b.addRunArtifact(runner_exe);
