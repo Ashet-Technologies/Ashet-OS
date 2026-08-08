@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
 
     // Re-export the "abi-schema" module:
     const abi_parser_mod = abi_mapper_dep.module("abi-parser");
-    b.modules.putNoClobber("abi-parser", abi_parser_mod) catch @panic("out of memory");
+    b.modules.putNoClobber(b.graph.arena, "abi-parser", abi_parser_mod) catch @panic("out of memory");
 
     const render_zig_exe = b.addExecutable(.{
         .name = "render-abi-file",

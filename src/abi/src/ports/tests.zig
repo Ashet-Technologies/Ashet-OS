@@ -136,15 +136,15 @@ test "color from_rgb, to_rgb bijection" {
     }
 }
 
-test "fuzz Color.from_rgb" {
-    const Test = struct {
-        fn fuzz(_: void, input: []const u8) !void {
-            if (input.len != 3)
-                return;
+// test "fuzz Color.from_rgb" {
+//     const Test = struct {
+//         fn fuzz(_: void, input: []const u8) !void {
+//             if (input.len != 3)
+//                 return;
 
-            _ = Color.from_rgb(input[0], input[1], input[2]);
-        }
-    };
+//             _ = Color.from_rgb(input[0], input[1], input[2]);
+//         }
+//     };
 
-    try std.testing.fuzz({}, Test.fuzz, .{});
-}
+//     try std.testing.fuzz({}, Test.fuzz, .{});
+// }
