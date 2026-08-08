@@ -21,6 +21,16 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
 
+    const Translator = @import("translate_c").Translator;
+    const translate_c = b.dependency("translate_c", .{});
+
+    const t: Translator = .init(translate_c, .{
+        .c_source_file = stb_dep.path("stb_truetype.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
     mkfont_mod.addIncludePath(stb_dep.path("."));
     mkfont_mod.addCSourceFile(.{
         .file = b.path("src/stb_truetype.c"),
@@ -32,6 +42,7 @@ pub fn build(b: *std.Build) !void {
     mkfont_mod.addImport("turtlefont", turtlefont_mod);
     mkfont_mod.addImport("ashet-abi", abi_mod);
     mkfont_mod.addImport("args", args_mod);
+    mkfont_mod.addImport("c", t.mod);
 
     const mkfont_exe = b.addExecutable(.{
         .name = "mkfont",
@@ -42,8 +53,6 @@ pub fn build(b: *std.Build) !void {
 
     const run_cmd = b.addRunArtifact(mkfont_exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
     run_step.dependOn(&run_cmd.step);
 }
