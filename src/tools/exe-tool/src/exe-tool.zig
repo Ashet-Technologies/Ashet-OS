@@ -683,25 +683,25 @@ fn parse_elf_file(
 
     const ProgramHeader = struct {
         type: enum(elf.Word) {
-            null = elf.PT_NULL,
-            load = elf.PT_LOAD,
-            dynamic = elf.PT_DYNAMIC,
-            interp = elf.PT_INTERP,
-            note = elf.PT_NOTE,
-            shlib = elf.PT_SHLIB,
-            phdr = elf.PT_PHDR,
-            tls = elf.PT_TLS,
-            num = elf.PT_NUM,
+            null = @backingInt(elf.PT.NULL),
+            load = @backingInt(elf.PT.LOAD),
+            dynamic = @backingInt(elf.PT.DYNAMIC),
+            interp = @backingInt(elf.PT.INTERP),
+            note = @backingInt(elf.PT.NOTE),
+            shlib = @backingInt(elf.PT.SHLIB),
+            phdr = @backingInt(elf.PT.PHDR),
+            tls = @backingInt(elf.PT.TLS),
+            num = elf.PT.NUM,
 
-            gnu_eh_frame = elf.PT_GNU_EH_FRAME,
-            gnu_stack = elf.PT_GNU_STACK,
-            gnu_relro = elf.PT_GNU_RELRO,
-            sunwbss = elf.PT_SUNWBSS,
-            sunwstack = elf.PT_SUNWSTACK,
+            gnu_eh_frame = @backingInt(elf.PT.GNU_EH_FRAME),
+            gnu_stack = @backingInt(elf.PT.GNU_STACK),
+            gnu_relro = @backingInt(elf.PT.GNU_RELRO),
+            sunwbss = @backingInt(elf.PT.SUNWBSS),
+            sunwstack = @backingInt(elf.PT.SUNWSTACK),
 
             _,
         },
-        flags: packed struct(elf.Elf32_Off) {
+        flags: packed struct(elf.Elf32.Off) {
             executable: bool, // 1
             writable: bool, // 2
             readable: bool, // 4
@@ -709,8 +709,8 @@ fn parse_elf_file(
             os: u8,
             proc: u4,
         },
-        offset: elf.Elf32_Addr,
-        vaddr: elf.Elf32_Addr,
+        offset: elf.Elf32.Addr,
+        vaddr: elf.Elf32.Addr,
         paddr: elf.Word,
         filesz: elf.Word,
         memsz: elf.Word,
@@ -732,31 +732,31 @@ fn parse_elf_file(
         var pheaders = elf_file.program_header_iterator();
         while (try pheaders.next()) |phdr| {
             try phdrs.append(allocator, .{
-                .type = @enumFromInt(@as(u32, @intCast(phdr.p_type))),
-                .flags = @bitCast(@as(u32, @intCast(phdr.p_flags))),
-                .offset = @intCast(phdr.p_offset),
-                .vaddr = @intCast(phdr.p_vaddr),
-                .paddr = @intCast(phdr.p_paddr),
-                .filesz = @intCast(phdr.p_filesz),
-                .memsz = @intCast(phdr.p_memsz),
+                .type = @enumFromInt(@intFromEnum(phdr.type)),
+                .flags = @bitCast(@as(u32, @bitCast(phdr.flags))),
+                .offset = @intCast(phdr.offset),
+                .vaddr = @intCast(phdr.vaddr),
+                .paddr = @intCast(phdr.paddr),
+                .filesz = @intCast(phdr.filesz),
+                .memsz = @intCast(phdr.memsz),
 
-                .memory = elf_file.get_range(phdr.p_offset, phdr.p_filesz),
+                .memory = elf_file.get_range(phdr.offset, phdr.filesz),
             });
 
-            switch (phdr.p_type) {
-                elf.PT_LOAD => {},
+            switch (@backingInt(phdr.type)) {
+                @backingInt(elf.PT.LOAD) => {},
 
-                elf.PT_DYNAMIC => continue,
+                @backingInt(elf.PT.DYNAMIC) => continue,
 
                 // We're just ignoring os specific program headers:
-                elf.PT_LOOS...elf.PT_HIOS => {
-                    logger.info("skipping os specific program header 0x{X:0>8}", .{phdr.p_type});
+                @backingInt(elf.PT.LOOS)...@backingInt(elf.PT.HIOS) => {
+                    logger.info("skipping os specific program header 0x{X:0>8}", .{phdr.type});
                     continue;
                 },
 
                 // We're just ignoring processor specific program headers:
-                elf.PT_LOPROC...elf.PT_HIPROC => {
-                    logger.info("skipping processor specific program header 0x{X:0>8}", .{phdr.p_type});
+                @backingInt(elf.PT.LOPROC)...@backingInt(elf.PT.HIPROC) => {
+                    logger.info("skipping processor specific program header 0x{X:0>8}", .{phdr.type});
                     continue;
                 },
 
@@ -767,19 +767,19 @@ fn parse_elf_file(
             }
 
             logger.info("verifying read={} write={} exec={} flags=0x{X:0>8} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
-                @intFromBool((phdr.p_flags & elf.PF_R) != 0),
-                @intFromBool((phdr.p_flags & elf.PF_W) != 0),
-                @intFromBool((phdr.p_flags & elf.PF_X) != 0),
-                phdr.p_flags,
-                phdr.p_offset, // file offset
-                phdr.p_vaddr, // virtual load address
-                phdr.p_paddr, // physical load address
-                phdr.p_memsz, // memory size
-                phdr.p_filesz, // bytes in file
-                phdr.p_align, // alignment
+                @intFromBool(phdr.flags.R),
+                @intFromBool(phdr.flags.W),
+                @intFromBool(phdr.flags.X),
+                @as(elf.Word, @bitCast(phdr.flags)),
+                phdr.offset, // file offset
+                phdr.vaddr, // virtual load address
+                phdr.paddr, // physical load address
+                phdr.memsz, // memory size
+                phdr.filesz, // bytes in file
+                phdr.@"align", // alignment
             });
 
-            if ((phdr.p_flags & PF_ASHETOS_NOLOAD) != 0) {
+            if ((@as(elf.Word, @bitCast(phdr.flags)) & PF_ASHETOS_NOLOAD) != 0) {
                 logger.info("skipping phdr...", .{});
                 continue;
             }
@@ -793,23 +793,23 @@ fn parse_elf_file(
             //         return error.MemoryAlreadyUsed;
             // }
 
-            lo_addr = @min(lo_addr, @as(usize, @intCast(phdr.p_vaddr)));
-            hi_addr = @max(hi_addr, @as(usize, @intCast(phdr.p_vaddr + phdr.p_memsz)));
+            lo_addr = @min(lo_addr, @as(usize, @intCast(phdr.vaddr)));
+            hi_addr = @max(hi_addr, @as(usize, @intCast(phdr.vaddr + phdr.memsz)));
 
-            if (phdr.p_memsz < phdr.p_filesz)
+            if (phdr.memsz < phdr.filesz)
                 return error.InvalidElfFile;
 
-            const length: u32 = @intCast(phdr.p_filesz);
+            const length: u32 = @intCast(phdr.filesz);
 
             const file_chunk = try load_headers.addOne(allocator);
             file_chunk.* = .{
-                .vmem_offset = @intCast(phdr.p_vaddr),
+                .vmem_offset = @intCast(phdr.vaddr),
                 .data = try allocator.alloc(u8, length),
             };
 
-            std.debug.assert(file_chunk.data.len == phdr.p_filesz);
+            std.debug.assert(file_chunk.data.len == phdr.filesz);
 
-            elf_file.read(phdr.p_offset, file_chunk.data);
+            elf_file.read(phdr.offset, file_chunk.data);
         }
 
         break :blk hi_addr - lo_addr;
@@ -819,17 +819,17 @@ fn parse_elf_file(
 
     const dynamic_section: ?DynamicSection = dynamic_loader: {
         var pheaders = elf_file.program_header_iterator();
-        const dynamic_section: elf.Elf64_Phdr = while (try pheaders.next()) |phdr| {
-            if (phdr.p_type == elf.PT_DYNAMIC)
+        const dynamic_section: elf.Elf64.Phdr = while (try pheaders.next()) |phdr| {
+            if (phdr.type == elf.PT.DYNAMIC)
                 break phdr;
         } else {
             logger.debug("not a dynamic executable", .{});
             break :dynamic_loader null;
         };
 
-        var elf_reader = elf_file.get_reader(dynamic_section.p_offset, dynamic_section.p_filesz);
+        var elf_reader = elf_file.get_reader(dynamic_section.offset, dynamic_section.filesz);
 
-        const ent_count: usize = @intCast(dynamic_section.p_filesz / @sizeOf(elf.Elf32_Dyn));
+        const ent_count: usize = @intCast(dynamic_section.filesz / @sizeOf(elf.Elf32_Dyn));
 
         // logger.info("DYNAMIC: {}", .{dynamic_section});
         var dsect: DynamicSection = .{};
