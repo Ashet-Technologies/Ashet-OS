@@ -48,19 +48,19 @@ const ReloadableLookup = struct {
     allocator: std.mem.Allocator,
     path: []const u8,
     lookup: *Lookup,
-    mutex: std.Thread.Mutex = .{},
-    last_stat: ?std.fs.File.Stat,
+    mutex: std.Io.Mutex = .init,
+    last_stat: ?std.Io.File.Stat,
     last_stat_check_ms: ?i64 = null,
     last_error_ms: ?i64 = null,
 
     const check_interval_ms: i64 = 200;
     const error_interval_ms: i64 = 1_000;
 
-    pub fn create(allocator: std.mem.Allocator, path: []const u8) !*ReloadableLookup {
+    pub fn create(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !*ReloadableLookup {
         const path_copy = try allocator.dupe(u8, path);
         errdefer allocator.free(path_copy);
 
-        const lookup = try Lookup.create(allocator, path);
+        const lookup = try Lookup.create(allocator, io, path);
         errdefer lookup.destroy();
 
         const self = try allocator.create(ReloadableLookup);
@@ -68,7 +68,7 @@ const ReloadableLookup = struct {
             .allocator = allocator,
             .path = path_copy,
             .lookup = lookup,
-            .last_stat = std.fs.cwd().statFile(path) catch null,
+            .last_stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch null,
         };
         return self;
     }
@@ -79,16 +79,16 @@ const ReloadableLookup = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn lock(self: *ReloadableLookup) void {
-        self.mutex.lock();
+    pub fn lock(self: *ReloadableLookup, io: std.Io) void {
+        self.mutex.lockUncancelable(io);
     }
 
-    pub fn unlock(self: *ReloadableLookup) void {
-        self.mutex.unlock();
+    pub fn unlock(self: *ReloadableLookup, io: std.Io) void {
+        self.mutex.unlock(io);
     }
 
-    pub fn refreshLocked(self: *ReloadableLookup, force: bool) !void {
-        const now_ms = std.time.milliTimestamp();
+    pub fn refreshLocked(self: *ReloadableLookup, io: std.Io, force: bool) !void {
+        const now_ms = std.Io.Timestamp.now(io, .awake).toMilliseconds();
 
         if (!force) {
             if (self.last_stat_check_ms) |last| {
@@ -98,7 +98,7 @@ const ReloadableLookup = struct {
         }
         self.last_stat_check_ms = now_ms;
 
-        const stat = std.fs.cwd().statFile(self.path) catch |err| {
+        const stat = std.Io.Dir.cwd().statFile(io, self.path, .{}) catch |err| {
             self.logReloadIssue(now_ms, "stat", err);
             self.last_stat = null;
             return;
@@ -109,7 +109,7 @@ const ReloadableLookup = struct {
                 return;
         }
 
-        const new_lookup = Lookup.create(self.allocator, self.path) catch |err| {
+        const new_lookup = Lookup.create(self.allocator, io, self.path) catch |err| {
             switch (err) {
                 error.OutOfMemory => return err,
                 else => {
@@ -127,10 +127,10 @@ const ReloadableLookup = struct {
         old_lookup.destroy();
     }
 
-    fn statsDiffer(previous: std.fs.File.Stat, current: std.fs.File.Stat) bool {
+    fn statsDiffer(previous: std.Io.File.Stat, current: std.Io.File.Stat) bool {
         return previous.inode != current.inode or
             previous.size != current.size or
-            previous.mtime != current.mtime;
+            previous.mtime.nanoseconds != current.mtime.nanoseconds;
     }
 
     fn logReloadIssue(self: *ReloadableLookup, now_ms: i64, action: []const u8, err: anyerror) void {
@@ -159,18 +159,18 @@ const ElfFile = struct {
 
 const max_suffix_len = 3 + 8 * 2; // ":0x" + 8 hex encoded bytes
 
-const ElfSet = std.StringArrayHashMap(ElfFile);
+const ElfSet = std.array_hash_map.String(ElfFile);
 
 /// Writes symbol, source location, and section information for the given address.
-fn render_elf_data(elf_addr: u64, elf: *ElfFile, writer: *std.Io.Writer) !void {
+fn render_elf_data(io: std.Io, elf_addr: u64, elf: *ElfFile, writer: *std.Io.Writer) !void {
     var path_buf: [4096]u8 = undefined;
     var symbol_buf: [4096]u8 = undefined;
     const resource = elf.lookup;
 
-    resource.lock();
-    defer resource.unlock();
+    resource.lock(io);
+    defer resource.unlock(io);
 
-    try resource.refreshLocked(false);
+    try resource.refreshLocked(io, false);
     const lookup = resource.lookup;
 
     const maybe_symbol = lookup.get_symbol(&symbol_buf, elf_addr);
@@ -266,26 +266,26 @@ fn parse_poll_result(
 }
 
 test "parsePollResult empty ring" {
-    var empty_elves = ElfSet.init(std.testing.allocator);
-    defer empty_elves.deinit();
+    var empty_elves: ElfSet = .empty;
+    defer empty_elves.deinit(std.testing.allocator);
 
-    const rb = RingBuffer{};
+    const rb: RingBuffer = .{};
 
     try std.testing.expect(parse_poll_result(empty_elves, rb, .bits32) == null);
     try std.testing.expect(parse_poll_result(empty_elves, rb, .bits64) == null);
 }
 
 test "parsePollResult bits32 hit" {
-    var empty_elves = ElfSet.init(std.testing.allocator);
-    defer empty_elves.deinit();
+    var empty_elves: ElfSet = .empty;
+    defer empty_elves.deinit(std.testing.allocator);
 
-    try empty_elves.put("basic", .{
+    try empty_elves.put(std.testing.allocator, "basic", .{
         .name = "basic",
         .path = undefined,
         .lookup = undefined,
     });
 
-    var rb = RingBuffer{};
+    var rb: RingBuffer = .{};
     rb.push_slice("basic:0xAABBCCDD");
 
     const bits32_result = parse_poll_result(empty_elves, rb, .bits32);
@@ -299,10 +299,10 @@ test "parsePollResult bits32 hit" {
 }
 
 test "parsePollResult bits64 hit" {
-    var empty_elves = ElfSet.init(std.testing.allocator);
-    defer empty_elves.deinit();
+    var empty_elves: ElfSet = .empty;
+    defer empty_elves.deinit(std.testing.allocator);
 
-    try empty_elves.put("basic", .{
+    try empty_elves.put(std.testing.allocator, "basic", .{
         .name = "basic",
         .path = undefined,
         .lookup = undefined,
@@ -322,10 +322,10 @@ test "parsePollResult bits64 hit" {
 }
 
 test "parsePollResult bits32 missing" {
-    var empty_elves = ElfSet.init(std.testing.allocator);
-    defer empty_elves.deinit();
+    var empty_elves: ElfSet = .empty;
+    defer empty_elves.deinit(std.testing.allocator);
 
-    try empty_elves.put("basic", .{
+    try empty_elves.put(std.testing.allocator, "basic", .{
         .name = "basic",
         .path = undefined,
         .lookup = undefined,
@@ -342,10 +342,10 @@ test "parsePollResult bits32 missing" {
 }
 
 test "parsePollResult bits64 missing" {
-    var empty_elves = ElfSet.init(std.testing.allocator);
-    defer empty_elves.deinit();
+    var empty_elves: ElfSet = .empty;
+    defer empty_elves.deinit(std.testing.allocator);
 
-    try empty_elves.put("basic", .{
+    try empty_elves.put(std.testing.allocator, "basic", .{
         .name = "basic",
         .path = undefined,
         .lookup = undefined,
@@ -364,7 +364,8 @@ test "parsePollResult bits64 missing" {
 /// Reads poller output, forwards it, and augments recognized addresses with metadata.
 fn consume_poll_result(
     elves: ElfSet,
-    output: *std.fs.File.Writer,
+    io: std.Io,
+    output: *std.Io.File.Writer,
     line_buffer: *RingBuffer,
     reader: *std.Io.Reader,
 ) !void {
@@ -386,9 +387,9 @@ fn consume_poll_result(
             }
 
             if (parse_poll_result(elves, line_buffer.*, .bits32)) |result| {
-                try render_elf_data(result.addr, result.elf, writer);
+                try render_elf_data(io, result.addr, result.elf, writer);
             } else if (parse_poll_result(elves, line_buffer.*, .bits64)) |result| {
-                try render_elf_data(result.addr, result.elf, writer);
+                try render_elf_data(io, result.addr, result.elf, writer);
             }
         }
         reader.toss(chunk.len);
@@ -396,14 +397,13 @@ fn consume_poll_result(
 }
 
 /// Entry point for the debug-filter executable.
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     const allocator = std.heap.c_allocator;
 
-    var elves = ElfSet.init(allocator);
-    defer elves.deinit();
+    var elves: ElfSet = .empty;
+    defer elves.deinit(allocator);
 
-    const argv = try std.process.argsAlloc(allocator);
-    errdefer std.process.argsFree(allocator, argv);
+    const argv = try init.minimal.args.toSlice(init.arena.allocator());
 
     const app_argv = blk: {
         var i: usize = 1;
@@ -426,7 +426,7 @@ pub fn main() !u8 {
                 @panic("elf name out of bounds");
             }
 
-            const prev = try elves.fetchPut(app_name, .{
+            const prev = try elves.fetchPut(allocator, app_name, .{
                 .name = app_name,
                 .path = app_path,
 
@@ -454,7 +454,7 @@ pub fn main() !u8 {
     }
 
     for (elves.values()) |*value| {
-        const lookup = try ReloadableLookup.create(allocator, value.path);
+        const lookup = try ReloadableLookup.create(allocator, init.io, value.path);
         errdefer lookup.destroy();
         try created_lookups.append(allocator, lookup);
         value.lookup = lookup;
@@ -465,18 +465,18 @@ pub fn main() !u8 {
     const terminal_config_backup = try Termios.read();
     defer terminal_config_backup.apply() catch |err| std.log.err("failed to re-apply terminal settings: {}", .{err});
 
-    const term = try spawn_and_filter_subprocess(elves, app_argv, allocator);
+    const term = try spawn_and_filter_subprocess(init.io, elves, app_argv, allocator);
     switch (term) {
-        .Exited => |code| return code,
-        .Signal => |signal| {
+        .exited => |code| return code,
+        .signal => |signal| {
             std.log.err("process died with signal {d}", .{signal});
             return 1;
         },
-        .Stopped => |code| {
+        .stopped => |code| {
             std.log.err("process was stopped: 0x{X:0>8}", .{code});
             return 1;
         },
-        .Unknown => |code| {
+        .unknown => |code| {
             std.log.err("process had an unknown exit reason (0x{X:0>8})", .{code});
             return 1;
         },
@@ -486,74 +486,90 @@ pub fn main() !u8 {
 }
 
 /// Runs the target process and streams its stdio through the filter pipeline.
-fn spawn_and_filter_subprocess(elves: ElfSet, app_argv: []const []const u8, allocator: std.mem.Allocator) !std.process.Child.Term {
-    var proc = std.process.Child.init(app_argv, allocator);
+fn spawn_and_filter_subprocess(
+    io: std.Io,
+    elves: ElfSet,
+    app_argv: []const []const u8,
+    allocator: std.mem.Allocator,
+) !std.process.Child.Term {
+    var proc = try std.process.spawn(io, .{
+        .argv = app_argv,
+        .stdin = .inherit,
+        .stdout = .pipe,
+        .stderr = .pipe,
+    });
 
-    proc.stdin_behavior = .Inherit;
-    proc.stdout_behavior = .Pipe;
-    proc.stderr_behavior = .Pipe;
-
-    try proc.spawn();
-
-    filter_and_forward_stdio(allocator, elves, &proc) catch |err| {
+    filter_and_forward_stdio(allocator, io, elves, &proc) catch |err| {
         std.log.err("failed to forward stdio: {}", .{err});
-        return try proc.kill();
+        proc.kill(io);
+        return err;
     };
 
-    return try proc.wait();
+    return try proc.wait(io);
 }
 
 /// Polls the child process output streams and forwards them to stdout/stderr.
-fn filter_and_forward_stdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *std.process.Child) !void {
-    var poller = std.Io.poll(allocator, enum { stdout, stderr }, .{
-        .stdout = proc.stdout.?,
-        .stderr = proc.stderr.?,
-    });
-    defer poller.deinit();
+fn filter_and_forward_stdio(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    elves: ElfSet,
+    proc: *std.process.Child,
+) !void {
+    var mr: std.Io.File.MultiReader = undefined;
+    var buffers: std.Io.File.MultiReader.Buffer(2) = undefined;
+    mr.init(allocator, io, buffers.toStreams(), &.{ proc.stdout.?, proc.stderr.? });
+    defer mr.deinit();
 
     var stdout_line_buffer: RingBuffer = .{};
     var stderr_line_buffer: RingBuffer = .{};
 
     var stdout_buffer: [4096]u8 = undefined;
     var stderr_buffer: [4096]u8 = undefined;
-    var stdout_buffered_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    var stderr_buffered_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    var stdout_buffered_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
+    var stderr_buffered_writer = std.Io.File.stderr().writer(io, &stderr_buffer);
 
-    try refresh_all_elves(elves);
+    try refresh_all_elves(elves, io);
 
-    while (try poller.poll()) {
-        try refresh_all_elves(elves);
+    // keep in-sync with `mr.init` above
+    const stdout = mr.reader(0);
+    const stderr = mr.reader(1);
+
+    while (true) {
+        try refresh_all_elves(elves, io);
         try consume_poll_result(
             elves,
+            io,
             &stdout_buffered_writer,
             &stdout_line_buffer,
-            poller.reader(.stdout),
+            stdout,
         );
         try consume_poll_result(
             elves,
+            io,
             &stderr_buffered_writer,
             &stderr_line_buffer,
-            poller.reader(.stderr),
+            stderr,
         );
+        mr.checkAnyError() catch break;
     }
 
     try stdout_buffered_writer.interface.flush();
     try stderr_buffered_writer.interface.flush();
 }
 
-fn refresh_all_elves(elves: ElfSet) !void {
+fn refresh_all_elves(elves: ElfSet, io: std.Io) !void {
     for (elves.values()) |value| {
         const resource = value.lookup;
-        resource.lock();
-        defer resource.unlock();
-        try resource.refreshLocked(false);
+        resource.lock(io);
+        defer resource.unlock(io);
+        try resource.refreshLocked(io, false);
     }
 }
 
 const RingBuffer = struct {
     const max_item_count = ElfFile.max_name_len + max_suffix_len;
 
-    data: [max_item_count]u8 = .{0} ** max_item_count,
+    data: [max_item_count]u8 = @splat(0),
     next_element: usize = 0,
 
     /// Stores a single byte in the ring buffer.
@@ -639,7 +655,7 @@ const windows = struct {
     extern "kernel32" fn CreateFileMappingA(
         hFile: win.HANDLE,
         lpFileMappingAttributes: ?*anyopaque,
-        flProtect: win.DWORD,
+        flProtect: win.PAGE,
         dwMaximumSizeHigh: win.DWORD,
         dwMaximumSizeLow: win.DWORD,
         lpName: ?win.LPCSTR,
@@ -662,11 +678,11 @@ const windows = struct {
     const Handle = win.HANDLE;
 
     /// Creates a read-only mapping for the provided file.
-    fn create_mapping(file: std.fs.File) !Handle {
+    fn create_mapping(file: std.Io.File) !Handle {
         const mapping = CreateFileMappingA(
             file.handle,
             null,
-            win.PAGE_READONLY,
+            .{ .READONLY = true },
             0,
             0,
             null,
@@ -693,7 +709,7 @@ const windows = struct {
     /// Unmaps a previously mapped view from memory.
     fn unmap_view(addr: *const anyopaque) !void {
         const res = UnmapViewOfFile(addr);
-        if (res == 0) return error.UnmapFailed;
+        if (res == .FALSE) return error.UnmapFailed;
     }
 };
 
@@ -709,9 +725,9 @@ const MapResult = if (is_windows) struct {
 } else []align(page_size) const u8;
 
 /// Maps the entire file into memory and returns the mapping result.
-fn map_whole_file(file: std.fs.File) !MapResult {
-    const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
-    defer file.close();
+fn map_whole_file(io: std.Io, file: std.Io.File) !MapResult {
+    const file_len = std.math.cast(usize, try file.length(io)) orelse std.math.maxInt(usize);
+    defer file.close(io);
 
     if (is_windows) {
         const mapping = try windows.create_mapping(file);
@@ -737,7 +753,7 @@ fn map_whole_file(file: std.fs.File) !MapResult {
 }
 
 /// Loads DWARF debug information and symbol metadata from the provided ELF file.
-pub fn read_elf_debug_info(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct {
+pub fn read_elf_debug_info(allocator: std.mem.Allocator, io: std.Io, elf_file: std.Io.File) !struct {
     map_result: MapResult,
     dwarf_info: dwarf.DwarfInfo,
     address_width: BitWidth,
@@ -745,7 +761,7 @@ pub fn read_elf_debug_info(allocator: std.mem.Allocator, elf_file: std.fs.File) 
     sections: []SectionEntry,
 } {
     const elf = std.elf;
-    const map_result = try map_whole_file(elf_file);
+    const map_result = try map_whole_file(io, elf_file);
     errdefer {
         if (is_windows) {
             map_result.deinit();
@@ -1108,10 +1124,10 @@ pub const Lookup = struct {
     };
 
     /// Loads an ELF debug lookup from the given file path.
-    pub fn create(allocator: std.mem.Allocator, path: []const u8) !*Lookup {
+    pub fn create(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !*Lookup {
         var elf_info = blk: {
-            const file = try std.fs.cwd().openFile(path, .{});
-            break :blk try read_elf_debug_info(allocator, file);
+            const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+            break :blk try read_elf_debug_info(allocator, io, file);
         };
         errdefer allocator.free(elf_info.symbols);
         errdefer allocator.free(elf_info.sections);
