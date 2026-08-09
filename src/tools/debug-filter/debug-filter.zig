@@ -742,7 +742,7 @@ fn map_whole_file(io: std.Io, file: std.Io.File) !MapResult {
     const mapped_mem = try std.posix.mmap(
         null,
         file_len,
-        std.posix.PROT.READ,
+        .{ .READ = true },
         .{ .TYPE = .SHARED },
         file.handle,
         0,
