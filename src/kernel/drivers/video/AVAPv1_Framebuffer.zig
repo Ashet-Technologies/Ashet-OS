@@ -191,7 +191,7 @@ fn ping(port: std.fs.File) !bool {
     const deadline: Deadline = .from_ms(100);
 
     const header = try read_header(port, deadline);
-    try read_discarding(port, header.length, deadline);
+    try read_discarding(port, header.length, deadline, .log);
     try read_footer(port, header, deadline);
 
     return header.ack;
@@ -200,7 +200,7 @@ fn ping(port: std.fs.File) !bool {
 pub fn write_buffer(port: std.fs.File, offset: u32, buffer: []const u8) !void {
     const length: u32 = std.math.cast(u32, buffer.len +| 4) orelse return error.Overflow;
 
-    try write_header(port, length, .ping);
+    try write_header(port, length, .write_buffer);
 
     try write_all(port, std.mem.asBytes(&std.mem.nativeToLittle(u32, offset)));
     try write_all(port, buffer);
@@ -210,7 +210,7 @@ pub fn write_buffer(port: std.fs.File, offset: u32, buffer: []const u8) !void {
     const deadline: Deadline = .from_ms(100);
 
     const header = try read_header(port, deadline);
-    try read_discarding(port, header.length, deadline);
+    try read_discarding(port, header.length, deadline, .log);
     try read_footer(port, header, deadline);
 
     if (header.ack == false)
@@ -223,7 +223,7 @@ pub fn swap_buffers(port: std.fs.File) !void {
     const deadline: Deadline = .from_ms(100);
 
     const header = try read_header(port, deadline);
-    try read_discarding(port, header.length, deadline);
+    try read_discarding(port, header.length, deadline, .log);
     try read_footer(port, header, deadline);
 
     if (header.ack == false)
@@ -280,10 +280,10 @@ fn read_header(port: std.fs.File, deadline: Deadline) !Header {
 
 fn read_footer(port: std.fs.File, response: Header, deadline: Deadline) !void {
     const overhead = compute_padding(response.length);
-    try read_discarding(port, overhead, deadline);
+    try read_discarding(port, overhead, deadline, .ignore);
 }
 
-fn read_discarding(port: std.fs.File, length: usize, deadline: Deadline) !void {
+fn read_discarding(port: std.fs.File, length: usize, deadline: Deadline, output: enum { ignore, log }) !void {
     var buffer: [8192]u8 = undefined;
 
     var count: usize = 0;
@@ -292,6 +292,11 @@ fn read_discarding(port: std.fs.File, length: usize, deadline: Deadline) !void {
 
         const limit = @min(buffer.len, length - count);
         const len = try port.read(buffer[0..limit]);
+
+        if (len > 0 and output == .log) {
+            logger.err("unexpected data from device: {x}", .{buffer[0..len]});
+        }
+
         count += len;
     }
 }
@@ -302,13 +307,13 @@ fn compute_padding(total_length: usize) usize {
 }
 
 fn write_all(port: std.fs.File, buffer: []const u8) !void {
-    logger.debug("write {d} bytes", .{buffer.len});
+    // logger.debug("write {d} bytes", .{buffer.len});
 
     try port.writeAll(buffer);
 }
 
 fn read_all(port: std.fs.File, buffer: []u8, deadline: Deadline) !void {
-    logger.debug("read {d} bytes", .{buffer.len});
+    // logger.debug("read {d} bytes", .{buffer.len});
 
     var offset: usize = 0;
     while (offset < buffer.len) {
@@ -316,9 +321,9 @@ fn read_all(port: std.fs.File, buffer: []u8, deadline: Deadline) !void {
 
         const len = try port.read(buffer[offset..]);
 
-        if (len > 0) {
-            logger.debug(" .. {x}", .{buffer[offset .. offset + len]});
-        }
+        // if (len > 0) {
+        //     logger.debug(" .. {x}", .{buffer[offset .. offset + len]});
+        // }
 
         offset += len;
     }
