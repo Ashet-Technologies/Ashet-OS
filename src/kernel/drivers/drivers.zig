@@ -52,6 +52,8 @@ pub const video = struct {
     pub const Multiboot_Framebuffer = @import("video/Multiboot_Framebuffer.zig");
     pub const Memory_Mapped_Framebuffer = @import("video/Memory_Mapped_Framebuffer.zig");
     pub const Ashet_Framebuffer = @import("video/Ashet_Framebuffer.zig");
+
+    pub const AVAPv1_Framebuffer = @import("video/AVAPv1_Framebuffer.zig");
 };
 
 pub const network = struct {
