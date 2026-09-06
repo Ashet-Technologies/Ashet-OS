@@ -53,7 +53,7 @@ pub const Output = struct {
     system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
 
     /// If true, the kernel will automatically flush the screen in a background process.
-    auto_flush: bool = false,
+    auto_flush: bool = true, // TODO: Fix this
     flush_required: bool = false,
     video_driver: *ashet.drivers.VideoDevice,
 

@@ -178,10 +178,10 @@ fn flush(driver: *Driver) void {
 }
 
 fn flush_with_error(vd: *AVAPv1_Framebuffer) !void {
-    logger.debug("write buffer", .{});
+    // logger.debug("write buffer", .{});
     try write_buffer(vd.device, 0, @ptrCast(&vd.framebuffer));
 
-    logger.debug("swap buffers", .{});
+    // logger.debug("swap buffers", .{});
     try swap_buffers(vd.device);
 }
 
