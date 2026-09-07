@@ -373,41 +373,40 @@ pub const syscalls = struct {
     };
 
     pub const video = struct {
-        pub fn enumerate(ids: ?[]abi.VideoOutputID) usize {
+        pub fn enumerate(ids: ?[]abi.video.VideoOutputID) usize {
             return ashet.video.enumerate(ids);
         }
 
-        pub fn acquire(output: abi.VideoOutputID) error{ SystemResources, NotFound, NotAvailable }!abi.VideoOutput {
+        pub fn acquire(output_id: abi.video.VideoOutputID) error{ OutputInUse, InvalidId, SystemResources }!abi.video.VideoOutput {
             const proc = get_current_process();
 
-            const video_output = try ashet.video.acquire_output(output);
+            const video_output = try ashet.video.acquire_output(output_id);
 
             const handle = try ashet.resources.add_to_process(proc, &video_output.system_resource);
 
-            return handle.unsafe_cast(.video_output);
+            return handle.unsafe_cast(.video_video_output);
         }
 
-        pub fn get_resolution(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.Size {
+        pub fn get_resolution(output_handle: abi.video.VideoOutput) error{InvalidHandle}!abi.Size {
             _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
             return output.get_resolution();
         }
 
-        pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.VideoMemory {
-            _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
-            return output.get_video_memory();
-        }
-
-        pub fn get_palette(output: abi.VideoOutput, palette: *[abi.palette_size]abi.Color) error{InvalidHandle}!void {
+        pub fn create_buffer_mapping(output: abi.video.VideoOutput, requested_kind: abi.video.BufferKind) error{ InvalidHandle, Unsupported, AlreadyExists, SystemResources }!abi.video.BufferMapping {
             _ = output;
-            _ = palette;
+            _ = requested_kind;
             not_implemented_yet(@src());
         }
 
-        pub fn set_palette(output: abi.VideoOutput, palette: *const [abi.palette_size]abi.Color) error{ InvalidHandle, Unsupported } {
-            _ = output;
-            _ = palette;
+        pub fn get_video_memory(buffer: abi.video.BufferMapping) error{InvalidHandle}!abi.video.VideoMemory {
+            _ = buffer;
             not_implemented_yet(@src());
         }
+
+        // pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.VideoMemory {
+        //     _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
+        //     return output.get_video_memory();
+        // }
     };
 
     pub const overlapped = struct {
@@ -493,7 +492,7 @@ pub const syscalls = struct {
 
         /// Creates a new framebuffer based off a video output. Can be used to output pixels
         /// to the screen.
-        pub fn create_video_framebuffer(video_output: abi.VideoOutput) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+        pub fn create_video_framebuffer(video_output: abi.video.VideoOutput) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
             const proc, const output = try resolve_typed_resource(ashet.video.Output, video_output.as_resource());
 
             const fb = try ashet.graphics.Framebuffer.create_video_output(output);

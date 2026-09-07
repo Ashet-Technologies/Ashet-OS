@@ -2443,6 +2443,90 @@
     {
       "fqn": "Rectangle.everything",
       "uid": 611
+    },
+    {
+      "fqn": "video.VideoOutputID",
+      "uid": 612
+    },
+    {
+      "fqn": "video.VideoOutput",
+      "uid": 613
+    },
+    {
+      "fqn": "video.acquire.AlreadyExists",
+      "uid": 614
+    },
+    {
+      "fqn": "video.acquire.InvalidId",
+      "uid": 615
+    },
+    {
+      "fqn": "video.PresentMode",
+      "uid": 616
+    },
+    {
+      "fqn": "video.WritePixels.InvalidHandle",
+      "uid": 617
+    },
+    {
+      "fqn": "video.WritePixels.BufferSize",
+      "uid": 618
+    },
+    {
+      "fqn": "video.WritePixels.InvalidStride",
+      "uid": 619
+    },
+    {
+      "fqn": "video.WritePixels.InvalidRegion",
+      "uid": 620
+    },
+    {
+      "fqn": "video.WritePixels",
+      "uid": 621
+    },
+    {
+      "fqn": "video.BufferMapping",
+      "uid": 622
+    },
+    {
+      "fqn": "video.BufferKind",
+      "uid": 623
+    },
+    {
+      "fqn": "video.create_buffer_mapping.InvalidHandle",
+      "uid": 624
+    },
+    {
+      "fqn": "video.create_buffer_mapping.Unsupported",
+      "uid": 625
+    },
+    {
+      "fqn": "video.create_buffer_mapping.AlreadyExists",
+      "uid": 626
+    },
+    {
+      "fqn": "video.create_buffer_mapping.SystemResources",
+      "uid": 627
+    },
+    {
+      "fqn": "video.create_buffer_mapping",
+      "uid": 628
+    },
+    {
+      "fqn": "video.Present.InvalidHandle",
+      "uid": 629
+    },
+    {
+      "fqn": "video.Present",
+      "uid": 630
+    },
+    {
+      "fqn": "video.VideoMemory",
+      "uid": 631
+    },
+    {
+      "fqn": "video.acquire.OutputInUse",
+      "uid": 632
     }
   ]
 }

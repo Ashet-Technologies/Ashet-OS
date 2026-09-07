@@ -4,7 +4,7 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.video);
 
 pub const Color = ashet.abi.Color;
-pub const OutputID = ashet.abi.VideoOutputID;
+pub const OutputID = ashet.abi.video.VideoOutputID;
 pub const Resolution = ashet.abi.Size;
 pub const VideoMemory = ashet.abi.VideoMemory;
 
@@ -50,7 +50,7 @@ pub const VideoDevice = struct {
 pub const Output = struct {
     pub const Destructor = ashet.resources.Destructor(@This(), _noop);
 
-    system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
+    system_resource: ashet.resources.SystemResource = .{ .type = .video_video_output },
 
     /// If true, the kernel will automatically flush the screen in a background process.
     auto_flush: bool = true, // TODO: Fix this
@@ -109,6 +109,14 @@ pub const Output = struct {
             call.finalize(ashet.abi.video.WaitForVBlank, .{});
         }
     }
+};
+
+pub const BufferMapping = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _noop);
+
+    system_resource: ashet.resources.SystemResource = .{ .type = .video_video_output },
+
+    fn _noop(_: *BufferMapping) void {}
 };
 
 const frame_rate = 1000 / 30; // 30 Hz
@@ -194,19 +202,17 @@ pub fn enumerate(maybe_ids: ?[]OutputID) usize {
         for (ids, 0..count) |*id, index| {
             id.* = @enumFromInt(@as(u8, @intCast(index)));
         }
-        return count;
-    } else {
-        return video_outputs.len;
     }
+    return video_outputs.len;
 }
 
-pub fn acquire_output(output_id: OutputID) error{ NotFound, NotAvailable }!*Output {
+pub fn acquire_output(output_id: OutputID) error{ InvalidId, OutputInUse }!*Output {
     const index = @intFromEnum(output_id);
     if (index >= video_outputs.len)
-        return error.NotFound;
+        return error.InvalidId;
     const output = &video_outputs[index];
     if (output.system_resource.owners.len > 0)
-        return error.NotAvailable;
+        return error.OutputInUse;
     return output;
 }
 
@@ -216,6 +222,18 @@ pub fn wait_for_vblank_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.ab
         return;
     };
     output.vsync_awaiters.enqueue(call, null);
+}
+
+pub fn write_pixels_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.video.WritePixels.Inputs) void {
+    _ = call;
+    _ = inputs;
+    @panic("TODO: write_pixels_async!");
+}
+
+pub fn present_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.video.Present.Inputs) void {
+    _ = call;
+    _ = inputs;
+    @panic("TODO: present_async!");
 }
 
 pub fn load_splash_screen(vmem: VideoMemory) void {
