@@ -415,6 +415,12 @@ namespace video {
         out count: usize;
     }
 
+    //? TODO: syscall query_output() -> capabilities, resolution, vid, pid, ...
+    //?
+    //? - supports_partial_update: bool
+    //? - requires_vsync_present: bool, ///< PresentMode.immediate is equivalent to PresentMode.vblank
+    //? - has_explicit_present: bool, ///< PresentMode.dont_care does not make the data visible
+
     /// The video output resource is an exclusive access token to a
     /// video output.
     ///
@@ -480,6 +486,11 @@ namespace video {
         /// NOTE: This mode will immediately upload the pixel data and
         ///       will not await a vertical blanking period. This means the
         ///       upload is likely to create visual glitches or tearing.
+        ///
+        /// NOTE: This mode is best-effort, and some video outputs may not support
+        ///       immediate display upload, and require a vertical blanking interval
+        ///       to display the new data. This means the upload operation *may*
+        ///       be equivalent to the @`vblank` mode.
         item immediate = 0;
 
         /// The kernel attempts a tearing free upload of the pixel data.
@@ -488,8 +499,28 @@ namespace video {
         /// vertical blanking period.
         ///
         /// NOTE: This mode is best-effort, and does not guarantee the
-        ///       video data is uploaded tearing-free.
+        ///       video data is uploaded tearing-free. This means this operation
+        ///       *may* be equivalent to the @`immediate` mode.
         item vblank = 1;
+
+        /// The kernel does not attempt to force-display the uploaded video
+        /// contents.
+        ///
+        /// This means that the kernel does not attempt to present the data to
+        /// the user, it just uploads it to the video output.
+        ///
+        /// NOTE: This mode is best-effort and may still be executed equivalently
+        ///       to @`immediate` or @`vblank` if the video output performs automatic
+        ///       self-refreshs.
+        ///
+        /// LORE: This is required to enable fast consecutive partial updates of
+        ///       e.g. an AVAPv1 compatible display adapter, as these adapters
+        ///       do a device-internal double-buffering and can only present data
+        ///       with a buffer swap and an implicit vblank synchronization.
+        ///       If we would force the @`WritePixels` operation to always present,
+        ///       partial updates would each take exactly one frame, and it would be
+        ///       impossible to upload more than one partial image per frame.
+        item dont_care = 2;
     }
 
     /// Uploads pixels to a video output.
@@ -546,8 +577,11 @@ namespace video {
         /// `stride` is less than `destination.width`.
         error InvalidStride;
 
-        /// `destination` is outside the actual video buffer resolution.
+        /// `destination` is outside the actual video buffer resolution,
         error InvalidRegion;
+
+        /// `output` does not support partial updates.
+        error InvalidOperation;
     }
 
     /// A buffer mapping provides a memory-mapped view into a
@@ -1408,7 +1442,7 @@ namespace draw {
     /// Other framebuffer types are not allowed to be passed.
     syscall get_framebuffer_memory {
         in    fb: Framebuffer;
-        out   memory: VideoMemory;
+        out   memory: video.VideoMemory;
         error InvalidHandle;
         error Unsupported;
     }
@@ -3503,25 +3537,6 @@ struct Rectangle {
     field x: i16;
     field y: i16;
     field width: u16;
-    field height: u16;
-}
-
-struct VideoMemory {
-    /// Pointer to the first pixel of the first scanline.
-    ///
-    /// Each scanline is @`stride` elements separated from
-    /// each other and contains @`width` valid elements.
-    ///
-    /// There are @`height` total scanlines available.
-    field base: [*]align(4) Color;
-
-    /// Length of a scanline.
-    field stride: usize;
-
-    /// Number of valid elements in a scanline
-    field width: u16;
-
-    /// Number of valid scanlines.
     field height: u16;
 }
 

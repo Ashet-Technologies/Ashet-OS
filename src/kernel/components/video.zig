@@ -6,7 +6,10 @@ const logger = std.log.scoped(.video);
 pub const Color = ashet.abi.Color;
 pub const OutputID = ashet.abi.video.VideoOutputID;
 pub const Resolution = ashet.abi.Size;
-pub const VideoMemory = ashet.abi.VideoMemory;
+pub const VideoMemory = ashet.abi.video.VideoMemory;
+
+const Rectangle = ashet.abi.Rectangle;
+const PresentMode = ashet.abi.video.PresentMode;
 
 pub const Buffering = enum {
     buffered,
@@ -25,6 +28,14 @@ pub const VideoDevice = struct {
     flush_fn: *const fn (*ashet.drivers.Driver) void,
     get_properties_fn: *const fn (*ashet.drivers.Driver) DeviceProperties,
     get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO: Go through all drivers and see which actually support this
+
+    begin_write_pixels_fn: ?*const fn (
+        driver: *ashet.drivers.Driver,
+        call: *ashet.overlapped.AsyncCall,
+        rectangle: Rectangle,
+        pixels: []const Color,
+        mode: PresentMode,
+    ) void,
 
     pub fn flush(vd: *VideoDevice) void {
         vd.flush_fn(ashet.drivers.resolveDriver(.video, vd));
@@ -45,12 +56,32 @@ pub const VideoDevice = struct {
             @panic("invalid API use");
         }
     }
+
+    pub fn begin_write_pixels(
+        vd: *VideoDevice,
+        call: *ashet.overlapped.AsyncCall,
+        rectangle: Rectangle,
+        pixels: []const Color,
+        mode: PresentMode,
+    ) void {
+        vd.begin_write_pixels_fn(
+            ashet.drivers.resolveDriver(.video, vd),
+            call,
+            rectangle,
+            pixels,
+            mode,
+        );
+    }
 };
 
 pub const Output = struct {
     pub const Destructor = ashet.resources.Destructor(@This(), _noop);
 
     system_resource: ashet.resources.SystemResource = .{ .type = .video_video_output },
+
+    buffer_mappings: std.EnumArray(ashet.abi.video.BufferKind, ?*BufferMapping) = .initFill(null),
+
+    supports_partial_update: bool = true, // TODO(gpu_support): Query this from the driver
 
     /// If true, the kernel will automatically flush the screen in a background process.
     auto_flush: bool = true, // TODO: Fix this
@@ -63,24 +94,53 @@ pub const Output = struct {
 
     fn _noop(_: *Output) void {}
 
-    pub fn get_resolution(output: Output) Resolution {
+    pub fn get_resolution(output: *const Output) Resolution {
         return output.video_driver.get_properties().resolution;
     }
 
-    /// The raw exposed video memory. Writing to this will change the content
-    /// on the screen.
-    /// Memory is interpreted with the current video mode to produce an image.
-    pub fn get_video_memory(output: Output) VideoMemory {
-        const props = output.video_driver.get_properties();
+    pub fn begin_write_pixels(output: *const Output, call: *ashet.overlapped.AsyncCall, destination: Rectangle, pixels: []const Color, stride: usize, mode: PresentMode) error{
+        BufferSize,
+        InvalidStride,
+        InvalidRegion,
+        InvalidOperation,
+    }!void {
+        const resolution = output.get_resolution();
 
-        std.debug.assert(props.video_memory.len >= (props.stride * @as(usize, props.resolution.height)));
+        const screen_rect: Rectangle = .new(.zero, resolution);
 
-        return .{
-            .base = props.video_memory.ptr,
-            .stride = props.stride,
-            .width = props.resolution.width,
-            .height = props.resolution.height,
-        };
+        if (!screen_rect.containsRectangle(destination)) {
+            // No updates allowed outside the screen boundaries
+            return error.InvalidRegion;
+        }
+
+        if (!output.supports_partial_update and !destination.eql(screen_rect)) {
+            // No partial updates allowed
+            return error.InvalidOperation;
+        }
+
+        if (stride < destination.width) {
+            // Check if each row contains at least the actual row length of pixels.
+            return error.InvalidStride;
+        }
+
+        const expected_pixel_count = stride * @max(0, destination.height -| 1) + destination.width;
+        if (pixels.len < expected_pixel_count) {
+            // Check if the buffer is big enough to be written
+            return error.BufferSize;
+        }
+
+        if (destination.width == 0 or destination.height == 0) {
+            // Trivial case: Immediate completion when empty target.
+            return call.finalize(ashet.abi.video.WritePixels, .{});
+        }
+
+        return output.video_driver.begin_write_pixels(
+            call,
+            destination,
+            pixels,
+            stride,
+            mode,
+        );
     }
 
     /// Requests that the driver shall flip front- and back buffers in the next
@@ -116,7 +176,25 @@ pub const BufferMapping = struct {
 
     system_resource: ashet.resources.SystemResource = .{ .type = .video_video_output },
 
+    output: *Output,
+
     fn _noop(_: *BufferMapping) void {}
+
+    /// The raw exposed video memory. Writing to this will change the content
+    /// on the screen.
+    /// Memory is interpreted with the current video mode to produce an image.
+    pub fn get_video_memory(mapping: *const BufferMapping) VideoMemory {
+        const props = mapping.output.video_driver.get_properties();
+
+        std.debug.assert(props.video_memory.len >= (props.stride * @as(usize, props.resolution.height)));
+
+        return .{
+            .base = props.video_memory.ptr,
+            .stride = props.stride,
+            .width = props.resolution.width,
+            .height = props.resolution.height,
+        };
+    }
 };
 
 const frame_rate = 1000 / 30; // 30 Hz
@@ -225,9 +303,19 @@ pub fn wait_for_vblank_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.ab
 }
 
 pub fn write_pixels_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.video.WritePixels.Inputs) void {
-    _ = call;
-    _ = inputs;
-    @panic("TODO: write_pixels_async!");
+    const output: *Output = ashet.resources.resolve(Output, call.resource_owner, inputs.output.as_resource()) catch {
+        return call.finalize(ashet.abi.video.WritePixels, error.InvalidHandle);
+    };
+
+    output.begin_write_pixels(
+        call,
+        inputs.destination,
+        inputs.pixels_ptr[0..inputs.pixels_len],
+        inputs.stride,
+        inputs.mode,
+    ) catch |err| {
+        return call.finalize(ashet.abi.video.WritePixels, err);
+    };
 }
 
 pub fn present_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.video.Present.Inputs) void {

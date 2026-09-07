@@ -395,18 +395,13 @@ pub const syscalls = struct {
         pub fn create_buffer_mapping(output: abi.video.VideoOutput, requested_kind: abi.video.BufferKind) error{ InvalidHandle, Unsupported, AlreadyExists, SystemResources }!abi.video.BufferMapping {
             _ = output;
             _ = requested_kind;
-            not_implemented_yet(@src());
+            not_implemented_yet(@src()); // TODO(gpu_support)
         }
 
-        pub fn get_video_memory(buffer: abi.video.BufferMapping) error{InvalidHandle}!abi.video.VideoMemory {
-            _ = buffer;
-            not_implemented_yet(@src());
+        pub fn get_video_memory(buffer_handle: abi.video.BufferMapping) error{InvalidHandle}!abi.video.VideoMemory {
+            _, const mapping = try resolve_typed_resource(ashet.video.BufferMapping, buffer_handle.as_resource());
+            return mapping.get_video_memory();
         }
-
-        // pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.VideoMemory {
-        //     _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
-        //     return output.get_video_memory();
-        // }
     };
 
     pub const overlapped = struct {
@@ -541,7 +536,7 @@ pub const syscalls = struct {
             return fb.get_size();
         }
 
-        pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.VideoMemory {
+        pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.video.VideoMemory {
             _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
             return switch (fb.type) {
                 .memory => |mem| .{

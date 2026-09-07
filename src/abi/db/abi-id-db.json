@@ -2527,6 +2527,10 @@
     {
       "fqn": "video.acquire.OutputInUse",
       "uid": 632
+    },
+    {
+      "fqn": "video.WritePixels.InvalidOperation",
+      "uid": 633
     }
   ]
 }

@@ -195,7 +195,7 @@ pub const Framebuffer = struct {
 
     pub const Type = union(ashet.abi.FramebufferType) {
         memory: Bitmap,
-        video: VideoOut,
+        video: noreturn, // TODO(gpu_support): video: VideoOut,
         window: *ashet.gui.Window,
         widget: *ashet.gui.Widget,
     };
@@ -227,19 +227,23 @@ pub const Framebuffer = struct {
     }
 
     pub fn create_video_output(output: *ashet.video.Output) error{SystemResources}!*Framebuffer {
-        const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
-        errdefer ashet.memory.type_pool(Framebuffer).free(fb);
+        _ = output;
+        // TODO(gpu_support):
+        @panic("TODO: graphics.create_video_output!");
 
-        fb.* = .{
-            .type = .{
-                .video = .{
-                    .output = output,
-                    .memory = output.get_video_memory(),
-                },
-            },
-        };
+        // const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
+        // errdefer ashet.memory.type_pool(Framebuffer).free(fb);
 
-        return fb;
+        // fb.* = .{
+        //     .type = .{
+        //         .video = .{
+        //             .output = output,
+        //             .memory = output.get_video_memory(),
+        //         },
+        //     },
+        // };
+
+        // return fb;
     }
 
     pub fn create_window(window: *ashet.gui.Window) error{SystemResources}!*Framebuffer {
@@ -272,7 +276,7 @@ pub const Framebuffer = struct {
                 const back_buffer = bmp.pixels[0 .. @as(usize, bmp.width) * bmp.stride];
                 ashet.memory.allocator.free(back_buffer);
             },
-            .video => {},
+            .video => unreachable, // TODO(gpu_support)
             .window => {},
             .widget => {},
         }
@@ -282,7 +286,7 @@ pub const Framebuffer = struct {
     fn invalidate(fb: *Framebuffer) void {
         switch (fb.type) {
             .memory => {}, // no-op, nothing to invalidate
-            .video => |video| video.output.flush(),
+            .video => unreachable, // TODO(gpu_support)
             .window => |win| win.invalidate_full(),
             .widget => |widget| widget.window.invalidate_region(widget.bounds),
         }
@@ -291,7 +295,7 @@ pub const Framebuffer = struct {
     pub fn get_size(fb: Framebuffer) Size {
         return switch (fb.type) {
             .memory => |mem| .new(mem.width, mem.height),
-            .video => |video| video.output.get_resolution(),
+            .video => unreachable, // TODO(gpu_support)
             .window => |win| win.size,
             .widget => |widget| widget.bounds.size(),
         };
@@ -313,15 +317,16 @@ pub const Framebuffer = struct {
                 .height = mem.height,
                 .stride = mem.stride,
             },
-            .video => |video| blk: {
-                const mem = video.output.get_video_memory();
-                break :blk .{
-                    .pixels = mem.base,
-                    .height = mem.height,
-                    .width = mem.width,
-                    .stride = mem.stride,
-                };
-            },
+            .video => unreachable, // TODO(gpu_support)
+            // TODO(gpu_support): .video => |video| blk: {
+            //     const mem = video.output.get_video_memory();
+            //     break :blk .{
+            //         .pixels = mem.base,
+            //         .height = mem.height,
+            //         .width = mem.width,
+            //         .stride = mem.stride,
+            //     };
+            // },
             .window => |win| .{
                 .pixels = win.pixels.ptr,
                 .width = win.size.width,
