@@ -22,7 +22,7 @@ run-avap-simulation:
 
 [working-directory: 'src/kernel']
 build-kernel:
-    {{zig}} build {{default_params}} -Dmachine=arm-ashet-hc -Dno-emit-bin
+    {{zig}} build {{default_params}} -Dmachine=x86-hosted-linux -Dno-emit-bin
 
     {{zig}} build {{default_params}} -Dmachine=arm-ashet-hc
     {{zig}} build {{default_params}} -Dmachine=arm-ashet-vhc

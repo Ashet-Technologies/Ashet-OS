@@ -85,7 +85,6 @@ pub fn init(
         .swap_chain = undefined,
     };
 
-    @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
     server.connection = shimizu.posix.Connection.open(allocator, .{}) catch |err| switch (err) {

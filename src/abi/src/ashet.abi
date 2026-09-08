@@ -582,6 +582,9 @@ namespace video {
 
         /// `output` does not support partial updates.
         error InvalidOperation;
+
+        /// The underlying video adapter had an I/O failure.
+        error IoError;
     }
 
     /// A buffer mapping provides a memory-mapped view into a

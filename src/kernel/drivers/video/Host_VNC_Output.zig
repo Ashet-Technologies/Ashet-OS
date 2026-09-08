@@ -12,17 +12,15 @@ const VNC_Server = @import("../../port/hosted/VNC_Server.zig");
 backbuffer_lock: std.Thread.Mutex = .{},
 
 backbuffer: []Color,
-frontbuffer: []align(ashet.memory.page_size) Color,
 width: u16,
 height: u16,
-backbuffer_dirty: bool,
 
 driver: Driver = .{
     .name = "Host VNC Screen",
     .class = .{
         .video = .{
             .get_properties_fn = get_properties,
-            .flush_fn = flush,
+            .begin_write_pixels_fn = begin_write_pixels,
         },
     },
 },
@@ -31,28 +29,19 @@ pub fn init(
     width: u16,
     height: u16,
 ) !Host_VNC_Output {
-    const fb = try std.heap.page_allocator.alignedAlloc(
-        Color,
-        .fromByteUnits(ashet.memory.page_size),
-        2 * @as(u32, width) * @as(u32, height),
-    );
+    const fb = try std.heap.page_allocator.alloc(Color, @as(u32, width) * @as(u32, height));
     errdefer std.heap.page_allocator.free(fb);
 
     return .{
         .width = width,
         .height = height,
-        .frontbuffer = fb[0 .. fb.len / 2],
-        .backbuffer = fb[fb.len / 2 .. fb.len],
-        .backbuffer_dirty = false,
+        .backbuffer = fb,
     };
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     return .{
-        .stride = vd.width,
-        .video_memory = vd.frontbuffer,
-        .video_memory_mapping = .buffered,
         .resolution = .{
             .width = vd.width,
             .height = vd.height,
@@ -60,18 +49,47 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     };
 }
 
-fn flush(driver: *Driver) void {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-
-    // vd.backbuffer_lock.lock();
-    // defer vd.backbuffer_lock.unlock();
-
-    @memcpy(vd.backbuffer, vd.frontbuffer);
-    vd.backbuffer_dirty = true;
-
-    vd.vnc_server().notify_flush();
-}
-
 fn vnc_server(output: *Host_VNC_Output) *VNC_Server {
     return @fieldParentPtr("screen", output);
+}
+
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
+
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = vd.backbuffer.ptr,
+                .width = vd.width,
+                .height = vd.height,
+                .stride = vd.width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
+
+    switch (mode) {
+        .dont_care => {},
+        .immediate, .vblank => vd.vnc_server().notify_flush(),
+    }
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }

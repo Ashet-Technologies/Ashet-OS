@@ -18,28 +18,24 @@ pub const Buffering = enum {
 
 pub const DeviceProperties = struct {
     resolution: Resolution,
-    stride: usize,
+    // stride: usize,
 
-    video_memory_mapping: Buffering,
-    video_memory: []align(ashet.memory.page_size) Color,
+    // video_memory_mapping: Buffering,
+    // video_memory: []align(ashet.memory.page_size) Color,
 };
 
 pub const VideoDevice = struct {
-    flush_fn: *const fn (*ashet.drivers.Driver) void,
     get_properties_fn: *const fn (*ashet.drivers.Driver) DeviceProperties,
     get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO: Go through all drivers and see which actually support this
 
-    begin_write_pixels_fn: ?*const fn (
+    begin_write_pixels_fn: *const fn (
         driver: *ashet.drivers.Driver,
         call: *ashet.overlapped.AsyncCall,
         rectangle: Rectangle,
         pixels: []const Color,
+        stride: usize,
         mode: PresentMode,
     ) void,
-
-    pub fn flush(vd: *VideoDevice) void {
-        vd.flush_fn(ashet.drivers.resolveDriver(.video, vd));
-    }
 
     pub fn get_properties(vd: *VideoDevice) DeviceProperties {
         return vd.get_properties_fn(ashet.drivers.resolveDriver(.video, vd));
@@ -62,6 +58,7 @@ pub const VideoDevice = struct {
         call: *ashet.overlapped.AsyncCall,
         rectangle: Rectangle,
         pixels: []const Color,
+        stride: usize,
         mode: PresentMode,
     ) void {
         vd.begin_write_pixels_fn(
@@ -69,6 +66,7 @@ pub const VideoDevice = struct {
             call,
             rectangle,
             pixels,
+            stride,
             mode,
         );
     }
@@ -143,25 +141,6 @@ pub const Output = struct {
         );
     }
 
-    /// Requests that the driver shall flip front- and back buffers in the next
-    /// frame.
-    ///
-    /// NOTE: This is only a request, and might be called more often than necessary,
-    ///       without impacting performance.
-    pub fn flush(output: *Output) void {
-        output.flush_required = true;
-    }
-
-    /// Potentially synchronizes the video storage with the screen.
-    /// Without calling this, the screen might not be refreshed at all.
-    ///
-    /// NOTE: This function will forcefully flip the buffers and might cost
-    ///       a good amount of time.
-    pub fn force_flush(output: *Output) void {
-        output.video_driver.flush();
-        output.flush_required = false;
-    }
-
     /// Notifies all overlapped events that wait for V-Blank on this output.
     pub fn notify_vblank_awaiters(output: *Output) void {
         while (output.vsync_awaiters.dequeue()) |tup| {
@@ -184,23 +163,22 @@ pub const BufferMapping = struct {
     /// on the screen.
     /// Memory is interpreted with the current video mode to produce an image.
     pub fn get_video_memory(mapping: *const BufferMapping) VideoMemory {
-        const props = mapping.output.video_driver.get_properties();
+        _ = mapping;
+        @panic("TODO: Implement get_video_memory"); // TODO(gpu_support): Implement get_video_memory
+        // const props = mapping.output.video_driver.get_properties();
 
-        std.debug.assert(props.video_memory.len >= (props.stride * @as(usize, props.resolution.height)));
+        // std.debug.assert(props.video_memory.len >= (props.stride * @as(usize, props.resolution.height)));
 
-        return .{
-            .base = props.video_memory.ptr,
-            .stride = props.stride,
-            .width = props.resolution.width,
-            .height = props.resolution.height,
-        };
+        // return .{
+        //     .base = props.video_memory.ptr,
+        //     .stride = props.stride,
+        //     .width = props.resolution.width,
+        //     .height = props.resolution.height,
+        // };
     }
 };
 
-const frame_rate = 1000 / 30; // 30 Hz
-
 var video_outputs: []Output = &.{};
-var video_flush_deadline = ashet.time.Deadline.init_abs(.system_start);
 
 pub fn initialize() !void {
     const count: usize = blk: {
@@ -229,20 +207,6 @@ pub fn initialize() !void {
             });
         }
     }
-    video_flush_deadline = ashet.time.Deadline.init_rel(frame_rate);
-}
-
-fn flush_all() void {
-    // Go through all video outputs that no support vertical blanking
-    // notifications with a periodic interval and manually flush them:
-    for (video_outputs) |*video_output| {
-        if (video_output.video_driver.supports_vblank_event())
-            continue;
-        if (video_output.auto_flush or video_output.flush_required) {
-            video_output.force_flush();
-        }
-        video_output.notify_vblank_awaiters();
-    }
 }
 
 ///Ticks the video subsystem
@@ -254,24 +218,12 @@ pub fn tick() void {
             continue;
 
         if (video_output.video_driver.get_one_vblank_event()) {
-            video_output.force_flush();
+            // video_output.force_flush();
             video_output.notify_vblank_awaiters();
         }
     }
 
-    if (video_flush_deadline.is_reached()) {
-        video_flush_deadline.move_forward(frame_rate);
-        flush_all();
-
-        var drop_count: usize = 0;
-        while (video_flush_deadline.is_reached()) {
-            drop_count += 1;
-            video_flush_deadline.move_forward(frame_rate);
-        }
-        if (drop_count > 0) {
-            logger.warn("dropping {} video frames!", .{drop_count});
-        }
-    }
+    // TODO(gpu_support): How to implement non-vblanking video outputs with WaitForVSync?
 }
 
 pub fn enumerate(maybe_ids: ?[]OutputID) usize {
@@ -355,4 +307,64 @@ pub const defaults = struct {
 
     /// The default border color if the screen is downscaled
     pub const border_color = splash_screen.base[0]; // just use the top-left pixel of the splash screen.
+};
+
+pub const utils = struct {
+    pub fn PixelBuffer(comptime Pixel: type, mutability: enum { @"const", mut }) type {
+        return struct {
+            data: switch (mutability) {
+                .@"const" => [*]const Pixel,
+                .mut => [*]Pixel,
+            },
+            width: usize,
+            height: usize,
+            stride: usize,
+        };
+    }
+
+    pub fn CopyPixelOptions(comptime DstPixel: type) type {
+        return struct {
+            dst_buffer: PixelBuffer(DstPixel, .mut),
+            dst_pos: struct { x: usize, y: usize },
+
+            src_buffer: PixelBuffer(Color, .@"const"),
+
+            convert_ctx: ?*anyopaque = null,
+        };
+    }
+
+    /// Copies a rectangular portion from src_buffer to dst_buffer,
+    /// potentially converting the color data.
+    pub fn copy_pixels(
+        comptime DstPixel: type,
+        options: CopyPixelOptions(DstPixel),
+        comptime convert_fn: ?fn (?*anyopaque, Color) DstPixel,
+    ) void {
+        if (DstPixel != Color and convert_fn == null)
+            @compileError("If copying to a non-native target, you have to provide a convert function");
+
+        // Assert that we fit:
+        std.debug.assert(options.dst_pos.x +| options.src_buffer.width <= options.dst_buffer.width);
+        std.debug.assert(options.dst_pos.y +| options.src_buffer.height <= options.dst_buffer.height);
+
+        var dst_iter = options.dst_buffer.data + options.dst_pos.y * options.dst_buffer.stride + options.dst_pos.x;
+        var src_iter = options.src_buffer.data;
+
+        for (0..options.src_buffer.height) |_| {
+            const dst_row = dst_iter;
+            const src_row = src_iter;
+
+            for (0..options.src_buffer.width) |x| {
+                const src = src_row[x];
+                const dst = if (convert_fn) |convert|
+                    convert(options.convert_ctx, src)
+                else
+                    src;
+                dst_row[x] = dst;
+            }
+
+            dst_iter += options.dst_buffer.stride;
+            src_iter += options.src_buffer.stride;
+        }
+    }
 };

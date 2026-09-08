@@ -2531,6 +2531,10 @@
     {
       "fqn": "video.WritePixels.InvalidOperation",
       "uid": 633
+    },
+    {
+      "fqn": "video.WritePixels.IoError",
+      "uid": 634
     }
   ]
 }

@@ -123,7 +123,6 @@ pub fn init(
     server.source = x11.Source.initAfterSetup(server.socket_reader.interface());
     server.sink = .{ .writer = &server.socket_writer.interface };
 
-    @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
     const base_resource = server.setup.resource_id_base;

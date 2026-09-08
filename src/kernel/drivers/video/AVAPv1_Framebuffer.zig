@@ -16,19 +16,17 @@ driver: Driver = .{
     .class = .{
         .video = .{
             .get_properties_fn = get_properties,
-            .flush_fn = flush,
+            .begin_write_pixels_fn = driver_begin_write_pixels,
         },
     },
 },
 
-framebuffer: [256_000]Color align(ashet.memory.page_size),
 device: std.fs.File,
 
 pub fn init(
     file_name: []const u8,
 ) error{ FileNotFound, BadFile, DeviceUnresponsive, IoError }!AVAPv1_Framebuffer {
     var fb: AVAPv1_Framebuffer = .{
-        .framebuffer = @splat(.black),
         .device = undefined,
     };
 
@@ -104,64 +102,21 @@ pub fn init(
         return error.DeviceUnresponsive;
     }
 
-    ashet.video.load_splash_screen(.{
-        .base = &fb.framebuffer,
-        .width = 640,
-        .height = 400,
-        .stride = 640,
-    });
-
-    fb.flush_with_error() catch |err| switch (err) {
-        error.InputOutput,
-        error.SystemResources,
-        error.IsDir,
-        error.OperationAborted,
-        error.BrokenPipe,
-        error.ConnectionResetByPeer,
-        error.ConnectionTimedOut,
-        error.NotOpenForReading,
-        error.SocketNotConnected,
-        error.WouldBlock,
-        error.Canceled,
-        error.AccessDenied,
-        error.ProcessNotFound,
-        error.LockViolation,
-        error.Unexpected,
-        error.PermissionDenied,
-        error.Overflow,
-        error.NoDevice,
-        error.FileTooBig,
-        error.NoSpaceLeft,
-        error.DeviceBusy,
-        error.DiskQuota,
-        error.InvalidArgument,
-        error.NotOpenForWriting,
-        error.MessageTooBig,
-        => return error.IoError,
-
-        error.Timeout,
-        => return error.DeviceUnresponsive,
-
-        error.WriteBufferFailed => {
-            logger.err("write buffers failed", .{});
-            return error.DeviceUnresponsive;
-        },
-
-        error.SwapBuffersFailed => {
-            logger.err("swap buffers failed", .{});
-            return error.DeviceUnresponsive;
-        },
-    };
+    // TODO(gpu_support): This needs to wander into the kernel:
+    // ashet.video.load_splash_screen(.{
+    //     .base = &fb.framebuffer,
+    //     .width = 640,
+    //     .height = 400,
+    //     .stride = 640,
+    // });
 
     return fb;
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
-    const vd = driver.resolve(AVAPv1_Framebuffer, "driver");
+    _ = driver;
+    // const vd = driver.resolve(AVAPv1_Framebuffer, "driver");
     return .{
-        .video_memory = &vd.framebuffer,
-        .video_memory_mapping = .buffered,
-        .stride = width,
         .resolution = .{
             .width = width,
             .height = height,
@@ -169,20 +124,73 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     };
 }
 
-fn flush(driver: *Driver) void {
+fn driver_begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
     const vd = driver.resolve(AVAPv1_Framebuffer, "driver");
 
-    vd.flush_with_error() catch |err| {
+    vd.begin_write_pixels(rectangle, pixels, stride, mode) catch |err| {
         logger.err("video driver failure: {t}", .{err});
+        const call_err: ashet.abi.video.WritePixels.Error = switch (err) {
+            // OS I/O layer:
+            error.InputOutput,
+            error.SystemResources,
+            error.IsDir,
+            error.OperationAborted,
+            error.BrokenPipe,
+            error.ConnectionResetByPeer,
+            error.ConnectionTimedOut,
+            error.NotOpenForReading,
+            error.SocketNotConnected,
+            error.WouldBlock,
+            error.Canceled,
+            error.AccessDenied,
+            error.ProcessNotFound,
+            error.LockViolation,
+            error.Unexpected,
+            error.PermissionDenied,
+            error.NoDevice,
+            error.FileTooBig,
+            error.NoSpaceLeft,
+            error.DeviceBusy,
+            error.DiskQuota,
+            error.InvalidArgument,
+            error.NotOpenForWriting,
+            error.MessageTooBig,
+
+            // our I/O layer
+            error.Timeout,
+            error.MissingAcknowledge,
+            => error.IoError,
+
+            error.Overflow,
+            => @panic("Kernel did not sanitize inputs properly"),
+        };
+        return call.finalize(ashet.abi.video.WritePixels, call_err);
     };
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }
 
-fn flush_with_error(vd: *AVAPv1_Framebuffer) !void {
+fn begin_write_pixels(
+    vd: *AVAPv1_Framebuffer,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) !void {
     // logger.debug("write buffer", .{});
-    try write_buffer(vd.device, 0, @ptrCast(&vd.framebuffer));
+    try write_rectangle(vd.device, rectangle, pixels, stride);
 
     // logger.debug("swap buffers", .{});
-    try swap_buffers(vd.device);
+    switch (mode) {
+        .dont_care => {},
+        .immediate, .vblank => try swap_buffers(vd.device),
+    }
 }
 
 fn ping(port: std.fs.File) !bool {
@@ -213,8 +221,54 @@ pub fn write_buffer(port: std.fs.File, offset: u32, buffer: []const u8) !void {
     try read_discarding(port, header.length, deadline, .log);
     try read_footer(port, header, deadline);
 
-    if (header.ack == false)
-        return error.WriteBufferFailed;
+    if (header.ack == false) {
+        logger.err("write_buffer did not ACK!", .{});
+        return error.MissingAcknowledge;
+    }
+}
+
+pub fn write_rectangle(port: std.fs.File, rectangle: ashet.abi.Rectangle, pixels: []const Color, stride: usize) !void {
+    const pixel_count = @as(u32, rectangle.width) * rectangle.height;
+
+    // [ x: u16, y: u16, width: u32, pixel: u8, … ]
+
+    const length: u32 = std.math.cast(u32, pixel_count +| 8) orelse return error.Overflow;
+    const x = std.math.cast(u16, rectangle.x).?;
+    const y = std.math.cast(u16, rectangle.y).?;
+
+    try write_header(port, length, .write_buffer);
+
+    try write_all(port, &int_slice(u16, x));
+    try write_all(port, &int_slice(u16, y));
+    try write_all(port, &int_slice(u32, rectangle.width));
+
+    {
+        comptime std.debug.assert(@sizeOf(Color) == @sizeOf(u8));
+        var row: [*]const u8 = @ptrCast(pixels.ptr);
+        for (0..rectangle.height) |_| {
+            try write_all(port, row[0..rectangle.width]);
+            row += stride;
+        }
+    }
+
+    try write_footer(port, length);
+
+    const deadline: Deadline = .from_ms(100);
+
+    const header = try read_header(port, deadline);
+    try read_discarding(port, header.length, deadline, .log);
+    try read_footer(port, header, deadline);
+
+    if (header.ack == false) {
+        logger.err("write_rectangle did not ACK!", .{});
+        return error.MissingAcknowledge;
+    }
+}
+
+fn int_slice(comptime T: type, value: T) [@sizeOf(T)]u8 {
+    var buf: [@sizeOf(T)]u8 = undefined;
+    std.mem.writeInt(T, &buf, value, .little);
+    return buf;
 }
 
 pub fn swap_buffers(port: std.fs.File) !void {
@@ -226,8 +280,10 @@ pub fn swap_buffers(port: std.fs.File) !void {
     try read_discarding(port, header.length, deadline, .log);
     try read_footer(port, header, deadline);
 
-    if (header.ack == false)
-        return error.SwapBuffersFailed;
+    if (header.ack == false) {
+        logger.err("swap_buffers did not ACK!", .{});
+        return error.MissingAcknowledge;
+    }
 }
 
 fn write_command(port: std.fs.File, cmd: Command, buffer: []const u8) !void {

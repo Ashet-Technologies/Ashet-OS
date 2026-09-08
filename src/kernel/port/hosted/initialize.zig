@@ -155,9 +155,10 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
                     badKernelOption("sdl", "sdl video output disabled!", .{});
                 }
             } else if (std.mem.eql(u8, device_type, "dummy")) {
-                if (res_x != 320 or res_y != 240) badKernelOption("video", "resolution must be 320x240!", .{});
                 const driver = try global_memory.create(ashet.drivers.video.Virtual_Video_Output);
-                driver.* = ashet.drivers.video.Virtual_Video_Output.init();
+                driver.* = ashet.drivers.video.Virtual_Video_Output.init(
+                    .new(res_x, res_y),
+                );
                 ashet.drivers.install(&driver.driver);
             } else if (std.mem.eql(u8, device_type, "avap-v1")) {
                 if (res_x != 640 or res_y != 400) badKernelOption("video", "AVAPv1 resolution must be 640x400!", .{});
