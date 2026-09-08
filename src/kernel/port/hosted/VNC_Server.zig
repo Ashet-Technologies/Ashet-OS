@@ -13,7 +13,7 @@ const VNC_Server = @This();
 allocator: std.mem.Allocator,
 socket: network.Socket,
 
-screen: ashet.drivers.video.Host_VNC_Output,
+screen: ashet.drivers.video.Externally_Managed_Output,
 input: ashet.drivers.input.Host_VNC_Input,
 
 /// Guards the `current_session` field access.
@@ -44,7 +44,7 @@ pub fn init(
     server.* = .{
         .allocator = allocator,
         .socket = server_sock,
-        .screen = try ashet.drivers.video.Host_VNC_Output.init(width, height),
+        .screen = try ashet.drivers.video.Externally_Managed_Output.init(width, height),
         .input = ashet.drivers.input.Host_VNC_Input.init(),
     };
 

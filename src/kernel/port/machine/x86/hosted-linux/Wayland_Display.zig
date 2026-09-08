@@ -47,7 +47,7 @@ should_render: bool = true,
 running: bool = true,
 
 // devices:
-screen: ashet.drivers.video.Host_VNC_Output,
+screen: ashet.drivers.video.Externally_Managed_Output,
 // input: ashet.drivers.input.Host_SDL_Input,
 
 window_width: u31,

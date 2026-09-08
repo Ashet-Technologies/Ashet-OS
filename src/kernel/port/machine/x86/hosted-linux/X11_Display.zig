@@ -39,7 +39,7 @@ put_image_msg_buffer: []align(4) u8,
 put_image_chunk_height: u16,
 
 // devices:
-screen: ashet.drivers.video.Host_VNC_Output,
+screen: ashet.drivers.video.Externally_Managed_Output,
 // input: ashet.drivers.input.Host_SDL_Input,
 
 pub fn init(
