@@ -23,16 +23,16 @@ pub fn getApplications(dep: *std.Build.Dependency) []const ExportedApp {
     const write_files = dep.namedWriteFiles(AshetSdk.exported_app_writefiles_key);
     const elf_files = dep.namedWriteFiles(AshetSdk.exported_elf_writefiles_key);
 
-    const apps = dep.builder.allocator.alloc(ExportedApp, write_files.files.items.len) catch @panic("out of memory");
+    const apps = dep.builder.allocator.alloc(ExportedApp, write_files.copies.items.len) catch @panic("out of memory");
 
-    for (apps, write_files.files.items) |*app, writefile| {
+    for (apps, write_files.copies.items) |*app, writefile| {
         app.* = .{
-            .ashex_file = writefile.contents.copy,
-            .elf_file = for (elf_files.files.items) |file| {
-                if (std.mem.eql(u8, file.sub_path, writefile.sub_path))
-                    break file.contents.copy;
+            .ashex_file = writefile.src_file,
+            .elf_file = for (elf_files.copies.items) |file| {
+                if (file.sub_path == writefile.sub_path)
+                    break file.src_file;
             } else unreachable,
-            .target_path = writefile.sub_path,
+            .target_path = dep.builder.graph.wip_configuration.stringSlice(writefile.sub_path),
         };
     }
 
@@ -134,12 +134,12 @@ pub const AshetSdk = struct {
 
         // if (zig_target.result.cpu.arch.isThumb()) {
         //     // Disable LTO on arm as it fails hard
-        //     exe.want_lto = false;
+        //     exe.lto = .none;
         // }
 
         exe.pie = true; // AshetOS requires PIE executables
 
-        exe.addObjectFile(sdk.syscall_library);
+        exe.root_module.addObjectFile(sdk.syscall_library);
         exe.setLinkerScript(sdk.linker_script);
 
         if (options.os_module_import) |os_module_import| {
@@ -240,7 +240,7 @@ pub const ExecutableOptions = struct {
 
     root_source_file: ?std.Build.LazyPath = null,
     version: ?std.SemanticVersion = null,
-    optimize: std.builtin.OptimizeMode = .Debug,
+    optimize: std.builtin.OptimizeMode = .debug,
     code_model: std.builtin.CodeModel = .small,
     max_rss: usize = 0,
     link_libc: ?bool = null,
@@ -281,7 +281,7 @@ pub fn build(b: *std.Build) void {
 
     const libashet_mod = module_dep.module("ashet");
 
-    b.modules.put("ashet", libashet_mod) catch @panic("out of memory");
+    b.modules.put(b.graph.arena, "ashet", libashet_mod) catch @panic("out of memory");
 
     const ashet_target = maybe_ashet_target orelse return;
 
@@ -296,7 +296,7 @@ pub fn build(b: *std.Build) void {
     const gen_binding_mod = b.createModule(.{
         .root_source_file = b.path("src/gen-libsyscall.zig"),
         .target = b.graph.host,
-        .optimize = .Debug,
+        .optimize = .debug,
     });
     const gen_binding_exe = b.addExecutable(.{
         .name = "gen_abi_binding",
@@ -345,7 +345,7 @@ pub fn build(b: *std.Build) void {
 
     const debug_mod = b.createModule(.{
         .root_source_file = b.path("src/binding-test.zig"),
-        .optimize = .ReleaseFast,
+        .optimize = .fast,
         .target = target,
         .pic = true,
     });
@@ -355,9 +355,9 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
     });
     debug_exe.pie = true;
-    debug_exe.want_lto = false;
+    debug_exe.lto = .none;
     debug_exe.link_gc_sections = false;
-    debug_exe.addObjectFile(libsyscall_path);
+    debug_exe.root_module.addObjectFile(libsyscall_path);
 
     const install_debug_exe = b.addInstallArtifact(debug_exe, .{});
     debug_step.dependOn(&install_debug_exe.step);
@@ -379,14 +379,17 @@ pub fn build(b: *std.Build) void {
 }
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
-    for (write_files.files.items) |file| {
-        if (path_eql(file.sub_path, sub_path))
+    inline for (.{ write_files.embeds.items, write_files.copies.items }) |files| {
+    for (files) |file| {
+        const file_path = write_files.step.owner.graph.wip_configuration.stringSlice(file.sub_path);
+        if (path_eql(file_path, sub_path))
             return .{
                 .generated = .{
-                    .file = &write_files.generated_directory,
-                    .sub_path = file.sub_path,
+                    .index = write_files.generated_directory,
+                    .sub_path = file_path,
                 },
             };
+    }
     }
     return null;
 }
@@ -397,11 +400,14 @@ fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) 
 
     std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
         sub_path,
-        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        std.mem.trimEnd(u8, write_files.step.owner.dep_prefix, "."),
         write_files.step.name,
     });
-    for (write_files.files.items) |file| {
-        std.debug.print("- '{s}'\n", .{file.sub_path});
+    inline for (.{ write_files.embeds.items, write_files.copies.items }) |files| {
+    for (files) |file| {
+        const file_path = write_files.step.owner.graph.wip_configuration.stringSlice(file.sub_path);
+        std.debug.print("- '{s}'\n", .{file_path});
+    }
     }
     std.process.exit(1);
 }

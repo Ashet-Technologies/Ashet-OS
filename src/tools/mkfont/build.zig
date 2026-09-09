@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the app");
 
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .safe });
 
     const stb_dep = b.dependency("stb", .{});
 

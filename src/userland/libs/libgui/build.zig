@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
 
     const parser_mod = b.createModule(.{
         .target = b.graph.host,
-        .optimize = .Debug,
+        .optimize = .debug,
         .root_source_file = b.path("tools/widget-def-parser.zig"),
         .imports = &.{
             .{ .name = "widget-model", .module = widget_model_mod },

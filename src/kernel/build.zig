@@ -10,8 +10,8 @@ pub fn build(b: *std.Build) void {
 
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
-    // const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .safe });
+    // const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .fast });
     const validate_mode = b.option(bool, "no-emit-bin", "Disables installing the kernel and makes the build way quicker.") orelse false;
 
     // Target configuration:
@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
     const args_dep = b.dependency("args", .{});
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
-    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseFast });
+    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .fast });
     const libc_dep = b.dependency("foundation-libc", .{
         .target = kernel_target,
         .optimize = optimize,
@@ -133,8 +133,8 @@ pub fn build(b: *std.Build) void {
         const module = b.createModule(.{
             .root_source_file = .{
                 .generated = .{
-                    .file = &write_file_step.generated_directory,
-                    .sub_path = write_file_step.files.items[0].sub_path,
+                    .index = write_file_step.generated_directory,
+                    .sub_path = "machine-info.zig",
                 },
             },
         });
@@ -176,6 +176,17 @@ pub fn build(b: *std.Build) void {
     });
 
     kernel_mod.addImport("lwip", lwip_mod);
+    var lwip_c: @import("translate_c").Translator = .init(b.dependency("translate_c", .{}), .{
+        .c_source_file = b.path("components/network/bindings.h"),
+        .target = kernel_target,
+        .optimize = .fast,
+        .link_libc = false,
+    });
+    lwip_c.addIncludePath(lwip_dep.builder.dependency("lwip", .{}).path("src/include"));
+    lwip_c.addIncludePath(b.path("components/network/include"));
+    lwip_c.addIncludePath(libc_dep.artifact("foundation").getEmittedIncludeTree());
+    kernel_mod.addImport("lwip-c", lwip_c.mod);
+
     kernel_mod.addIncludePath(b.path("components/network/include"));
     lwip_mod.addIncludePath(b.path("components/network/include"));
     for (lwip_mod.include_dirs.items) |dir| {
@@ -184,10 +195,10 @@ pub fn build(b: *std.Build) void {
 
     if (machine_id == .@"arm-ashet-hc") {
         const regz_dep = b.dependency("regz", .{
-            .optimize = .ReleaseSafe,
+            .optimize = .safe,
         });
         const propan_dep = b.dependency("propan", .{
-            .optimize = .ReleaseSafe,
+            .optimize = .safe,
         });
 
         const propan_exe = propan_dep.artifact("propan");
@@ -261,7 +272,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    if (machine_id == .@"arm-ashet-hc" and optimize == .Debug) {
+    if (machine_id == .@"arm-ashet-hc" and optimize == .debug) {
         std.debug.print("arm-ashet-hc has no C sanitization enabled in Debug mode!\nSee https://github.com/ziglang/zig/issues/23052 and https://github.com/ziglang/zig/issues/23216 for more details!\n", .{});
         kernel_exe.root_module.sanitize_c = .off;
     }
@@ -271,7 +282,7 @@ pub fn build(b: *std.Build) void {
         kernel_exe.lto = .none;
     }
 
-    kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
+    machine_info_module.root_source_file.?.addStepDependencies(&kernel_exe.step);
     kernel_exe.root_module.addImport("kernel", kernel_mod);
 
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
@@ -280,7 +291,7 @@ pub fn build(b: *std.Build) void {
     kernel_exe.root_module.single_threaded = !machine_id.is_hosted();
     kernel_exe.root_module.omit_frame_pointer = false;
     kernel_exe.root_module.strip = false; // never strip debug info
-    if (optimize == .Debug) {
+    if (optimize == .debug) {
         // we always want frame pointers in debug build!
         kernel_exe.root_module.omit_frame_pointer = false;
     }
@@ -288,7 +299,7 @@ pub fn build(b: *std.Build) void {
     kernel_exe.setLinkerScript(b.path(machine_config.linker_script));
 
     // for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
-    //     kernel_exe.addSystemIncludePath(path);
+    //     kernel_exe.root_module.addSystemIncludePath(path);
     // }
 
     _ = platform_config;
@@ -304,7 +315,7 @@ pub fn build(b: *std.Build) void {
         kernel_mod.addImport("wayland-unstable", wayland_unstable_module);
 
         kernel_exe.linkage = .static;
-        kernel_exe.linkLibC();
+        kernel_exe.root_module.link_libc = true;
     } else {
         const libc = libc_dep.artifact("foundation");
 
@@ -313,7 +324,7 @@ pub fn build(b: *std.Build) void {
             .root_module = b.createModule(.{
                 .root_source_file = b.path("build-utils/genfile.zig"),
                 .target = b.graph.host,
-                .optimize = .Debug,
+                .optimize = .debug,
             }),
         });
 
@@ -325,12 +336,12 @@ pub fn build(b: *std.Build) void {
         gen_libc_txt.addArg("kernel32_lib_dir=");
         gen_libc_txt.addArg("gcc_dir=");
 
-        const libc_txt_path = gen_libc_txt.captureStdOut();
+        const libc_txt_path = gen_libc_txt.captureStdOut(.{});
 
         kernel_exe.setLibCFile(libc_txt_path);
-        kernel_exe.linkLibC();
+        kernel_exe.root_module.link_libc = true;
 
-        kernel_exe.linkLibrary(libc);
+        kernel_exe.root_module.linkLibrary(libc);
     }
 
     // // Create a patched version of the stdlib
@@ -340,7 +351,7 @@ pub fn build(b: *std.Build) void {
     //         .root_module = b.createModule(.{
     //             .root_source_file = b.path("build-utils/create-derivation.zig"),
     //             .target = b.graph.host,
-    //             .optimize = .ReleaseSafe,
+    //             .optimize = .safe,
     //         }),
     //     });
 
@@ -391,7 +402,7 @@ fn constructTargetQuery(spec: std.Target.Query) std.Target.Query {
     var base: std.Target.Query = spec;
 
     if (base.os_tag == null) {
-        std.debug.assert(base.dynamic_linker.len == 0);
+        std.debug.assert(base.dynamic_linker == null);
         std.debug.assert(base.ofmt == null);
         base.os_tag = .freestanding;
         base.ofmt = .elf;

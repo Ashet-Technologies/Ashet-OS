@@ -67,7 +67,7 @@ const installed_tools: []const ToolDep = &.{
 pub fn build(b: *std.Build) void {
     // Options:
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
-    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
+    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .debug;
 
     const install_rootfs = b.option(bool, "rootfs", "Installs the rootfs contents as well for hosted targets (default: off)") orelse false;
 
@@ -162,18 +162,21 @@ pub fn build(b: *std.Build) void {
             });
             step.dependOn(&install_rootfs_dir.step);
 
-            // `b.getInstallPath` is copied from the InstallStep itself to figure out the final output directory:
-            const install_path = b.getInstallPath(install_rootfs_dir.options.install_dir, install_rootfs_dir.options.install_subdir);
-            std.debug.assert(std.fs.path.isAbsolute(install_path));
-            os_rootfs.set(machine, .{ .cwd_relative = install_path });
+            os_rootfs.set(machine, .{ .relative = .{
+                .base = .install_prefix,
+                .sub_path = b.pathJoin(&.{ @tagName(machine), "rootfs" }),
+            } });
         }
 
         if (list_apps) {
             std.debug.print("available files for '{s}':\n", .{
                 @tagName(machine),
             });
-            for (os_files.files.items) |file| {
-                std.debug.print("- {s}\n", .{file.sub_path});
+            inline for (.{ os_files.embeds.items, os_files.copies.items }) |files| {
+            for (files) |file| {
+                const file_path = b.graph.wip_configuration.stringSlice(file.sub_path);
+                std.debug.print("- {s}\n", .{file_path});
+            }
             }
         }
     }
@@ -195,7 +198,7 @@ pub fn build(b: *std.Build) void {
     //     const kernel_tests = b.addTest(.{
     //         .root_source_file = b.path("src/kernel/main.zig"),
     //         .target = b.resolveTargetQuery(.{ .cpu_arch = .x86 }),
-    //         .optimize = .Debug,
+    //         .optimize = .debug,
     //     });
     //     kernel_tests.root_module.addImport("machine-info", machine_info_mod);
     //     kernel_tests.root_module.addImport("args", machine_info_mod);
@@ -314,9 +317,7 @@ pub fn build(b: *std.Build) void {
             }
         }
 
-        if (b.args) |args| {
-            vm_runner.addArgs(args);
-        }
+        vm_runner.addPassthruArgs();
 
         vm_runner.stdio = .inherit;
         vm_runner.has_side_effects = true;
@@ -368,20 +369,20 @@ const Variables = struct {
     @"${OVMF_VARS_X64}": ?std.Build.LazyPath,
 
     pub fn addArg(variables: Variables, runner: *std.Build.Step.Run, arg: []const u8) void {
-        inline for (@typeInfo(Variables).@"struct".fields) |fld| {
-            const path: ?std.Build.LazyPath = @field(variables, fld.name);
+        inline for (comptime std.meta.fieldNames(Variables)) |fld| {
+            const path: ?std.Build.LazyPath = @field(variables, fld);
 
-            if (std.mem.eql(u8, arg, fld.name)) {
-                runner.addFileArg(path orelse @panic("missing variable " ++ fld.name));
+            if (std.mem.eql(u8, arg, fld)) {
+                runner.addFileArg(path orelse @panic("missing variable " ++ fld));
                 return;
             }
 
-            if (std.mem.endsWith(u8, arg, fld.name)) {
-                runner.addPrefixedFileArg(arg[0 .. arg.len - fld.name.len], path orelse @panic("missing variable " ++ fld.name));
+            if (std.mem.endsWith(u8, arg, fld)) {
+                runner.addPrefixedFileArg(arg[0 .. arg.len - fld.len], path orelse @panic("missing variable " ++ fld));
                 return;
             }
 
-            if (std.mem.indexOf(u8, arg, fld.name)) |_| {
+            if (std.mem.indexOf(u8, arg, fld)) |_| {
                 @panic("invalid path!");
             }
         }
@@ -588,14 +589,17 @@ const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .
 });
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
-    for (write_files.files.items) |file| {
-        if (path_eql(file.sub_path, sub_path))
+    inline for (.{ write_files.embeds.items, write_files.copies.items }) |files| {
+    for (files) |file| {
+        const file_path = write_files.step.owner.graph.wip_configuration.stringSlice(file.sub_path);
+        if (path_eql(file_path, sub_path))
             return .{
                 .generated = .{
-                    .file = &write_files.generated_directory,
-                    .sub_path = file.sub_path,
+                    .index = write_files.generated_directory,
+                    .sub_path = file_path,
                 },
             };
+    }
     }
     return null;
 }
@@ -606,11 +610,14 @@ fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) 
 
     std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
         sub_path,
-        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        std.mem.trimEnd(u8, write_files.step.owner.dep_prefix, "."),
         write_files.step.name,
     });
-    for (write_files.files.items) |file| {
-        std.debug.print("- '{s}'\n", .{file.sub_path});
+    inline for (.{ write_files.embeds.items, write_files.copies.items }) |files| {
+    for (files) |file| {
+        const file_path = write_files.step.owner.graph.wip_configuration.stringSlice(file.sub_path);
+        std.debug.print("- '{s}'\n", .{file_path});
+    }
     }
     std.process.exit(1);
 }

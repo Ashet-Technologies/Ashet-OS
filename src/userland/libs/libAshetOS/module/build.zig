@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .name = "gen-widget-types",
         .root_module = b.createModule(.{
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
             .root_source_file = b.path("tools/gen-widget-types.zig"),
             .imports = &.{
                 .{ .name = "widget-def-model", .module = widget_def_model_mod },

@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const debug_step = b.step("debug", "Installs all intermediate files of the test suite");
 
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .safe });
 
     const emu_mod = b.addModule("emulator", .{
         .root_source_file = b.path("src/emulator.zig"),
@@ -210,7 +210,7 @@ fn addAsmTestSteps(
         .root_module = b.createModule(.{
             .root_source_file = null,
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = .fast,
             .no_builtin = true,
             .link_libc = false,
             .link_libcpp = false,
