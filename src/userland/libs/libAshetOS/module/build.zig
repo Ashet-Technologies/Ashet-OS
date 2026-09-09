@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
 
     // Dependencies:
     const abi_dep = b.dependency("abi", .{});
-    const std_dep = b.dependency("std", .{});
+    const std_dep = b.dependency("ashet-std", .{});
     const agp_dep = b.dependency("agp", .{});
     const libgui_dep = b.dependency("libgui", .{});
 
