@@ -839,7 +839,7 @@ pub fn StreamDecoder(Reader: type) type {
         reader: Reader,
         heap: std.array_list.AlignedManaged(u8, .@"16"),
 
-        pub const NextError = error{ InvalidCommand, EndOfStream, OutOfMemory } || Reader.Error;
+        pub const NextError = error{ InvalidCommand, EndOfStream, OutOfMemory } || std.Io.Reader.Error;
 
         pub fn init(allocator: std.mem.Allocator, reader: Reader) Dec {
             return .{
@@ -854,12 +854,12 @@ pub fn StreamDecoder(Reader: type) type {
         }
 
         pub fn next(dec: *Dec) NextError!?Command {
-            const cmd_byte = dec.reader.readByte() catch |err| switch (err) {
+            const cmd_byte = dec.reader.takeByte() catch |err| switch (err) {
                 error.EndOfStream => return null,
                 else => |e| return e,
             };
 
-            const cmd = std.meta.intToEnum(CommandByte, cmd_byte) catch return error.InvalidCommand;
+            const cmd = std.enums.fromInt(CommandByte, cmd_byte) orelse return error.InvalidCommand;
 
             return switch (cmd) {
                 .clear => .{
@@ -918,7 +918,7 @@ pub fn StreamDecoder(Reader: type) type {
                         const text_len = try dec.fetch_int(u16);
 
                         try dec.heap.resize(text_len +| 1);
-                        try dec.reader.readNoEof(dec.heap.items[0..text_len]);
+                        try dec.reader.readSliceAll(dec.heap.items[0..text_len]);
                         dec.heap.items[text_len] = 0;
 
                         break :blk .{
@@ -985,7 +985,7 @@ pub fn StreamDecoder(Reader: type) type {
             const size = height * stride * @sizeOf(Color);
 
             try dec.heap.resize(size);
-            try dec.reader.readNoEof(dec.heap.items[0..size]);
+            try dec.reader.readSliceAll(dec.heap.items[0..size]);
 
             return .{
                 .has_transparency = has_transparency,
@@ -998,27 +998,27 @@ pub fn StreamDecoder(Reader: type) type {
         }
 
         fn fetch_coord(dec: Dec) !i16 {
-            return try dec.reader.readInt(i16, .little);
+            return try dec.reader.takeInt(i16, .little);
         }
 
         fn fetch_size(dec: Dec) !u16 {
-            return try dec.reader.readInt(u16, .little);
+            return try dec.reader.takeInt(u16, .little);
         }
 
         fn fetch_color(dec: Dec) !Color {
             return Color.from_u8(
-                try dec.reader.readInt(u8, .little),
+                try dec.reader.takeInt(u8, .little),
             );
         }
 
         fn fetch_handle(dec: Dec, Handle: type) !Handle {
             return @ptrFromInt(
-                try dec.reader.readInt(usize, .little),
+                try dec.reader.takeInt(usize, .little),
             );
         }
 
         fn fetch_int(dec: Dec, Int: type) !Int {
-            return try dec.reader.readInt(Int, .little);
+            return try dec.reader.takeInt(Int, .little);
         }
     };
 }

@@ -9,7 +9,8 @@ const CliOptions = struct {
     output: []const u8 = "-",
 };
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
 
     const allocator = arena.allocator();
@@ -39,31 +40,33 @@ pub fn main() !u8 {
     //     return usage_error("--base must not be higher than --limit.");
     // }
 
-    var input_file = try std.fs.cwd().openFile("zig-out/arm-ashet-hc/kernel.elf", .{});
-    defer input_file.close();
+    var input_file = try std.Io.Dir.cwd().openFile(io, "zig-out/arm-ashet-hc/kernel.elf", .{});
+    defer input_file.close(io);
 
     var read_buffer: [1024]u8 = undefined;
-    var input_file_reader = input_file.reader(&read_buffer);
+    var input_file_reader = input_file.reader(io, &read_buffer);
 
     const output_to_stdout = std.mem.eql(u8, cli_options.output, "-");
 
     var output_buffer: [1024]u8 = undefined;
-    var output_disk_file: std.fs.AtomicFile = undefined;
-    var stdout_writer: std.fs.File.Writer = undefined;
+    var output_disk_file: std.Io.File.Atomic = undefined;
+    var stdout_writer: std.Io.File.Writer = undefined;
+    var disk_writer: std.Io.File.Writer = undefined;
 
     const svg: SvgWriter = if (output_to_stdout) blk: {
-        stdout_writer = std.fs.File.stdout().writer(&output_buffer);
+        stdout_writer = std.Io.File.stdout().writer(io, &output_buffer);
         break :blk .{ .writer = &stdout_writer.interface };
     } else blk: {
-        output_disk_file = try std.fs.cwd().atomicFile(
-            cli_options.output,
-            .{ .write_buffer = &output_buffer },
+        output_disk_file = try std.Io.Dir.cwd().createFileAtomic(
+            io, cli_options.output,
+            .{ .replace = true },
         );
-        break :blk .{ .writer = &output_disk_file.file_writer.interface };
+        disk_writer = output_disk_file.file.writer(io, &output_buffer);
+        break :blk .{ .writer = &disk_writer.interface };
     };
 
     defer if (!output_to_stdout)
-        output_disk_file.deinit();
+        output_disk_file.deinit(io);
 
     var header = try elf.Header.read(&input_file_reader.interface);
 
@@ -364,7 +367,8 @@ pub fn main() !u8 {
     try svg.write_footer();
 
     if (!output_to_stdout) {
-        try output_disk_file.finish();
+        try disk_writer.interface.flush();
+        try output_disk_file.replace(io);
     } else {
         try stdout_writer.interface.flush();
     }

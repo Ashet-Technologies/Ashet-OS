@@ -4,6 +4,10 @@
     .fingerprint = 0x5dd29aabcec30063,
     .paths = .{"."},
     .dependencies = .{
+        .translate_c = .{
+            .url = "git+https://codeberg.org/ziglang/translate-c.git#d67f0a5821b0c5ad16f60c425ad2af3499e7995f",
+            .hash = "translate_c-0.0.0-Q_BUWho9BwAx1Nyc_gDzXBjXZg62qETbgze15f50x29Y",
+        },
         // Internal dependencies:
         .@"ashet-abi" = .{
             .path = "../abi",
@@ -71,7 +75,7 @@
             .hash = "zvnc-0.0.0-imcThRuRAAAuAawQaXqZ_bPaTBIqGQNkrwy3m1JC-1b3",
         },
         .@"foundation-libc" = .{
-            .path = "../../zig-embedded/microzig/modules/foundation-libc/",
+            .path = "../../zig-pkg/foundation-libc",
             // .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
             // .hash = "foundationlibc-0.0.0-LAEuPBSUAAALxr9rsAHYDP21d2KTAd_3tCP_5vO4ap16",
         },

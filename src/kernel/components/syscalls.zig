@@ -19,7 +19,7 @@ comptime {
 
 pub const exports = ashet_abi_v2_impl.create_exports(syscalls, callbacks);
 
-pub var strace_enabled: std.enums.EnumSet(SystemCall) = std.enums.EnumSet(SystemCall).initFull();
+pub var strace_enabled: std.enums.EnumSet(SystemCall) = std.enums.EnumSet(SystemCall).full;
 
 pub fn get_address(syscall: SystemCall) usize {
     return switch (syscall) {
@@ -28,7 +28,7 @@ pub fn get_address(syscall: SystemCall) usize {
 }
 
 inline fn print_strace(name: []const u8) void {
-    var it = std.debug.StackIterator.init(@returnAddress(), null);
+    var it = @import("ashet-std").StackIterator.init(@returnAddress(), null);
     var current = it.next() orelse @returnAddress();
     current = it.next() orelse current;
     strace.info("{s} from {f}", .{ name, ashet.fmtCodeLocation(current) });

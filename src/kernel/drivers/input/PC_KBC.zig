@@ -322,10 +322,16 @@ const Channel = enum {
     }
 
     pub fn writeCommand(chan: Channel, cmd: DeviceMessage) error{ NoAcknowledge, CommandNotAccepted, Timeout, BufferOverrun }!void {
-        errdefer |e| logger.warn("writing command 0x{X:0>2} failed: {s}", .{
+        return writeCommand_impl(chan, cmd) catch |e| {
+            logger.warn("writing command 0x{X:0>2} failed: {s}", .{
             cmd.data,
             @errorName(e),
         });
+            return e;
+        };
+    }
+
+    fn writeCommand_impl(chan: Channel, cmd: DeviceMessage) error{ NoAcknowledge, CommandNotAccepted, Timeout, BufferOverrun }!void {
 
         const retry_limit = 3;
         var retry_count: u32 = 0;

@@ -15,7 +15,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
         const handle_index_mask = active_handle_limit - 1;
 
         generations: [active_handle_limit]HandleType = std.mem.zeroes([active_handle_limit]HandleType),
-        active_handles: HandleSet = HandleSet.initFull(),
+        active_handles: HandleSet = HandleSet.full,
         backings: [active_handle_limit]Backing = undefined,
 
         pub fn alloc(ha: *HAlloc) error{SystemResources}!Handle {

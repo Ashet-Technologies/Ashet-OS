@@ -252,7 +252,7 @@ pub fn main() !u8 {
         .metadata = metadata,
         .allocator = allocator,
         .preview_theme = preview_theme,
-        .current_file_path = if (maybe_save_file_name) |path| try allocator.dupeZ(u8, path) else null,
+        .current_file_path = if (maybe_save_file_name) |path| try allocator.dupeSentinel(u8, path, 0) else null,
     };
 
     try glfw.init();
@@ -1155,7 +1155,7 @@ pub const Editor = struct {
                         utils.beginField(prop_name);
 
                         var key_buf: [256]u8 = undefined;
-                        const field_key = try std.fmt.bufPrintZ(&key_buf, "##userprop_{s}", .{prop_name});
+                        const field_key = try std.fmt.bufPrintSentinel(&key_buf, "##userprop_{s}", .{prop_name}, 0);
 
                         switch (gop.value_ptr.*) {
                             .bool => |*data| editor.touch(zgui.checkbox(field_key, .{ .v = data })),
@@ -1361,7 +1361,7 @@ pub const Editor = struct {
     }
 
     fn set_current_file_path(editor: *Editor, path: []const u8) !void {
-        const owned_path = try editor.allocator.dupeZ(u8, path);
+        const owned_path = try editor.allocator.dupeSentinel(u8, path, 0);
         errdefer editor.allocator.free(owned_path);
 
         if (editor.current_file_path) |current_path| {

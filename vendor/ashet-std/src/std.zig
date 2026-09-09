@@ -1,5 +1,9 @@
 const std = @import("std");
 
+pub const SegmentedList = @import("segmented_list.zig").SegmentedList;
+pub const StackIterator = @import("stack_iterator.zig");
+pub const CallbackWriter = @import("callback_writer.zig").CallbackWriter;
+
 pub const mpl = @import("mpl.zig");
 
 pub const line_buffer = @import("line_buffer.zig");

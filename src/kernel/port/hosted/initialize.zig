@@ -203,10 +203,6 @@ fn display_from_sdl_window_id(id: u32) ?*SDL_Display {
 }
 
 fn handle_SDL_events(ptr: ?*anyopaque) callconv(.c) u32 {
-    errdefer |err| {
-        logger.err("SDL event loop crashed: {s}", .{@errorName(err)});
-        std.os.exit(1);
-    }
     _ = ptr;
 
     while (true) {

@@ -30,7 +30,13 @@ pub const draw = draw_lib;
 var theme: Theme = undefined;
 
 pub fn main() !void {
-    errdefer |err| std.log.err("Failed to setup standard widgets: {s}", .{@errorName(err)});
+    return main_impl() catch |err| {
+        std.log.err("Failed to setup standard widgets: {s}", .{@errorName(err)});
+        return err;
+    };
+}
+
+fn main_impl() !void {
 
     // TODO: Load theme from disk via common implementation shared between desktop server and
     //       widget server.
@@ -1138,7 +1144,7 @@ pub fn draw_panel(cq: *CommandQueue, opt: struct {
 // };
 
 fn rstrip(text: []const u8) []const u8 {
-    return std.mem.trimRight(u8, text, " \r\n\t");
+    return std.mem.trimEnd(u8, text, " \r\n\t");
 }
 
 fn compute_align(al: ashet.gui.widgets.Alignment, aligned_size: u16, available_size: u16) i16 {

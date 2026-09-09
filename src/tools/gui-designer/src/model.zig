@@ -230,7 +230,7 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
         if (jvalue != .object)
             return error.TypeMismatch;
 
-        const zkey = try arena.allocator().dupeZ(u8, key);
+        const zkey = try arena.allocator().dupeSentinel(u8, key, 0);
 
         const jclass = try std.json.parseFromValueLeaky(JClass, arena.allocator(), jvalue, parse_options);
 
@@ -248,7 +248,7 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
             .object => |jprops| {
                 for (jprops.keys(), jprops.values()) |propkey, value| {
                     const prop = try arena.allocator().create(PropertyDescriptor);
-                    prop.* = .{ .name = try arena.allocator().dupeZ(u8, propkey), .default_value = .{ .string = .empty } };
+                    prop.* = .{ .name = try arena.allocator().dupeSentinel(u8, propkey, 0), .default_value = .{ .string = .empty } };
 
                     switch (value) {
                         .string => {
@@ -279,7 +279,7 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
                                     return error.TypeMismatch;
 
                                 options[index] = .{
-                                    .name = try arena.allocator().dupeZ(u8, option_name),
+                                    .name = try arena.allocator().dupeSentinel(u8, option_name, 0),
                                     .value = try .from_slice(option_value.string),
                                 };
                             }

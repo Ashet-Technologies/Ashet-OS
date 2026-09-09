@@ -38,10 +38,10 @@ pub const known_colors = struct {
 };
 
 pub fn render(target: Framebuffer, command_sequence: []const u8, auto_invalidate: bool) !void {
-    if (builtin.mode == .Debug) {
+    if (builtin.mode == .debug) {
         // In Debug mode, assert that we have a valid command sequence:
-        var fbs = std.io.fixedBufferStream(command_sequence);
-        var decoder = agp.streamDecoder(ashet.process.mem.allocator(), fbs.reader());
+        var fbs: std.Io.Reader = .fixed(command_sequence);
+        var decoder = agp.streamDecoder(ashet.process.mem.allocator(), &fbs);
         defer decoder.deinit();
         while (true) {
             const res = decoder.next() catch @panic("Invalid command sequence detected!");
@@ -160,8 +160,10 @@ pub const CommandQueue = struct {
 };
 
 pub fn get_system_font(font_name: []const u8) !Font {
-    errdefer |e| logger.debug("failed to load font '{s}': {}", .{ font_name, e });
-    return try ashet.abi.draw.get_system_font(font_name);
+    return ashet.abi.draw.get_system_font(font_name) catch |e| {
+        logger.debug("failed to load font '{s}': {}", .{ font_name, e });
+        return e;
+    };
 }
 
 pub fn measure_text_size(font: Font, text: []const u8) !Size {
@@ -248,8 +250,8 @@ pub const abm = struct {
         }
 
         // Unswap header data:
-        inline for (comptime std.meta.fields(Header)) |fld| {
-            @field(header, fld.name) = std.mem.littleToNative(fld.type, @field(header, fld.name));
+        inline for (comptime std.meta.fieldNames(Header)) |fld| {
+            @field(header, fld) = std.mem.littleToNative(@FieldType(Header, fld), @field(header, fld));
         }
 
         logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key={f}, flags={}", .{
@@ -313,19 +315,17 @@ pub fn embed_comptime_bitmap(comptime palette: anytype, comptime def: []const u8
 
     const Palette = @TypeOf(palette);
 
-    const palette_fields = @typeInfo(Palette).@"struct".fields;
+    const palette_fields = @typeInfo(Palette).@"struct".field_names;
     for (palette_fields) |fld| {
-        if (fld.name.len != 1 or fld.name[0] == '.' or fld.name[0] == ' ' or !std.ascii.isPrint(fld.name[0]))
-            @compileError("Invalid palette entry: '" + fld.name + "'");
+        if (fld.len != 1 or fld[0] == '.' or fld[0] == ' ' or !std.ascii.isPrint(fld[0]))
+            @compileError("Invalid palette entry: '" + fld + "'");
     }
 
     const size = parsedSpriteSize(def);
-    var icon: [size.height][size.width]?Color = [1][size.width]?Color{
-        [1]?Color{null} ** size.width,
-    } ** size.height;
+    var icon: [size.height][size.width]?Color = @splat(@splat(null));
 
     var needs_transparency = false;
-    var transparency_keys = std.bit_set.StaticBitSet(256).initFull();
+    var transparency_keys = std.bit_set.StaticBitSet(256).full;
 
     var it = std.mem.splitScalar(u8, def, '\n');
     var y: usize = 0;

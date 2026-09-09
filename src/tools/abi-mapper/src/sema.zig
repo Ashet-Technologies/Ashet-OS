@@ -2435,7 +2435,7 @@ fn Collector(comptime I: type) type {
         }
 
         fn to_list(col: *Collect) std.ArrayList(Item) {
-            return .{ .capacity = col.capacity, .items = col.items };
+            return .{ .capacity = col.capacity, .items = col.items, .pointer_stability = .{} };
         }
 
         fn from_list(col: *Collect, list: std.ArrayList(Item)) void {

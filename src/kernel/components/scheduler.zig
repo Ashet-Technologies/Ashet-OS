@@ -79,7 +79,7 @@ const logger = std.log.scoped(.scheduler);
 const ashet = @import("../main.zig");
 const target = @import("builtin").target.cpu.arch;
 
-const debug_mode = builtin.mode == .Debug;
+const debug_mode = builtin.mode == .debug;
 
 const redzone_size = ashet.memory.page_size;
 
@@ -588,7 +588,7 @@ pub const Thread = struct {
     }
 
     pub fn getName(thread: *const Thread) []const u8 {
-        if (@import("builtin").mode == .Debug) {
+        if (@import("builtin").mode == .debug) {
             return std.mem.sliceTo(&thread.debug_info.name, 0);
         } else {
             return "<optimized out>";
@@ -596,7 +596,7 @@ pub const Thread = struct {
     }
 
     pub fn format(self: *const Thread, writer: *std.Io.Writer) !void {
-        if (@import("builtin").mode == .Debug) {
+        if (@import("builtin").mode == .debug) {
             try writer.print("Thread(0x{X:0>8}, name={s}, ep=0x{X:0>8})", .{
                 @intFromPtr(self),
                 std.mem.sliceTo(&self.debug_info.name, 0),
@@ -725,7 +725,7 @@ var kernel_thread_backup: [256]u8 align(4096) = undefined;
 var kernel_thread: Thread = .{
     .sp = undefined,
     .ip = undefined,
-    .debug_info = if (debug_mode) .{ .name = "kernel".* ++ [1]u8{0} ** 26 } else .{},
+    .debug_info = if (debug_mode) .{ .name = "kernel".* ++ @as([26]u8, @splat(0)) } else .{},
     .exit_code = 0,
     .stack_memory = &kernel_thread_backup,
     .process_link = .{ .data = undefined },

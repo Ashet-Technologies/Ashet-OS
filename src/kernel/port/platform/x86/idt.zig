@@ -8,7 +8,7 @@ const stack_alignment = 16;
 
 pub const InterruptHandler = *const fn (*CpuState) void;
 
-var irqHandlers = [_]?InterruptHandler{null} ** 32;
+var irqHandlers = @as([32]?InterruptHandler, @splat(null));
 
 pub fn set_IRQ_Handler(irq: u4, handler: ?InterruptHandler) void {
     irqHandlers[irq] = handler;
@@ -111,7 +111,7 @@ export fn handle_interrupt(cpu: *CpuState) *CpuState {
     return cpu;
 }
 
-export var idt: [256]Descriptor align(16) linksection(".rodata.irq") = .{@as(Descriptor, @bitCast(@as(u64, 0)))} ** 256;
+export var idt: [256]Descriptor align(16) linksection(".rodata.irq") = @splat(@bitCast(@as(u64, 0)));
 
 const InterruptTable = extern struct {
     limit: u16,

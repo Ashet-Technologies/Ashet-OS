@@ -78,12 +78,12 @@ pub fn @"struct"(value: anytype) StructFormatter(@TypeOf(value)) {
 }
 
 pub fn StructFormatter(comptime T: type) type {
-    const fields = @typeInfo(T).@"struct".fields;
+    const fields = @typeInfo(T).@"struct".field_names;
 
-    var filtered_fields_mut: []const std.builtin.Type.StructField = &.{};
+    var filtered_fields_mut: []const [:0]const u8 = &.{};
 
     for (fields) |fld| {
-        if (!std.mem.startsWith(u8, fld.name, "_")) {
+        if (!std.mem.startsWith(u8, fld, "_")) {
             filtered_fields_mut = filtered_fields_mut ++ .{fld};
         }
     }
@@ -101,8 +101,8 @@ pub fn StructFormatter(comptime T: type) type {
                     try writer.writeAll(",");
 
                 try writer.print(" {f}={}", .{
-                    std.zig.fmtId(fld.name),
-                    @field(sf.value, fld.name),
+                    std.zig.fmtId(fld),
+                    @field(sf.value, fld),
                 });
             }
 

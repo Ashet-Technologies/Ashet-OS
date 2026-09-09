@@ -1,10 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const is_debug_mode = (builtin.mode == .Debug);
+const is_debug_mode = (builtin.mode == .debug);
 const is_safe_mode = switch (builtin) {
-    .Debug, .ReleaseSafe => true,
-    .ReleaseSmall, .ReleaseFast => false,
+    .debug, .safe => true,
+    .small, .fast => false,
 };
 
 pub const Hardening = enum {
@@ -23,9 +23,9 @@ pub const Hardening = enum {
 pub const LinkedListOptions = struct {
     /// If this is set, the linked list is hardened against
     hardening: Hardening = switch (builtin.mode) {
-        .Debug => .full,
-        .ReleaseSafe => .basic,
-        .ReleaseSmall, .ReleaseFast => .none,
+        .debug => .full,
+        .safe => .basic,
+        .small, .fast => .none,
     },
 
     /// If this is true, a linked list object must not be moved in memory
