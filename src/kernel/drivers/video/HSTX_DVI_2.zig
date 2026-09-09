@@ -98,8 +98,8 @@ pub fn init(comptime clock_config: rp2350.clocks.config.Global) !HSTX_DVI {
             .class = .{
                 .video = .{
                     .get_properties_fn = get_properties,
-                    .flush_fn = flush,
                     .get_one_vblank_event_fn = get_one_vblank_event,
+                    .begin_write_pixels_fn = begin_write_pixels,
                 },
             },
         },
@@ -116,10 +116,7 @@ fn get_properties(dri: *Driver) ashet.video.DeviceProperties {
     const vd = instance(dri);
     _ = vd;
     return .{
-        .video_memory = &framebuffer,
-        .video_memory_mapping = .unbuffered,
         .resolution = framebuffer_size,
-        .stride = framebuffer_size.width,
     };
 }
 
@@ -132,9 +129,41 @@ fn get_one_vblank_event(dri: *Driver) bool {
     return had_vsync;
 }
 
-fn flush(dri: *Driver) void {
-    const vd = instance(dri);
-    _ = vd;
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    _ = driver;
+    _ = mode;
+
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = &framebuffer,
+                .width = framebuffer_size.width,
+                .height = framebuffer_size.height,
+                .stride = framebuffer_size.width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }
 
 const dma_data0_section = ".sram.bank2";

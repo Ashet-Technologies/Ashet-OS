@@ -38,14 +38,14 @@ height: u16,
 driver: Driver,
 
 write_pixels_fn: *const WritePixelsSyncFn,
-write_pixels_arg: ?*anyopaque,
+write_pixels_ctx: ?*anyopaque,
 
 pub fn init(
     comptime name: []const u8,
     width: u16,
     height: u16,
     comptime write_pixels_fn: WritePixelsSyncFn,
-    write_pixels_arg: ?*anyopaque,
+    write_pixels_ctx: ?*anyopaque,
     comptime backing: BackingStorage,
 ) !Host_VNC_Output {
     const fb: ?[]Color = switch (backing) {
@@ -70,7 +70,7 @@ pub fn init(
         .backbuffer = fb,
 
         .write_pixels_fn = &write_pixels_fn,
-        .write_pixels_arg = write_pixels_arg,
+        .write_pixels_ctx = write_pixels_ctx,
     };
 }
 

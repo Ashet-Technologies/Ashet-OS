@@ -44,7 +44,14 @@ pub fn init(
     server.* = .{
         .allocator = allocator,
         .socket = server_sock,
-        .screen = try ashet.drivers.video.Externally_Managed_Output.init(width, height),
+        .screen = try ashet.drivers.video.Externally_Managed_Output.init(
+            "VNC Output",
+            width,
+            height,
+            write_vnc_pixels,
+            server,
+            .allocate,
+        ),
         .input = ashet.drivers.input.Host_VNC_Input.init(),
     };
 
@@ -94,10 +101,10 @@ fn connection_handler(vd: *VNC_Server) !void {
         }, .{ .reader = &read_buffer, .writer = &write_buffer });
         defer server.close();
 
-        const new_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer);
+        const new_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer.?);
         defer local_allocator.free(new_framebuffer);
 
-        const old_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer);
+        const old_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer.?);
         defer local_allocator.free(old_framebuffer);
 
         std.debug.print("protocol version:  {}\n", .{server.protocol_version});
@@ -231,9 +238,31 @@ const Session_State = struct {
     // end of write_lock guard.
 };
 
+fn write_vnc_pixels(
+    context: ?*anyopaque,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const ashet.abi.Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    // TODO(gpu_support): Improve this function to utilize the provided information.
+    const server: *VNC_Server = @ptrCast(@alignCast(context.?));
+
+    _ = rectangle;
+    _ = pixels;
+    _ = stride;
+
+    switch (mode) {
+        .vblank, .immediate => {
+            server.notify_flush();
+        },
+        .dont_care => {},
+    }
+}
+
 /// Notifies the VNC_Server of a flush event of the screen device.
 /// This allows us to hold back incremental updates until new content arrives.
-pub fn notify_flush(vd: *VNC_Server) void {
+fn notify_flush(vd: *VNC_Server) void {
     vd.session_lock.lock();
     defer vd.session_lock.unlock();
 
@@ -260,7 +289,7 @@ fn send_incremental_update(vd: *VNC_Server, state: *Session_State, request_alloc
     {
         // vd.screen.backbuffer_lock.lock();
         // defer vd.screen.backbuffer_lock.unlock();
-        @memcpy(state.new_framebuffer, vd.screen.backbuffer);
+        @memcpy(state.new_framebuffer, vd.screen.backbuffer.?);
     }
 
     if (state.server.pixel_format.is_indexed() and !state.sent_color_map) {

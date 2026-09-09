@@ -38,6 +38,8 @@ running: bool = true,
 put_image_msg_buffer: []align(4) u8,
 put_image_chunk_height: u16,
 
+screen_dirty: bool = true,
+
 // devices:
 screen: ashet.drivers.video.Externally_Managed_Output,
 // input: ashet.drivers.input.Host_SDL_Input,
@@ -98,7 +100,14 @@ pub fn init(
         .allocator = allocator,
         .index = index,
 
-        .screen = try .init(window_width, window_height),
+        .screen = try ashet.drivers.video.Externally_Managed_Output.init(
+            "X11 Window Output",
+            window_width,
+            window_height,
+            write_x11_pixels,
+            null,
+            .allocate,
+        ),
         // .input = ashet.drivers.input.Host_SDL_Input.init(),
 
         .socket_read_buffer = socket_read_buffer,
@@ -123,7 +132,7 @@ pub fn init(
     server.source = x11.Source.initAfterSetup(server.socket_reader.interface());
     server.sink = .{ .writer = &server.socket_writer.interface };
 
-    @memset(server.screen.backbuffer, ashet.abi.Color.red);
+    @memset(server.screen.backbuffer.?, ashet.abi.Color.red);
 
     const base_resource = server.setup.resource_id_base;
 
@@ -174,6 +183,25 @@ pub fn init(
     try server.sink.writer.flush();
 
     return server;
+}
+
+fn write_x11_pixels(
+    context: ?*anyopaque,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const ashet.abi.Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const display: *X11_Display = @ptrCast(@alignCast(context.?));
+
+    _ = rectangle;
+    _ = pixels;
+    _ = stride;
+    _ = mode;
+
+    // TODO(gpu_server): We can directly send the right X11 frames here
+    //                   instead of doing the thread dance.
+    display.screen_dirty = true;
 }
 
 pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
@@ -374,20 +402,20 @@ fn handle_mouse_button_event(server: *X11_Display, button: u8, is_press: bool) !
 }
 
 fn render_on_demand(server: *X11_Display) !void {
-    defer std.debug.assert(server.screen.backbuffer_dirty == false);
+    defer std.debug.assert(server.screen_dirty == false);
 
-    if (server.screen.backbuffer_dirty) {
+    if (server.screen_dirty) {
         try server.force_render();
     }
 }
 
 fn force_render(server: *X11_Display) !void {
-    defer server.screen.backbuffer_dirty = false;
+    defer server.screen_dirty = false;
 
     // Put window content in chunks, as we can't transfer full images
     // as X11 has only maxInt(u18)
 
-    var source_pixels: [*]const ashet.abi.Color = server.screen.backbuffer.ptr;
+    var source_pixels: [*]const ashet.abi.Color = server.screen.backbuffer.?.ptr;
 
     var base_y: u16 = 0;
     while (base_y < server.screen.height) : (base_y += server.put_image_chunk_height) { // BB GG RR XX

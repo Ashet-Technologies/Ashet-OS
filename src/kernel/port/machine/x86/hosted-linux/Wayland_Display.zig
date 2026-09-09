@@ -67,7 +67,14 @@ pub fn init(
         .allocator = allocator,
         .index = index,
 
-        .screen = try .init(width, height),
+        .screen = try ashet.drivers.video.Externally_Managed_Output.init(
+            "Wayland Window Output",
+            width,
+            height,
+            write_wayland_pixels,
+            server,
+            .allocate, // TODO(gpu_support): Is this necessary?
+        ),
         // .input = ashet.drivers.input.Host_SDL_Input.init(),
 
         .window_width = @max(1, initial_scale) * width,
@@ -85,7 +92,7 @@ pub fn init(
         .swap_chain = undefined,
     };
 
-    @memset(server.screen.backbuffer, ashet.abi.Color.red);
+    @memset(server.screen.backbuffer.?, ashet.abi.Color.red);
 
     server.connection = shimizu.posix.Connection.open(allocator, .{}) catch |err| switch (err) {
         error.FileNotFound => return error.NoWaylandSupport,
@@ -157,6 +164,24 @@ pub fn init(
     }
 
     return server;
+}
+
+fn write_wayland_pixels(
+    context: ?*anyopaque,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const ashet.abi.Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const display: *Wayland_Display = @ptrCast(@alignCast(context.?));
+
+    // TODO(gpu_server): Do we need to operate here?
+
+    _ = rectangle;
+    _ = pixels;
+    _ = stride;
+    _ = mode;
+    _ = display;
 }
 
 pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
@@ -287,7 +312,7 @@ fn copyFromDriver(server: *Wayland_Display, pixels: []Pixel) void {
     std.debug.assert(2 * offset_x + scaled_w <= window_w);
     std.debug.assert(2 * offset_y + scaled_h <= window_h);
 
-    var src_ptr: [*]const ashet.abi.Color = server.screen.backbuffer.ptr;
+    var src_ptr: [*]const ashet.abi.Color = server.screen.backbuffer.?.ptr;
     var dst_ptr: [*]Pixel = pixels.ptr + window_w * offset_y + offset_x;
 
     for (0..content_h) |_| {
