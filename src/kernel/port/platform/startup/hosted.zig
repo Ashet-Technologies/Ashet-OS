@@ -11,7 +11,8 @@ extern fn ashet_kernelMain() void;
 
 pub const panic = kernel.panic;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    kernel.platform.hosted.process_init = init;
     std.debug.maybeEnableSegfaultHandler();
 
     ashet_kernelMain();

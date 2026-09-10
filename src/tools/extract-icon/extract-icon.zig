@@ -15,10 +15,11 @@ const CliOptions = struct {
     };
 };
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
-    var cli = args_parser.parseForCurrentProcess(CliOptions, arena.allocator(), .print) catch return 1;
+    var cli = args_parser.parseForCurrentProcess(CliOptions, init, .print) catch return 1;
     defer cli.deinit();
 
     if (cli.positionals.len != 1) {
@@ -28,39 +29,40 @@ pub fn main() !u8 {
     const input_file_name = cli.positionals[0];
     const output_file_name = cli.options.output orelse @panic("requires output file name");
 
-    var input_file = try std.fs.cwd().openFile(input_file_name, .{});
-    defer input_file.close();
+    var input_file = try std.Io.Dir.cwd().openFile(io, input_file_name, .{});
+    defer input_file.close(io);
 
-    var buffered_reader = std.io.bufferedReader(input_file.reader());
-    var reader = buffered_reader.reader();
+    var buffer: [4096]u8 = undefined;
+    var file_reader = input_file.reader(io, &buffer);
+    const reader = &file_reader.interface;
 
-    const magic = try reader.readInt(u32, .little);
+    const magic = try reader.takeInt(u32, .little);
     if (magic != 0x48198b74) {
         @panic("invalid magic number!");
     }
-    const width = try reader.readInt(u16, .little);
-    const height = try reader.readInt(u16, .little);
-    const flags = try reader.readInt(u16, .little);
+    const width = try reader.takeInt(u16, .little);
+    const height = try reader.takeInt(u16, .little);
+    const flags = try reader.takeInt(u16, .little);
     const is_transparent = (flags & 1) != 0;
-    const palette_size = try reader.readInt(u8, .little);
-    const transparency_key = try reader.readInt(u8, .little);
+    const palette_size = try reader.takeInt(u8, .little);
+    const transparency_key = try reader.takeInt(u8, .little);
 
     const indexed_bitmap = try arena.allocator().alloc(u8, @as(usize, width) * height);
     const palette = try arena.allocator().alloc(Rgba32, palette_size);
 
-    try reader.readNoEof(indexed_bitmap);
+    try reader.readSliceAll(indexed_bitmap);
 
     for (palette) |*color| {
-        const packed_color = try reader.readInt(u16, .little);
+        const packed_color = try reader.takeInt(u16, .little);
 
-        const color_565 = abi.Color.fromU16(packed_color);
+        const color_565 = @as(packed struct(u16) { r: u5, g: u6, b: u5 }, @bitCast(packed_color));
 
-        color.* = Rgba32.fromU32Rgba(
-            zigimg.color.Rgb565.initRgb(
+        color.* = Rgba32.from.u32Rgba(
+            zigimg.color.Rgb565.from.rgb(
                 color_565.r,
                 color_565.g,
                 color_565.b,
-            ).toU32Rgba(),
+            ).to.u32Rgba(),
         );
     }
 
@@ -70,17 +72,18 @@ pub fn main() !u8 {
         height,
         .rgba32,
     );
-    defer output_image.deinit();
+    defer output_image.deinit(arena.allocator());
 
     for (output_image.pixels.rgba32, 0..) |*dest, index| {
         const color_id = indexed_bitmap[index];
         if (is_transparent and (color_id == transparency_key))
-            dest.* = Rgba32.initRgba(0, 0, 0, 0)
+            dest.* = Rgba32.from.rgba(0, 0, 0, 0)
         else
             dest.* = palette[color_id];
     }
 
-    try output_image.writeToFilePath(output_file_name, .{
+    var write_buffer: [4096]u8 = undefined;
+    try output_image.writeToFilePath(arena.allocator(), io, output_file_name, &write_buffer, .{
         .png = .{ .interlaced = false },
     });
 

@@ -9,13 +9,14 @@ const ColorIndex = agp.Color;
 const mono_6_font: agp.Font = @ptrCast(@constCast(&@as(u8, 0)));
 const sans_var_font: agp.Font = @ptrCast(@constCast(&@as(u8, 1)));
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     // try verify_encoder_decoder(arena.allocator());
 
     try @import("widgets.zig").render_demo(
+        init.io,
         arena.allocator(),
         "widgets.gif",
     );

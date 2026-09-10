@@ -21,7 +21,7 @@ mem: switch (native_os) {
 
 pub const init: MemoryAccessor = .{
     .mem = switch (native_os) {
-        .linux => .{ .handle = -1 },
+        .linux => .{ .handle = -1, .flags = .{ .nonblocking = false } },
         else => {},
     },
 };
@@ -57,7 +57,7 @@ fn read(ma: *MemoryAccessor, address: usize, buf: []u8) bool {
                     &.{.{ .base = @ptrFromInt(address), .len = buf.len }},
                     0,
                 );
-                switch (linux.E.init(bytes_read)) {
+                switch (linux.errno(bytes_read)) {
                     .SUCCESS => return bytes_read == buf.len,
                     .FAULT => return false,
                     .INVAL, .SRCH => unreachable, // own pid is always valid

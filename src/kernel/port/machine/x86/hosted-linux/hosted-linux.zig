@@ -37,7 +37,7 @@ fn initialize() !void {
         const res = std.os.linux.mprotect(
             @ptrFromInt(linear_memory.base),
             linear_memory.length,
-            std.os.linux.PROT.EXEC | std.os.linux.PROT.READ | std.os.linux.PROT.WRITE,
+            .{ .EXEC = true, .READ = true, .WRITE = true },
         );
         if (res != 0) @panic("mprotect failed!");
     }
@@ -53,10 +53,8 @@ const video_drivers: std.StaticStringMap(hosted.VideoDriverCtor) = .initComptime
 
 const video_drivers_ctors = struct {
     fn get_wayland_scale() u8 {
-        var buffer: [64]u8 = undefined;
-        var fba: std.heap.FixedBufferAllocator = .init(&buffer);
-
-        const string = std.process.getEnvVarOwned(fba.allocator(), "ASHET_WAYLAND_SCALE") catch return 1;
+        const string = hosted.process_init.environ_map.get("ASHET_WAYLAND_SCALE") orelse return 1;
+        if (string.len > 64) return 1;
 
         const scale = std.fmt.parseInt(u8, string, 10) catch return 1;
 

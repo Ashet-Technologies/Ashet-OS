@@ -48,6 +48,8 @@ pub fn init(
     window_width: u16,
     window_height: u16,
 ) !*X11_Display {
+    x11.host_runtime.io = ashet.platform.hosted.io();
+    x11.host_runtime.environ = ashet.platform.hosted.process_init.environ_map;
     try x11.wsaStartup();
 
     const server = try allocator.create(X11_Display);

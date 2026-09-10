@@ -876,8 +876,12 @@ pub const CriticalSection = enum(u1) {
     }
 };
 
+comptime {
+    if (!machine_id.is_hosted()) @export(&memchr, .{ .name = "memchr" });
+}
+
 // TODO: move to foundation-libc
-export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
+fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) callconv(.c) ?[*]c_char {
     const s = buf orelse return null;
 
     const searched: c_char = @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(ch)))));
