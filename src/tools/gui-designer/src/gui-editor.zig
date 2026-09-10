@@ -194,21 +194,22 @@ pub const CliOptions = struct {
     };
 };
 
-fn usage_fault(comptime fmt: []const u8, params: anytype) !noreturn {
+fn usage_fault(io: std.Io, comptime fmt: []const u8, params: anytype) !noreturn {
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    var stderr_writer = std.Io.File.stderr().writer(io, &stderr_buffer);
     try stderr_writer.interface.print("gui-editor: " ++ fmt, params);
     try stderr_writer.interface.flush();
     std.process.exit(1);
 }
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
 
-    var cli = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
+    var cli = args_parser.parseForCurrentProcess(CliOptions, init, .print) catch return 1;
     defer cli.deinit();
 
     const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
@@ -227,11 +228,11 @@ pub fn main() !u8 {
         1 => blk: {
             // Open provided file
 
-            const file = try std.fs.cwd().openFile(cli.positionals[0], .{});
-            defer file.close();
+            const file = try std.Io.Dir.cwd().openFile(io, cli.positionals[0], .{});
+            defer file.close(io);
 
             var file_buffer: [2048]u8 = undefined;
-            var file_reader = file.reader(&file_buffer);
+            var file_reader = file.reader(io, &file_buffer);
 
             document = try model.load_design(
                 &file_reader.interface,
@@ -242,12 +243,14 @@ pub fn main() !u8 {
             break :blk cli.positionals[0];
         },
         else => try usage_fault(
+            io,
             "expects none or a single positional file, but {} were provided",
             .{cli.positionals.len},
         ),
     };
 
     var editor: Editor = .{
+        .io = io,
         .document = &document,
         .metadata = metadata,
         .allocator = allocator,
@@ -278,7 +281,7 @@ pub fn main() !u8 {
 
     try zopengl.loadCoreProfile(glfw.getProcAddress, gl_major, gl_minor);
 
-    zgui.init(allocator);
+    zgui.init(io, allocator);
     defer zgui.deinit();
 
     defer editor.deinit();
@@ -328,6 +331,7 @@ pub const Editor = struct {
         start: model.Point,
     };
 
+    io: std.Io,
     allocator: std.mem.Allocator,
 
     // Editor Configuration
@@ -750,22 +754,22 @@ pub const Editor = struct {
             for (editor.document.window.widgets.items, 0..) |widget, index| {
                 var buf: [256]u8 = undefined;
 
-                var fbs = std.io.fixedBufferStream(&buf);
+                var fbs: std.Io.Writer = .fixed(&buf);
 
-                try fbs.writer().print("{s}", .{
+                try fbs.print("{s}", .{
                     widget.class.name,
                 });
 
                 if (widget.identifier.items.len > 0) {
-                    try fbs.writer().print(": {s}", .{widget.identifier.items});
+                    try fbs.print(": {s}", .{widget.identifier.items});
                 }
 
-                try fbs.writer().print("##{s}_{d}\x00", .{
+                try fbs.print("##{s}_{d}\x00", .{
                     widget.class.name,
                     index,
                 });
 
-                const key = fbs.getWritten()[0 .. fbs.pos - 1 :0];
+                const key = fbs.buffered()[0 .. fbs.end - 1 :0];
 
                 if (zgui.selectable(key, .{ .selected = (editor.maybe_selected_widget_index == index) })) {
                     editor.select_by_index(index);
@@ -1318,14 +1322,12 @@ pub const Editor = struct {
     }
 
     fn load_document(editor: *Editor, path: []const u8) !void {
-        const file = if (std.fs.path.isAbsolute(path))
-            try std.fs.openFileAbsolute(path, .{})
-        else
-            try std.fs.cwd().openFile(path, .{});
-        defer file.close();
+        const io = editor.io;
+        const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+        defer file.close(io);
 
         var file_buffer: [2048]u8 = undefined;
-        var file_reader = file.reader(&file_buffer);
+        var file_reader = file.reader(io, &file_buffer);
 
         var document = try model.load_design(
             &file_reader.interface,
@@ -1347,14 +1349,12 @@ pub const Editor = struct {
     }
 
     fn save_document(editor: *Editor, path: []const u8) !void {
-        const file = if (std.fs.path.isAbsolute(path))
-            try std.fs.createFileAbsolute(path, .{ .truncate = true })
-        else
-            try std.fs.cwd().createFile(path, .{ .truncate = true });
-        defer file.close();
+        const io = editor.io;
+        const file = try std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true });
+        defer file.close(io);
 
         var file_buffer: [2048]u8 = undefined;
-        var file_writer = file.writer(&file_buffer);
+        var file_writer = file.writer(io, &file_buffer);
 
         try model.save_design(editor.document.window, &file_writer.interface);
         try editor.set_current_file_path(path);
@@ -1599,6 +1599,7 @@ fn preview_widget_text(widget: Widget) std.ArrayListUnmanaged(u8) {
             return .{
                 .items = @constCast(str),
                 .capacity = undefined,
+                .pointer_stability = .{},
             };
         }
     }
@@ -1645,14 +1646,11 @@ fn encode_preview_window_frame(queue: *CommandQueue, preview_theme: *const Previ
     });
 }
 
-fn load_abm_bitmap_from_path(allocator: std.mem.Allocator, path: []const u8) !OwnedBitmap {
-    const file = if (std.fs.path.isAbsolute(path))
-        try std.fs.openFileAbsolute(path, .{})
-    else
-        try std.fs.cwd().openFile(path, .{});
-    defer file.close();
+fn load_abm_bitmap_from_path(io: std.Io, allocator: std.mem.Allocator, path: []const u8) !OwnedBitmap {
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer file.close(io);
 
-    const stat = try file.stat();
+    const stat = try file.stat(io);
     const file_size = std.math.cast(usize, stat.size) orelse return error.OutOfMemory;
     if (file_size < @sizeOf(AbmHeader))
         return error.InvalidFile;
@@ -1660,13 +1658,13 @@ fn load_abm_bitmap_from_path(allocator: std.mem.Allocator, path: []const u8) !Ow
     const data = try allocator.alloc(u8, file_size);
     defer allocator.free(data);
 
-    const len = try file.readAll(data);
+    const len = try file.readPositionalAll(io, data, 0);
     if (len != data.len)
         return error.InvalidFile;
 
     var header = std.mem.bytesAsValue(AbmHeader, data[0..@sizeOf(AbmHeader)]).*;
-    inline for (comptime std.meta.fields(AbmHeader)) |field| {
-        @field(header, field.name) = std.mem.littleToNative(field.type, @field(header, field.name));
+    inline for (comptime std.meta.fieldNames(AbmHeader)) |field| {
+        @field(header, field) = std.mem.littleToNative(@FieldType(AbmHeader, field), @field(header, field));
     }
 
     if (header.magic != AbmHeader.magic_number)
@@ -1714,7 +1712,7 @@ fn ensure_preview_icon_loaded(editor: *Editor) void {
 
     const path = editor.document.window.icon_path.slice();
     if (path.len > 0) {
-        editor.preview_icon = load_abm_bitmap_from_path(editor.allocator, path) catch |err| blk: {
+        editor.preview_icon = load_abm_bitmap_from_path(editor.io, editor.allocator, path) catch |err| blk: {
             std.log.err("failed to load preview icon '{s}': {s}", .{ path, @errorName(err) });
             break :blk null;
         };
@@ -1726,8 +1724,8 @@ fn ensure_preview_icon_loaded(editor: *Editor) void {
 fn rasterize_preview_queue(allocator: std.mem.Allocator, command_stream: []const u8, target: agp_swrast.RenderTarget) !void {
     var rasterizer = agp_swrast.Rasterizer.init(target);
 
-    var stream = std.io.fixedBufferStream(command_stream);
-    var decoder = agp.streamDecoder(allocator, stream.reader());
+    var stream: std.Io.Reader = .fixed(command_stream);
+    var decoder = agp.streamDecoder(allocator, &stream);
     defer decoder.deinit();
 
     var resolver_cookie: u8 = 0;

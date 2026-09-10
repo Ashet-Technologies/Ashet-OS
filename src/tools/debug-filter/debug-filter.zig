@@ -551,6 +551,10 @@ fn filter_and_forward_stdio(
             stderr,
         );
         mr.checkAnyError() catch break;
+        mr.fill(1, .none) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
     }
 
     try stdout_buffered_writer.interface.flush();

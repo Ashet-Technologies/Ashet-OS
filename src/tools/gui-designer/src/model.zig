@@ -349,7 +349,7 @@ const ZStringContext = struct {
 };
 
 pub fn ZStringArrayHashMapUnmanaged(comptime T: type) type {
-    return std.array_hash_map.ArrayHashMapUnmanaged([:0]const u8, T, ZStringContext, true);
+    return std.array_hash_map.Custom([:0]const u8, T, ZStringContext, true);
 }
 
 pub fn save_design(window: Window, stream: *std.Io.Writer) !void {
