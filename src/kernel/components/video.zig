@@ -6,27 +6,66 @@ const logger = std.log.scoped(.video);
 pub const Color = ashet.abi.Color;
 pub const OutputID = ashet.abi.video.VideoOutputID;
 pub const Resolution = ashet.abi.Size;
-pub const VideoMemory = ashet.abi.video.VideoMemory;
 
 const Rectangle = ashet.abi.Rectangle;
 const PresentMode = ashet.abi.video.PresentMode;
 
-pub const Buffering = enum {
-    buffered,
-    unbuffered,
+pub const DeviceProperties = struct {
+    /// The video resolution of the device.
+    resolution: Resolution,
+
+    /// Determines how buffer mappings work with the device.
+    buffer_support: MappableBufferSupport,
+
+    pub const MappableBufferSupport = enum {
+        /// The device does not support memory-mappable buffers.
+        none,
+
+        /// The device only supports a front buffer, which keeps
+        /// its address between swaps.
+        front_stable,
+    };
 };
 
-pub const DeviceProperties = struct {
-    resolution: Resolution,
-    // stride: usize,
+/// A raw device-backed video memory buffer.
+pub const VideoMemory = struct {
+    /// A pointer to the first pixel.
+    ///
+    /// The pixel layout is row-major. This means that we have a
+    /// sequence of image lines, each line `width` elements long.
+    ///
+    /// Lines in the video memory are `stride` elements apart, so
+    /// the index of a pixel is `stride * y + x`.
+    base: [*]Color,
 
-    // video_memory_mapping: Buffering,
-    // video_memory: []align(ashet.memory.page_size) Color,
+    /// The distance of two pixel rows in memory.
+    /// This unit is provided in "number of `base` indices".
+    ///
+    /// NOTE: For the 8 bit color format we use, this is also
+    ///       a byte offset.
+    stride: usize,
+
+    comptime {
+        std.debug.assert(@sizeOf(Color) == 1);
+    }
+};
+
+/// Determines the type of video memory buffer.
+pub const BufferKind = enum {
+    /// The front buffer is the memory area the
+    /// scanout unit reads and displays.
+    ///
+    /// Changes to this buffer are immediately
+    /// reflected
+    front,
+
+    ///
+    back,
 };
 
 pub const VideoDevice = struct {
     get_properties_fn: *const fn (*ashet.drivers.Driver) DeviceProperties,
-    get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO: Go through all drivers and see which actually support this
+    get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO(gpu_support): Go through all drivers and see which actually support this
 
     begin_write_pixels_fn: *const fn (
         driver: *ashet.drivers.Driver,
@@ -37,15 +76,25 @@ pub const VideoDevice = struct {
         mode: PresentMode,
     ) void,
 
-    pub fn get_properties(vd: *VideoDevice) DeviceProperties {
+    create_mapped_buffer_fn: ?*const fn (
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{ SystemResources, IoError, Unsupported }!void = unsupported_create_mapped_buffer,
+
+    get_mapped_buffer_fn: ?*const fn (
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{IoError}!VideoMemory = unsupported_get_mapped_buffer,
+
+    fn get_properties(vd: *VideoDevice) DeviceProperties { // pub
         return vd.get_properties_fn(ashet.drivers.resolveDriver(.video, vd));
     }
 
-    pub fn supports_vblank_event(vd: *VideoDevice) bool {
+    fn supports_vblank_event(vd: *VideoDevice) bool { // pub
         return vd.get_one_vblank_event_fn != null;
     }
 
-    pub fn get_one_vblank_event(vd: *VideoDevice) bool {
+    fn get_one_vblank_event(vd: *VideoDevice) bool { // pub
         if (vd.get_one_vblank_event_fn) |get_one_vblank_event_fn| {
             return get_one_vblank_event_fn(ashet.drivers.resolveDriver(.video, vd));
         } else {
@@ -53,7 +102,21 @@ pub const VideoDevice = struct {
         }
     }
 
-    pub fn begin_write_pixels(
+    fn create_mapped_buffer( // pub
+        vd: *VideoDevice,
+        buffer: BufferKind,
+    ) error{ SystemResources, IoError, Unsupported }!void {
+        return vd.create_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
+    }
+
+    fn get_mapped_buffer( // pub
+        vd: *VideoDevice,
+        buffer: BufferKind,
+    ) error{IoError}!VideoMemory {
+        return vd.create_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
+    }
+
+    fn begin_write_pixels( // pub
         vd: *VideoDevice,
         call: *ashet.overlapped.AsyncCall,
         rectangle: Rectangle,
@@ -69,6 +132,54 @@ pub const VideoDevice = struct {
             stride,
             mode,
         );
+    }
+
+    pub fn default_create_mapped_buffer_front(
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{ SystemResources, IoError, Unsupported }!void {
+        _ = driver;
+        switch (buffer) {
+            .front => {},
+            .back => return error.Unsupported,
+        }
+    }
+
+    pub fn default_create_mapped_buffer_back(
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{ SystemResources, IoError, Unsupported }!void {
+        _ = driver;
+        switch (buffer) {
+            .front => return error.Unsupported,
+            .back => {},
+        }
+    }
+
+    pub fn default_create_mapped_buffer_both(
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{ SystemResources, IoError, Unsupported }!void {
+        _ = driver;
+        _ = buffer;
+    }
+
+    fn unsupported_create_mapped_buffer(
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{ SystemResources, IoError, Unsupported }!void {
+        _ = driver;
+        _ = buffer;
+        return error.Unsupported;
+    }
+
+    fn unsupported_get_mapped_buffer(
+        driver: *ashet.drivers.Driver,
+        buffer: BufferKind,
+    ) error{IoError}!VideoMemory {
+        _ = driver;
+        _ = buffer;
+        @panic("kernel bug: get_mapped_buffer_fn was not correctly set by the ");
     }
 };
 
@@ -162,7 +273,7 @@ pub const BufferMapping = struct {
     /// The raw exposed video memory. Writing to this will change the content
     /// on the screen.
     /// Memory is interpreted with the current video mode to produce an image.
-    pub fn get_video_memory(mapping: *const BufferMapping) VideoMemory {
+    pub fn get_video_memory(mapping: *const BufferMapping) ashet.abi.video.VideoMemory {
         _ = mapping;
         @panic("TODO: Implement get_video_memory"); // TODO(gpu_support): Implement get_video_memory
         // const props = mapping.output.video_driver.get_properties();
@@ -276,7 +387,7 @@ pub fn present_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.video.
     @panic("TODO: present_async!");
 }
 
-pub fn load_splash_screen(vmem: VideoMemory) void {
+pub fn load_splash_screen(vmem: ashet.abi.video.VideoMemory) void {
     const splash = defaults.splash_screen;
     const clamp_w = @min(vmem.width, splash.width);
     const clamp_h = @min(vmem.height, splash.height);
@@ -298,7 +409,7 @@ pub fn load_splash_screen(vmem: VideoMemory) void {
 pub const defaults = struct {
     /// The splash screen that should be shown until the operating system
     /// has fully bootet. This has to be displayed in 256x128 8bpp video mode.
-    pub const splash_screen: VideoMemory = .{
+    pub const splash_screen: ashet.abi.video.VideoMemory = .{
         .width = 256,
         .height = 128,
         .stride = 256,
@@ -347,8 +458,8 @@ pub const utils = struct {
         std.debug.assert(options.dst_pos.x +| options.src_buffer.width <= options.dst_buffer.width);
         std.debug.assert(options.dst_pos.y +| options.src_buffer.height <= options.dst_buffer.height);
 
-        var dst_iter = options.dst_buffer.data + options.dst_pos.y * options.dst_buffer.stride + options.dst_pos.x;
-        var src_iter = options.src_buffer.data;
+        var dst_iter: [*]DstPixel = options.dst_buffer.data + options.dst_pos.y * options.dst_buffer.stride + options.dst_pos.x;
+        var src_iter: [*]const Color = options.src_buffer.data;
 
         for (0..options.src_buffer.height) |_| {
             const dst_row = dst_iter;

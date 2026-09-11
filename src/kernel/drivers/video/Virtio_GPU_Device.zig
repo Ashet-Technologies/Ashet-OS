@@ -52,6 +52,7 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
         .stride = vd.graphics_width,
     });
 
+    logger.info("write initial flush", .{});
     vd.flush();
 
     return vd;
@@ -236,6 +237,7 @@ const GPU = struct {
             return;
         }
 
+        logger.debug("initialize gpu.vq", .{});
         try gpu.vq.init(0, regs);
         // try cursor_vq.init(1, regs);
 
@@ -249,6 +251,7 @@ const GPU = struct {
         //     // Those descriptors are not full, so reset avail_i
         //     cursor_vq.avail_i = 0;
 
+        logger.debug("get display info...", .{});
         const di = (try gpu.getDisplayInfo()) orelse {
             logger.err("failed to query gpu display info!", .{});
             return;
@@ -267,6 +270,7 @@ const GPU = struct {
 
         logger.info("detected framebuffer size: {}x{}", .{ width, height });
 
+        logger.debug("setup framebuffer...", .{});
         gpu.fb_mem = gpu.setupFramebuffer(allocator, Scanout.first, ResourceId.framebuffer, width, height) catch |err| {
             logger.err("failed to setup framebuffer: {s}", .{@errorName(err)});
             return;

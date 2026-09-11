@@ -710,12 +710,16 @@ namespace video {
 
     /// Returns a pointer to linear video memory, row-major.
     ///
-    /// NOTE: The pointer inside `memory` is only valid until the next `Present` operation
-    ///       for any front or back buffer mapping for the associated video output or until
+    /// NOTE: The pointer inside `memory` is only valid until the next `Present` or `WritePixels`
+    ///       operation for any front or back buffer mapping for the associated video output or until
     ///       the buffer mapping is destroyed.
     ///
     ///       This requires careful management and it is not recommended to share different
     ///       `BufferMapping` resources with other actors.
+    ///
+    /// LORE: Some video hardware uses dedicated memory buffers that are scanned out (like VGA or RP2350 HSTX),
+    ///       some other hardware uses a double-buffering scheme (like most modern GPUs) where two buffers are
+    ///       allocated, and we always
     syscall get_video_memory {
         in     buffer: BufferMapping;
 

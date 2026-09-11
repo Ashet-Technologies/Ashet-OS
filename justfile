@@ -20,6 +20,9 @@ run-avap-simulation:
         "drive;zig-out/x86-hosted-linux/disk.img" \
         "video;avap-v1;640;400;/dev/serial/by-id/usb-Ashet_Technologies_Fast_Bridge_AT-FB-00001-if00-port0" 
 
+run machine:
+    {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} -Dmachine={{machine}} tools run
+
 [working-directory: 'src/kernel']
 build-kernel:
     {{zig}} build {{default_params}} -Dmachine=x86-hosted-linux -Dno-emit-bin
