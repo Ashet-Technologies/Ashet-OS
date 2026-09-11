@@ -195,7 +195,10 @@ pub const Framebuffer = struct {
 
     pub const Type = union(ashet.abi.FramebufferType) {
         memory: Bitmap,
-        video: noreturn, // TODO(gpu_support): video: VideoOut,
+        video: struct {
+            mapping: *ashet.video.BufferMapping,
+            link: ashet.video.BufferMapping.FramebufferLink = .{ .data = {} },
+        },
         window: *ashet.gui.Window,
         widget: *ashet.gui.Widget,
     };
@@ -227,23 +230,27 @@ pub const Framebuffer = struct {
     }
 
     pub fn create_video_output(output: *ashet.video.Output) error{SystemResources}!*Framebuffer {
-        _ = output;
-        // TODO(gpu_support):
-        @panic("TODO: graphics.create_video_output!");
+        const mapping = output.get_or_create_buffer_mapping(.back_buffer, .shared) catch |err| {
+            return switch (err) {
+                error.SystemResources => |e| return e,
+                error.Unsupported, error.AlreadyExists => @panic("kernel bug: soft backbuffer sharing must always be supported"),
+            };
+        };
+        errdefer @panic("specific failure mode not supported yet"); // TODO(gpu_support): The mapping has to be destroyed iff no framebuffer shares exist and no exclusive user exists.
 
-        // const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
-        // errdefer ashet.memory.type_pool(Framebuffer).free(fb);
+        const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(Framebuffer).free(fb);
 
-        // fb.* = .{
-        //     .type = .{
-        //         .video = .{
-        //             .output = output,
-        //             .memory = output.get_video_memory(),
-        //         },
-        //     },
-        // };
+        fb.* = .{
+            .type = .{
+                .video = .{
+                    .mapping = mapping,
+                },
+            },
+        };
+        mapping.add_framebuffer_link(&fb.type.video.link);
 
-        // return fb;
+        return fb;
     }
 
     pub fn create_window(window: *ashet.gui.Window) error{SystemResources}!*Framebuffer {
@@ -276,26 +283,19 @@ pub const Framebuffer = struct {
                 const back_buffer = bmp.pixels[0 .. @as(usize, bmp.width) * bmp.stride];
                 ashet.memory.allocator.free(back_buffer);
             },
-            .video => unreachable, // TODO(gpu_support)
+            .video => |*video| {
+                video.mapping.remove_framebuffer_link(&video.link);
+            },
             .window => {},
             .widget => {},
         }
         ashet.memory.type_pool(Framebuffer).free(fb);
     }
 
-    fn invalidate(fb: *Framebuffer) void {
-        switch (fb.type) {
-            .memory => {}, // no-op, nothing to invalidate
-            .video => unreachable, // TODO(gpu_support)
-            .window => |win| win.invalidate_full(),
-            .widget => |widget| widget.window.invalidate_region(widget.bounds),
-        }
-    }
-
     pub fn get_size(fb: Framebuffer) Size {
         return switch (fb.type) {
             .memory => |mem| .new(mem.width, mem.height),
-            .video => unreachable, // TODO(gpu_support)
+            .video => |video| video.mapping.get_resolution(),
             .window => |win| win.size,
             .widget => |widget| widget.bounds.size(),
         };
@@ -317,16 +317,15 @@ pub const Framebuffer = struct {
                 .height = mem.height,
                 .stride = mem.stride,
             },
-            .video => unreachable, // TODO(gpu_support)
-            // TODO(gpu_support): .video => |video| blk: {
-            //     const mem = video.output.get_video_memory();
-            //     break :blk .{
-            //         .pixels = mem.base,
-            //         .height = mem.height,
-            //         .width = mem.width,
-            //         .stride = mem.stride,
-            //     };
-            // },
+            .video => |video| blk: {
+                const mem = video.mapping.get_video_memory();
+                break :blk .{
+                    .pixels = mem.base,
+                    .height = mem.height,
+                    .width = mem.width,
+                    .stride = mem.stride,
+                };
+            },
             .window => |win| .{
                 .pixels = win.pixels.ptr,
                 .width = win.size.width,
@@ -732,7 +731,68 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     }
 
     if (inputs.auto_invalidate) {
-        fb.invalidate();
+
+        // switch (fb.type) {
+        //     .video => @panic("TODO: Updating a kernel buffer mapping isn't supported yet!"), // TODO(gpu_support): We need to refactor this to include the invalidation of framebuffers only inside the "Render()" routine, so it's asynchronous
+
+        //     .memory => {}, // always ok
+
+        //     .widget => |widget| widget.window.invalidate_region(.{
+        //         .x = widget.bounds.x +| region.x,
+        //         .y = widget.bounds.y +| region.y,
+        //         .width = region.width,
+        //         .height = region.height,
+        //     }),
+        //     .window => |window| window.invalidate_region(region),
+        // }
+
+        switch (fb.type) {
+            .memory => {}, // no-op, nothing to invalidate
+            .video => |vmem| {
+                const mapping = vmem.mapping;
+                const output = vmem.mapping.output;
+
+                const size = mapping.get_resolution();
+
+                const output_handle = ashet.resources.get_handle(
+                    call.resource_owner,
+                    &output.system_resource,
+                ) orelse @panic("TODO: Framebuffer invocator does not also own video output."); // TODO(gpu_support): This one happens when we invalidate a framebuffer which we inherited from another process.
+
+                var write_pixels_call = ashet.abi.video.WritePixels.new(.{
+                    .output = output_handle.unsafe_cast(.video_video_output), //  catch @panic("kernel bug: mistake in resource resolution"),
+                    .stride = mapping.video_memory.stride,
+                    .destination = .new(.zero, size),
+                    .mode = .immediate,
+                    .pixels_ptr = mapping.video_memory.base,
+                    .pixels_len = mapping.video_memory.stride * (size.height -| 1) + size.width,
+                });
+
+                ashet.overlapped.schedule(
+                    call.resource_owner,
+                    call.context,
+                    &write_pixels_call.arc,
+                ) catch |err| return switch (err) {
+                    error.AlreadyScheduled => unreachable,
+                    error.SystemResources => |e| e,
+                };
+
+                var completed: [1]?*ashet.abi.overlapped.ARC = .{&write_pixels_call.arc};
+                const count = ashet.overlapped.await_completion_of(
+                    call.context,
+                    &completed,
+                ) catch |err| return switch (err) {
+                    error.Unscheduled => unreachable,
+                    error.InvalidOperation => unreachable,
+                };
+                std.debug.assert(count == 1);
+                std.debug.assert(completed[0] == &write_pixels_call.arc);
+
+                // @panic("video buffer invalidation not supported"),
+            },
+            .window => |win| win.invalidate_full(),
+            .widget => |widget| widget.window.invalidate_region(widget.bounds),
+        }
     }
 
     return .{};

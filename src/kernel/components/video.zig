@@ -1,11 +1,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ashet = @import("../main.zig");
+const astd = @import("ashet-std");
 const logger = std.log.scoped(.video);
 
 pub const Color = ashet.abi.Color;
 pub const OutputID = ashet.abi.video.VideoOutputID;
 pub const Resolution = ashet.abi.Size;
+pub const BufferKind = ashet.abi.video.BufferKind;
 
 const Rectangle = ashet.abi.Rectangle;
 const PresentMode = ashet.abi.video.PresentMode;
@@ -24,6 +26,13 @@ pub const DeviceProperties = struct {
         /// The device only supports a front buffer, which keeps
         /// its address between swaps.
         front_stable,
+
+        pub fn supports_buffer(support: MappableBufferSupport, kind: BufferKind) bool {
+            return switch (support) {
+                .none => false,
+                .front_stable => (kind == .front_buffer),
+            };
+        }
     };
 };
 
@@ -50,20 +59,24 @@ pub const VideoMemory = struct {
     }
 };
 
-/// Determines the type of video memory buffer.
-pub const BufferKind = enum {
-    /// The front buffer is the memory area the
-    /// scanout unit reads and displays.
-    ///
-    /// Changes to this buffer are immediately
-    /// reflected
-    front,
-
-    ///
-    back,
-};
-
 pub const VideoDevice = struct {
+    pub const MappingFunctions = struct {
+        create_mapped_buffer_fn: *const fn (
+            driver: *ashet.drivers.Driver,
+            buffer: BufferKind,
+        ) error{ SystemResources, Unsupported }!void,
+
+        get_mapped_buffer_fn: *const fn (
+            driver: *ashet.drivers.Driver,
+            buffer: BufferKind,
+        ) VideoMemory,
+
+        destroy_mapped_buffer_fn: *const fn (
+            driver: *ashet.drivers.Driver,
+            buffer: BufferKind,
+        ) void,
+    };
+
     get_properties_fn: *const fn (*ashet.drivers.Driver) DeviceProperties,
     get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO(gpu_support): Go through all drivers and see which actually support this
 
@@ -76,25 +89,17 @@ pub const VideoDevice = struct {
         mode: PresentMode,
     ) void,
 
-    create_mapped_buffer_fn: ?*const fn (
-        driver: *ashet.drivers.Driver,
-        buffer: BufferKind,
-    ) error{ SystemResources, IoError, Unsupported }!void = unsupported_create_mapped_buffer,
+    mapping_fns: ?MappingFunctions = null,
 
-    get_mapped_buffer_fn: ?*const fn (
-        driver: *ashet.drivers.Driver,
-        buffer: BufferKind,
-    ) error{IoError}!VideoMemory = unsupported_get_mapped_buffer,
-
-    fn get_properties(vd: *VideoDevice) DeviceProperties { // pub
+    fn get_properties(vd: *VideoDevice) DeviceProperties {
         return vd.get_properties_fn(ashet.drivers.resolveDriver(.video, vd));
     }
 
-    fn supports_vblank_event(vd: *VideoDevice) bool { // pub
+    fn supports_vblank_event(vd: *VideoDevice) bool {
         return vd.get_one_vblank_event_fn != null;
     }
 
-    fn get_one_vblank_event(vd: *VideoDevice) bool { // pub
+    fn get_one_vblank_event(vd: *VideoDevice) bool {
         if (vd.get_one_vblank_event_fn) |get_one_vblank_event_fn| {
             return get_one_vblank_event_fn(ashet.drivers.resolveDriver(.video, vd));
         } else {
@@ -102,21 +107,31 @@ pub const VideoDevice = struct {
         }
     }
 
-    fn create_mapped_buffer( // pub
+    fn create_mapped_buffer(
         vd: *VideoDevice,
         buffer: BufferKind,
-    ) error{ SystemResources, IoError, Unsupported }!void {
-        return vd.create_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
+    ) error{ SystemResources, Unsupported }!void {
+        const fns = vd.mapping_fns orelse @panic("kernel bug: should never be called when unsupported.");
+        return fns.create_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
     }
 
-    fn get_mapped_buffer( // pub
+    fn get_mapped_buffer(
         vd: *VideoDevice,
         buffer: BufferKind,
-    ) error{IoError}!VideoMemory {
-        return vd.create_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
+    ) VideoMemory {
+        const fns = vd.mapping_fns orelse @panic("kernel bug: should never be called when unsupported.");
+        return fns.get_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
     }
 
-    fn begin_write_pixels( // pub
+    fn destroy_mapped_buffer(
+        vd: *VideoDevice,
+        buffer: BufferKind,
+    ) void {
+        const fns = vd.mapping_fns orelse @panic("kernel bug: should never be called when unsupported.");
+        return fns.destroy_mapped_buffer_fn(ashet.drivers.resolveDriver(.video, vd), buffer);
+    }
+
+    fn begin_write_pixels(
         vd: *VideoDevice,
         call: *ashet.overlapped.AsyncCall,
         rectangle: Rectangle,
@@ -137,11 +152,11 @@ pub const VideoDevice = struct {
     pub fn default_create_mapped_buffer_front(
         driver: *ashet.drivers.Driver,
         buffer: BufferKind,
-    ) error{ SystemResources, IoError, Unsupported }!void {
+    ) error{ SystemResources, Unsupported }!void {
         _ = driver;
         switch (buffer) {
-            .front => {},
-            .back => return error.Unsupported,
+            .front_buffer => {},
+            .back_buffer => return error.Unsupported,
         }
     }
 
@@ -151,8 +166,8 @@ pub const VideoDevice = struct {
     ) error{ SystemResources, IoError, Unsupported }!void {
         _ = driver;
         switch (buffer) {
-            .front => return error.Unsupported,
-            .back => {},
+            .front_buffer => return error.Unsupported,
+            .back_buffer => {},
         }
     }
 
@@ -164,22 +179,12 @@ pub const VideoDevice = struct {
         _ = buffer;
     }
 
-    fn unsupported_create_mapped_buffer(
+    pub fn destroy_mapped_buffer_noop(
         driver: *ashet.drivers.Driver,
         buffer: BufferKind,
-    ) error{ SystemResources, IoError, Unsupported }!void {
+    ) void {
         _ = driver;
         _ = buffer;
-        return error.Unsupported;
-    }
-
-    fn unsupported_get_mapped_buffer(
-        driver: *ashet.drivers.Driver,
-        buffer: BufferKind,
-    ) error{IoError}!VideoMemory {
-        _ = driver;
-        _ = buffer;
-        @panic("kernel bug: get_mapped_buffer_fn was not correctly set by the ");
     }
 };
 
@@ -195,7 +200,9 @@ pub const Output = struct {
     /// If true, the kernel will automatically flush the screen in a background process.
     auto_flush: bool = true, // TODO: Fix this
     flush_required: bool = false,
+
     video_driver: *ashet.drivers.VideoDevice,
+    properties: DeviceProperties,
 
     vsync_awaiters: ashet.overlapped.WorkQueue = .{
         .wakeup_thread = null,
@@ -204,7 +211,7 @@ pub const Output = struct {
     fn _noop(_: *Output) void {}
 
     pub fn get_resolution(output: *const Output) Resolution {
-        return output.video_driver.get_properties().resolution;
+        return output.properties.resolution;
     }
 
     pub fn begin_write_pixels(output: *const Output, call: *ashet.overlapped.AsyncCall, destination: Rectangle, pixels: []const Color, stride: usize, mode: PresentMode) error{
@@ -252,6 +259,74 @@ pub const Output = struct {
         );
     }
 
+    pub const MappingSharing = enum { shared, exclusive };
+
+    pub fn get_or_create_buffer_mapping(output: *Output, buffer_kind: BufferKind, sharing: MappingSharing) error{ SystemResources, Unsupported, AlreadyExists }!*BufferMapping {
+        if (output.buffer_mappings.get(buffer_kind)) |mapping| {
+            switch (sharing) {
+                .shared => {},
+                .exclusive => if (mapping.has_exclusive_user) {
+                    return error.AlreadyExists;
+                } else {
+                    mapping.has_exclusive_user = true;
+                },
+            }
+            return mapping;
+        }
+
+        const has_hw_support = output.properties.buffer_support.supports_buffer(buffer_kind);
+        const use_hw_buffer = blk: switch (buffer_kind) {
+            // Front buffers always require hardware support, otherwise our changes
+            // might not be directly visible.
+            .front_buffer => {
+                if (has_hw_support) {
+                    return error.Unsupported;
+                }
+                break :blk false;
+            },
+
+            // We can always create a backbuffer through software emulation if we
+            // don't have hardware support.
+            .back_buffer => has_hw_support,
+        };
+
+        // Create buffer mapping:
+        const maybe_sw_buffer: ?[]Color = if (use_hw_buffer) blk: {
+            try output.video_driver.create_mapped_buffer(buffer_kind);
+            break :blk null;
+        } else blk: {
+            const total_size = @as(usize, output.properties.resolution.width) * output.properties.resolution.height;
+            break :blk ashet.memory.page_allocator.alloc(Color, total_size) catch return error.SystemResources;
+        };
+        errdefer if (maybe_sw_buffer) |buffer| {
+            ashet.memory.page_allocator.free(buffer);
+        };
+
+        const mapping = ashet.memory.type_pool(BufferMapping).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(BufferMapping).free(mapping);
+
+        mapping.* = .{
+            .output = output,
+
+            .kind = buffer_kind,
+            .is_soft_buffer = !use_hw_buffer,
+            .video_memory = if (use_hw_buffer)
+                output.video_driver.get_mapped_buffer(buffer_kind)
+            else
+                .{
+                    .base = maybe_sw_buffer.?.ptr,
+                    .stride = output.properties.resolution.width,
+                },
+
+            .has_exclusive_user = switch (sharing) {
+                .exclusive => true,
+                .shared => false,
+            },
+        };
+
+        return mapping;
+    }
+
     /// Notifies all overlapped events that wait for V-Blank on this output.
     pub fn notify_vblank_awaiters(output: *Output) void {
         while (output.vsync_awaiters.dequeue()) |tup| {
@@ -262,30 +337,78 @@ pub const Output = struct {
 };
 
 pub const BufferMapping = struct {
-    pub const Destructor = ashet.resources.Destructor(@This(), _noop);
+    const FramebufferList = astd.DoublyLinkedList(void, .{
+        .tag = struct {},
+        .address_pinning = true, // BufferMapping has a stable address
+    });
 
-    system_resource: ashet.resources.SystemResource = .{ .type = .video_video_output },
+    pub const FramebufferLink = FramebufferList.Node;
+
+    pub const Destructor = ashet.resources.Destructor(@This(), _destroy);
+
+    system_resource: ashet.resources.SystemResource = .{ .type = .video_buffer_mapping },
 
     output: *Output,
+    kind: BufferKind,
 
-    fn _noop(_: *BufferMapping) void {}
+    /// If true, the buffer was created through a "create_buffer_mapping" call,
+    /// and is currently held by userland accessible system resource.
+    has_exclusive_user: bool,
+
+    linked_framebuffers: FramebufferList = .empty,
+
+    /// If true, the buffer is a software-emulated buffer instead of a hardware buffer.
+    is_soft_buffer: bool,
+
+    video_memory: VideoMemory,
+
+    pub const destroy = Destructor.destroy;
+
+    fn _destroy(mapping: *BufferMapping) void {
+        if (mapping.linked_framebuffers.len > 0) {
+            @panic("BufferMapping.destroy: missing framebuffer invalidation"); // TODO(gpu_support): Refactor into a list of framebuffers and invalidate the framebuffer resources as well
+        }
+
+        if (mapping.is_soft_buffer) {
+            const total_size = @as(usize, mapping.output.properties.resolution.width) * mapping.output.properties.resolution.height;
+            std.debug.assert(mapping.video_memory.stride == mapping.output.properties.resolution.width);
+
+            const buffer = mapping.video_memory.base[0..total_size];
+            ashet.memory.page_allocator.free(buffer);
+
+            @panic("not implemented yet");
+        } else {
+            mapping.output.video_driver.destroy_mapped_buffer(mapping.kind);
+        }
+
+        // Reset the internally stored pointer
+        mapping.output.buffer_mappings.set(mapping.kind, null);
+
+        ashet.memory.type_pool(BufferMapping).free(mapping);
+    }
 
     /// The raw exposed video memory. Writing to this will change the content
     /// on the screen.
     /// Memory is interpreted with the current video mode to produce an image.
     pub fn get_video_memory(mapping: *const BufferMapping) ashet.abi.video.VideoMemory {
-        _ = mapping;
-        @panic("TODO: Implement get_video_memory"); // TODO(gpu_support): Implement get_video_memory
-        // const props = mapping.output.video_driver.get_properties();
+        return .{
+            .base = mapping.video_memory.base,
+            .stride = mapping.video_memory.stride,
+            .width = mapping.output.properties.resolution.width,
+            .height = mapping.output.properties.resolution.height,
+        };
+    }
 
-        // std.debug.assert(props.video_memory.len >= (props.stride * @as(usize, props.resolution.height)));
+    pub fn add_framebuffer_link(mapping: *BufferMapping, link: *FramebufferLink) void {
+        mapping.linked_framebuffers.append(link);
+    }
 
-        // return .{
-        //     .base = props.video_memory.ptr,
-        //     .stride = props.stride,
-        //     .width = props.resolution.width,
-        //     .height = props.resolution.height,
-        // };
+    pub fn remove_framebuffer_link(mapping: *BufferMapping, link: *FramebufferLink) void {
+        mapping.linked_framebuffers.append(link);
+    }
+
+    pub fn get_resolution(mapping: *const BufferMapping) Resolution {
+        return mapping.output.properties.resolution;
     }
 };
 
@@ -308,6 +431,7 @@ pub fn initialize() !void {
         while (drivers.next()) |driver| : (index += 1) {
             video_outputs[index] = Output{
                 .video_driver = driver,
+                .properties = driver.get_properties(),
             };
 
             const output = &video_outputs[index];

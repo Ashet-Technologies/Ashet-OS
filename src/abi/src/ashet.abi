@@ -696,7 +696,7 @@ namespace video {
         /// each other and contains `width` valid elements.
         ///
         /// There are `height` total scanlines available.
-        field base: [*]align(4) Color;
+        field base: [*]Color;
 
         /// Length of a scanline in elements.
         field stride: usize;
@@ -1454,14 +1454,16 @@ namespace draw {
         error Unsupported;
     }
 
-    /// Marks a portion of the framebuffer as changed and forces the OS to
-    /// perform an update action if necessary.
-    syscall invalidate_framebuffer {
-        in fb: Framebuffer;
-        in area: Rectangle;
+    //? TODO(gpu_refactor): Make this syscall only be usable for memory framebuffers.
+    //?
+    //? /// Marks a portion of the framebuffer as changed and forces the OS to
+    //? /// perform an update action if necessary.
+    //? syscall invalidate_framebuffer {
+    //?     in fb: Framebuffer;
+    //?     in area: Rectangle;
 
-        error InvalidHandle;
-    }
+    //?     error InvalidHandle;
+    //? }
 
     /// Renders the provided Ashet Graphics Protocol @`sequence` into @`target` framebuffer.
     ///
@@ -1471,14 +1473,17 @@ namespace draw {
     async_call Render {
         /// The framebuffer which should be drawn to.
         in      target: Framebuffer;
+
         /// The AGP code that defines the drawing.
         in      sequence: bytestr;
+
         /// If the target framebuffer is invalidatable, it is automatically invalidated after the completion
         /// of the command sequence, ensuring presentation of the contents.
         ///
         /// This is useful when painting into widgets or windows to ensure the window manager
         /// actually sees the changes as soon as they are done, reducing graphics pipeline latency.
         in      auto_invalidate: bool;
+
         error   BadCode;
         error   InvalidHandle;
         error   SystemResources;

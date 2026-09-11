@@ -20,9 +20,26 @@ pub const Output = opaque {
         return try abi.video.get_resolution(@ptrCast(out));
     }
 
-    // pub fn get_video_memory(out: *Output) !abi.VideoMemory {
-    //     return try abi.video.get_video_memory(@ptrCast(out));
-    // }
+    pub fn create_mapping(out: *Output, kind: BufferKind) !*BufferMapping {
+        return @ptrCast(try abi.video.create_buffer_mapping(@ptrCast(out), kind));
+    }
+};
+
+pub const BufferMapping = opaque {
+    pub fn release(mapping: *BufferMapping) void {
+        abi.resources.release(.from_ptr(mapping));
+    }
+
+    pub fn get_video_memory(mapping: *BufferMapping) !abi.video.VideoMemory {
+        return try ashet.abi.video.get_video_memory(@ptrCast(mapping));
+    }
+
+    pub fn present(mapping: *BufferMapping, mode: PresentMode) !void {
+        _ = try ashet.overlapped.performOne(ashet.abi.video.Present, .{
+            .buffer = @ptrCast(mapping),
+            .mode = mode,
+        });
+    }
 };
 
 pub fn acquire(id: VideoOutputID) !*Output {

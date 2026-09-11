@@ -21,8 +21,11 @@ driver: Driver = .{
         .video = .{
             .get_properties_fn = get_properties,
             .begin_write_pixels_fn = begin_write_pixels,
-            .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
-            .get_mapped_buffer_fn = get_mapped_buffer,
+            .mapping_fns = .{
+                .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
+                .get_mapped_buffer_fn = get_mapped_buffer,
+                .destroy_mapped_buffer_fn = ashet.video.VideoDevice.destroy_mapped_buffer_noop,
+            },
         },
     },
 },
@@ -70,14 +73,14 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     };
 }
 
-fn get_mapped_buffer(driver: *Driver, buffer: ashet.video.BufferKind) error{IoError}!ashet.video.VideoMemory {
+fn get_mapped_buffer(driver: *Driver, buffer: ashet.video.BufferKind) ashet.video.VideoMemory {
     _ = driver;
     return switch (buffer) {
-        .front => .{
+        .front_buffer => .{
             .base = @ptrFromInt(0xA0000),
             .stride = width,
         },
-        .back => @panic("kernel bug: driver layer invoked get_mapped_buffer for unsupported buffer"),
+        .back_buffer => @panic("kernel bug: driver layer invoked get_mapped_buffer for unsupported buffer"),
     };
 }
 

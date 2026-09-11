@@ -392,10 +392,15 @@ pub const syscalls = struct {
             return output.get_resolution();
         }
 
-        pub fn create_buffer_mapping(output: abi.video.VideoOutput, requested_kind: abi.video.BufferKind) error{ InvalidHandle, Unsupported, AlreadyExists, SystemResources }!abi.video.BufferMapping {
-            _ = output;
-            _ = requested_kind;
-            not_implemented_yet(@src()); // TODO(gpu_support)
+        pub fn create_buffer_mapping(output_handle: abi.video.VideoOutput, requested_kind: abi.video.BufferKind) error{ InvalidHandle, Unsupported, AlreadyExists, SystemResources }!abi.video.BufferMapping {
+            const proc, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
+
+            const mapping = try output.get_or_create_buffer_mapping(requested_kind, .exclusive);
+            errdefer mapping.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &mapping.system_resource);
+
+            return handle.unsafe_cast(.video_buffer_mapping);
         }
 
         pub fn get_video_memory(buffer_handle: abi.video.BufferMapping) error{InvalidHandle}!abi.video.VideoMemory {
@@ -545,7 +550,6 @@ pub const syscalls = struct {
                     .stride = mem.stride,
                     .base = mem.pixels,
                 },
-                .video => |vdev| vdev.memory, // TODO: Temporary hack until a true "create_buffer_mapping" syscall is available
                 else => error.Unsupported,
             };
         }
@@ -555,19 +559,9 @@ pub const syscalls = struct {
         pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, region: abi.Rectangle) error{InvalidHandle}!void {
             _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
 
-            switch (fb.type) {
-                .video => |vdev| vdev.output.flush(), // TODO: Decide if asynchronous or synchronous flush
-
-                .memory => {}, // always ok
-
-                .widget => |widget| widget.window.invalidate_region(.{
-                    .x = widget.bounds.x +| region.x,
-                    .y = widget.bounds.y +| region.y,
-                    .width = region.width,
-                    .height = region.height,
-                }),
-                .window => |window| window.invalidate_region(region),
-            }
+            _ = fb;
+            _ = region;
+            not_implemented_yet(@src()); // TODO(gpu_support)
         }
 
         // Drawing:

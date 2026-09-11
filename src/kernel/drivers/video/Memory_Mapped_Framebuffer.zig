@@ -49,8 +49,6 @@ pub fn create(allocator: std.mem.Allocator, comptime driver_name: []const u8, co
                 .video = .{
                     .begin_write_pixels_fn = begin_write_pixels,
                     .get_properties_fn = get_properties,
-                    .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
-                    .get_mapped_buffer_fn = get_mapped_buffer,
                 },
             },
         },
@@ -79,17 +77,6 @@ pub fn create(allocator: std.mem.Allocator, comptime driver_name: []const u8, co
     return driver;
 }
 
-fn get_mapped_buffer(driver: *Driver, buffer: ashet.video.BufferKind) error{IoError}!ashet.video.VideoMemory {
-    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
-    return switch (buffer) {
-        .front => .{
-            .base = vd.backing_buffer.ptr,
-            .stride = vd.width,
-        },
-        .back => @panic("kernel bug: driver layer invoked get_mapped_buffer for unsupported buffer"),
-    };
-}
-
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
     return .{
@@ -98,7 +85,7 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .height = vd.height,
         },
 
-        .buffer_support = .front_stable,
+        .buffer_support = .none,
     };
 }
 
