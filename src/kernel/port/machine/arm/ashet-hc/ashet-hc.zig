@@ -62,7 +62,7 @@ fn get_tick_count_ms() u64 {
 
     // return systick.total_count_ms;
 
-    return @intFromEnum(hal.time.get_time_since_boot()) / 1000;
+    return @backingInt(hal.time.get_time_since_boot()) / 1000;
 }
 
 comptime {
@@ -502,7 +502,7 @@ pub const IRQ = enum(u6) {
     }
 
     fn get_nvic_params(irq: IRQ) struct { usize, u32 } {
-        const index = @intFromEnum(irq);
+        const index = @backingInt(irq);
         const group = index / 32;
         const bitnum: u5 = @truncate(index % 32);
         const mask = @as(u32, 1) << bitnum;
@@ -546,14 +546,14 @@ pub const IRQ = enum(u6) {
 
     pub fn trigger(irq: IRQ) void {
         ashet.platform.profile.peripherals.nvic.stir.write_default(.{
-            .interrupt_id = @intFromEnum(irq),
+            .interrupt_id = @backingInt(irq),
         });
     }
 
     pub fn get_priority(irq: IRQ) u8 {
         comptime std.debug.assert(@import("builtin").cpu.arch.endian() == .little);
 
-        const index = @intFromEnum(irq);
+        const index = @backingInt(irq);
         const group = index / 4;
         const offset = index % 4;
 
@@ -571,12 +571,12 @@ pub const IRQ = enum(u6) {
     pub fn set_priority(irq: IRQ, prio: Priority) void {
         comptime std.debug.assert(@import("builtin").cpu.arch.endian() == .little);
 
-        const index = @intFromEnum(irq);
+        const index = @backingInt(irq);
         const group = index / 4;
         const offset = index % 4;
 
         var values: [4]u8 = @bitCast(ashet.platform.profile.peripherals.nvic.ipr[group]);
-        values[offset] = @intFromEnum(prio);
+        values[offset] = @backingInt(prio);
         ashet.platform.profile.peripherals.nvic.ipr[group] = @bitCast(values);
     }
 };
@@ -849,7 +849,7 @@ const backplane = struct {
     }
 
     fn handle_propio_frame(rx_frame: []const u8) !void {
-        const frame_type = std.meta.intToEnum(propio.protocol.types.FrameType, rx_frame[0]) catch {
+        const frame_type = std.enums.fromInt(propio.protocol.types.FrameType, rx_frame[0]) orelse {
             logger.warn("received unknown frame from propio: '{x}'", .{
                 rx_frame,
             });
@@ -907,7 +907,7 @@ const backplane = struct {
                         return;
                     },
 
-                    4...7 => @enumFromInt(@as(u2, @intCast(pack.fifo - 4))),
+                    4...7 => @fromBackingInt(@intCast(@as(u2, @intCast(pack.fifo - 4)))),
                 };
 
                 // logger.info("received FIFO data for module {}, fifo {}: '{}'", .{
@@ -969,11 +969,11 @@ const backplane = struct {
         const metadata_block: expcard.MetadataBlock = blk: {
             var header_block_data: [@sizeOf(expcard.MetadataBlock)]u8 = @splat(0);
             try hw_alloc.i2c.system_bus.read_blocking(hw_alloc.i2c_addresses.expansion_eeprom, &header_block_data, null);
-            var fbs = std.io.fixedBufferStream(&header_block_data);
+            var fbs: std.Io.Reader = .fixed(&header_block_data);
 
-            const block = try fbs.reader().readStructEndian(expcard.MetadataBlock, .little);
+            const block = try fbs.takeStruct(expcard.MetadataBlock, .little);
 
-            std.debug.assert(fbs.pos == header_block_data.len);
+            std.debug.assert(fbs.seek == header_block_data.len);
 
             break :blk block;
         };
@@ -1012,7 +1012,7 @@ const backplane = struct {
         errdefer ashet.memory.type_pool(Module).free(module);
 
         module.* = .{
-            .id = @enumFromInt(slot_index + 1),
+            .id = @fromBackingInt(@intCast(slot_index + 1)),
             .metadata = metadata_block,
             .firmware = null,
             .driver = null,
@@ -1038,7 +1038,7 @@ const backplane = struct {
 
         propio.protocol.write_fifo(
             module.id,
-            @enumFromInt(@intFromEnum(fifo)),
+            @fromBackingInt(@intCast(@backingInt(fifo))),
             data,
         );
     }
@@ -1058,10 +1058,10 @@ pub const perfctr = struct {
         stop();
 
         @setRuntimeSafety(false);
-        busctrl.PERFSEL0.write(.{ .PERFSEL0 = @enumFromInt(@intFromEnum(p0)) });
-        busctrl.PERFSEL1.write(.{ .PERFSEL1 = @enumFromInt(@intFromEnum(p1)) });
-        busctrl.PERFSEL2.write(.{ .PERFSEL2 = @enumFromInt(@intFromEnum(p2)) });
-        busctrl.PERFSEL3.write(.{ .PERFSEL3 = @enumFromInt(@intFromEnum(p3)) });
+        busctrl.PERFSEL0.write(.{ .PERFSEL0 = @fromBackingInt(@intCast(@backingInt(p0))) });
+        busctrl.PERFSEL1.write(.{ .PERFSEL1 = @fromBackingInt(@intCast(@backingInt(p1))) });
+        busctrl.PERFSEL2.write(.{ .PERFSEL2 = @fromBackingInt(@intCast(@backingInt(p2))) });
+        busctrl.PERFSEL3.write(.{ .PERFSEL3 = @fromBackingInt(@intCast(@backingInt(p3))) });
 
         ashet.platform.profile.dwt_unit.init();
 
@@ -1081,7 +1081,7 @@ pub const perfctr = struct {
 
     pub inline fn start() void {
         std.debug.assert(busctrl.PERFCTR_EN.read().PERFCTR_EN == 0);
-        duration = @intFromEnum(hal.time.get_time_since_boot());
+        duration = @backingInt(hal.time.get_time_since_boot());
         ashet.platform.profile.dwt_unit.start();
         busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 1 });
     }
@@ -1091,7 +1091,7 @@ pub const perfctr = struct {
         ctr_acc = xip.CTR_ACC.integer_access;
         busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 0 });
         ashet.platform.profile.dwt_unit.stop();
-        duration = @intFromEnum(hal.time.get_time_since_boot()) -| duration;
+        duration = @backingInt(hal.time.get_time_since_boot()) -| duration;
     }
 
     pub fn dump() void {

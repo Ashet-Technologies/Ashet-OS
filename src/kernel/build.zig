@@ -241,8 +241,17 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "microzig", .module = microzig_shim_mod },
                 .{ .name = "bounded-array", .module = microzig_shim_mod },
+                .{ .name = "ashet-std", .module = ashet_std_mod },
             },
         });
+
+        var pio_test_c: @import("translate_c").Translator = .init(b.dependency("translate_c", .{}), .{
+            .c_source_file = hal_dep.path("hal/pio/assembler/comparison_tests.h"),
+            .target = kernel_target,
+            .optimize = .debug,
+        });
+        pio_test_c.addIncludePath(hal_dep.path("hal/pio/assembler"));
+        hal_mod.addImport("pio-test-c", pio_test_c.mod);
 
         microzig_shim_mod.addImport("rp2350-chip", rp2350_mod);
         microzig_shim_mod.addImport("rp2350-hal", hal_mod);

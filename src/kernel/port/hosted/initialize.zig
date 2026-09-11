@@ -30,7 +30,9 @@ pub var kernel_options: KernelOptions = .{};
 
 pub var process_init: std.process.Init = undefined;
 
-pub fn io() std.Io { return process_init.io; }
+pub fn io() std.Io {
+    return process_init.io;
+}
 
 var startup_time: ?std.Io.Timestamp = null;
 
@@ -71,7 +73,7 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
             @compileError("duplicate video driver key: " ++ dri);
     };
 
-    try network.init();
+    try network.init(io());
 
     if (sdl_enabled) {
         if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) < 0) {

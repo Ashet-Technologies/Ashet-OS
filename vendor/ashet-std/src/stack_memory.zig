@@ -102,13 +102,11 @@ pub fn isValidMemory(address: usize) bool {
     if (native_os == .windows) {
         const windows = std.os.windows;
 
-        var memory_info: windows.MEMORY_BASIC_INFORMATION = undefined;
+        var memory_info: WindowsMemoryBasicInformation = undefined;
 
         // The only error this function can throw is ERROR_INVALID_PARAMETER.
         // supply an address that invalid i'll be thrown.
-        const rc = windows.VirtualQuery(@ptrCast(aligned_memory), &memory_info, aligned_memory.len) catch {
-            return false;
-        };
+        const rc = VirtualQuery(@ptrCast(aligned_memory), &memory_info, aligned_memory.len);
 
         // Result code has to be bigger than zero (number of bytes written)
         if (rc == 0) {
@@ -116,7 +114,7 @@ pub fn isValidMemory(address: usize) bool {
         }
 
         // Free pages cannot be read, they are unmapped
-        if (memory_info.State == windows.MEM_FREE) {
+        if (memory_info.State == @as(windows.DWORD, @bitCast(windows.MEM.FREE{ .FREE = true }))) {
             return false;
         }
 
@@ -140,3 +138,16 @@ const have_msync = switch (native_os) {
     .wasi, .emscripten, .windows => false,
     else => true,
 };
+
+// VirtualQuery's Win32 ABI, formerly exposed by std.os.windows.
+const WindowsMemoryBasicInformation = extern struct {
+    BaseAddress: std.os.windows.PVOID,
+    AllocationBase: std.os.windows.PVOID,
+    AllocationProtect: std.os.windows.DWORD,
+    PartitionId: std.os.windows.WORD,
+    RegionSize: std.os.windows.SIZE_T,
+    State: std.os.windows.DWORD,
+    Protect: std.os.windows.DWORD,
+    Type: std.os.windows.DWORD,
+};
+extern "kernel32" fn VirtualQuery(?std.os.windows.LPVOID, *WindowsMemoryBasicInformation, std.os.windows.SIZE_T) callconv(.winapi) std.os.windows.SIZE_T;

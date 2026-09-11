@@ -187,7 +187,7 @@ pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
         @panic("Processing X11 events failed!");
     };
 
-    std.posix.exit(0); // X11 connection closed.
+    std.process.exit(0); // X11 connection closed.
 }
 
 pub fn process_events(server: *X11_Display) !void {
@@ -202,7 +202,7 @@ pub fn process_events(server: *X11_Display) !void {
 
             var pfd: [1]std.posix.pollfd = .{
                 .{
-                    .fd = server.socket_reader.getStream().handle,
+                    .fd = server.socket_reader.getStream().socket.handle,
                     .events = std.posix.POLL.IN,
                     .revents = 0,
                 },
@@ -424,7 +424,7 @@ fn force_render(server: *X11_Display) !void {
         });
 
         for (pixel_data, source_pixels[0..chunk_pixels]) |*out, in| {
-            out.* = @intFromEnum(in.to_argb8888()); // 0x??RRGGBB
+            out.* = @backingInt(in.to_argb8888()); // 0x??RRGGBB
         }
         source_pixels += chunk_pixels;
 

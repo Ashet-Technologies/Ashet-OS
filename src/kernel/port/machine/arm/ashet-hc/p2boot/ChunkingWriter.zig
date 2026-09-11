@@ -3,7 +3,7 @@ const rp2350 = @import("rp2350-hal");
 
 const ChunkingWriter = @This();
 
-const Error = rp2350.uart.UART.Writer.Error;
+const Error = rp2350.uart.TransmitError;
 
 pub const chunk_size = 50;
 
