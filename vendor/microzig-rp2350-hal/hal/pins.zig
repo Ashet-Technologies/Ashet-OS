@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const comptimePrint = std.fmt.comptimePrint;
-const StructField = std.builtin.Type.StructField;
 
 const microzig = @import("microzig");
 const SIO = microzig.chip.peripherals.SIO;
@@ -487,7 +486,7 @@ fn none() PinFlags {
 }
 
 const function_table = if (chip == .RP2040)
-    [@typeInfo(Function).@"enum".fields.len]PinFlags{
+    [@typeInfo(Function).@"enum".field_names.len]PinFlags{
         all(), // SIO
         all(), // PIO0
         all(), // PIO1
@@ -561,7 +560,7 @@ const function_table = if (chip == .RP2040)
         none(), // HSTX
     }
 else if (has_rp2350b)
-    [@typeInfo(Function).@"enum".fields.len]PinFlags{
+    [@typeInfo(Function).@"enum".field_names.len]PinFlags{
         all(), // SIO
         all(), // PIO0
         all(), // PIO1
@@ -635,7 +634,7 @@ else if (has_rp2350b)
         list(&.{ 12, 13, 14, 15, 16, 17, 18, 19 }), // HSTX
     }
 else
-    [@typeInfo(Function).@"enum".fields.len]PinFlags{
+    [@typeInfo(Function).@"enum".field_names.len]PinFlags{
         all(), // SIO
         all(), // PIO0
         all(), // PIO1
@@ -760,51 +759,32 @@ pub const GlobalConfiguration = struct {
     GPIO47: ?Pin.Configuration = null,
 
     comptime {
-        const pin_field_count = @typeInfo(Pin).@"enum".fields.len;
-        const config_field_count = @typeInfo(GlobalConfiguration).@"struct".fields.len;
+        const pin_field_count = @typeInfo(Pin).@"enum".field_names.len;
+        const config_field_count = @typeInfo(GlobalConfiguration).@"struct".field_names.len;
         if (pin_field_count != config_field_count)
             @compileError(comptimePrint("{} {}", .{ pin_field_count, config_field_count }));
     }
 
     pub fn PinsType(self: GlobalConfiguration) type {
-        var fields: []const StructField = &.{};
-        for (@typeInfo(GlobalConfiguration).@"struct".fields) |field| {
-            if (@field(self, field.name)) |pin_config| {
-                var pin_field = StructField{
-                    .is_comptime = false,
-                    .default_value_ptr = null,
-
-                    // initialized below:
-                    .name = undefined,
-                    .type = undefined,
-                    .alignment = undefined,
-                };
-
-                pin_field.name = pin_config.name orelse field.name;
-                if (pin_config.function == .SIO) {
-                    pin_field.type = gpio.Pin;
-                } else if (pin_config.function.is_pwm()) {
-                    pin_field.type = pwm.Pwm;
-                } else if (pin_config.function.is_adc()) {
-                    pin_field.type = adc.Input;
-                } else {
+        var names: []const [:0]const u8 = &.{};
+        var types: []const type = &.{};
+        var attrs: []const std.builtin.Type.Struct.FieldAttributes = &.{};
+        for (@typeInfo(GlobalConfiguration).@"struct".field_names) |field_name| {
+            if (@field(self, field_name)) |pin_config| {
+                const PinType = if (pin_config.function == .SIO)
+                    gpio.Pin
+                else if (pin_config.function.is_pwm())
+                    pwm.Pwm
+                else if (pin_config.function.is_adc())
+                    adc.Input
+                else
                     continue;
-                }
-
-                pin_field.alignment = @alignOf(field.type);
-
-                fields = fields ++ &[_]StructField{pin_field};
+                names = names ++ &[_][:0]const u8{(pin_config.name orelse field_name) ++ ""};
+                types = types ++ &[_]type{PinType};
+                attrs = attrs ++ &[_]std.builtin.Type.Struct.FieldAttributes{.{ .@"align" = @alignOf(@FieldType(GlobalConfiguration, field_name)) }};
             }
         }
-
-        return @Type(.{
-            .@"struct" = .{
-                .layout = .auto,
-                .is_tuple = false,
-                .fields = fields,
-                .decls = &.{},
-            },
-        });
+        return @Struct(.auto, null, names, types, attrs);
     }
 
     /// Populate and return the PinsType struct
@@ -812,17 +792,17 @@ pub const GlobalConfiguration = struct {
     /// Can be called at comptime or runtime
     pub fn pins(comptime self: GlobalConfiguration) self.PinsType() {
         var ret: self.PinsType() = undefined;
-        inline for (@typeInfo(GlobalConfiguration).@"struct".fields) |field| {
-            if (@field(self, field.name)) |pin_config| {
+        inline for (@typeInfo(GlobalConfiguration).@"struct".field_names) |field| {
+            if (@field(self, field)) |pin_config| {
                 if (pin_config.function == .SIO) {
-                    @field(ret, pin_config.name orelse field.name) = gpio.num(@intFromEnum(@field(Pin, field.name)));
+                    @field(ret, pin_config.name orelse field) = gpio.num(@backingInt(@field(Pin, field)));
                 } else if (pin_config.function.is_pwm()) {
-                    @field(ret, pin_config.name orelse field.name) = pwm.Pwm{
+                    @field(ret, pin_config.name orelse field) = pwm.Pwm{
                         .slice_number = pin_config.function.pwm_slice(),
                         .channel = pin_config.function.pwm_channel(),
                     };
                 } else if (pin_config.function.is_adc()) {
-                    @field(ret, pin_config.name orelse field.name) = @as(adc.Input, @enumFromInt(switch (pin_config.function) {
+                    @field(ret, pin_config.name orelse field) = @as(adc.Input, @fromBackingInt(@intCast(switch (pin_config.function) {
                         .ADC0 => 0,
                         .ADC1 => 1,
                         .ADC2 => 2,
@@ -832,7 +812,7 @@ pub const GlobalConfiguration = struct {
                         .ADC6 => 6,
                         .ADC7 => 7,
                         else => unreachable,
-                    }));
+                    })));
                 }
             }
         }
@@ -848,11 +828,11 @@ pub const GlobalConfiguration = struct {
 
         // validate selected function
         comptime {
-            for (@typeInfo(GlobalConfiguration).@"struct".fields) |field|
-                if (@field(config, field.name)) |pin_config| {
-                    const gpio_num = @intFromEnum(@field(Pin, field.name));
-                    if (0 == function_table[@intFromEnum(pin_config.function)][gpio_num])
-                        @compileError(comptimePrint("{s} cannot be configured for {}", .{ field.name, pin_config.function }));
+            for (@typeInfo(GlobalConfiguration).@"struct".field_names) |field|
+                if (@field(config, field)) |pin_config| {
+                    const gpio_num = @backingInt(@field(Pin, field));
+                    if (0 == function_table[@backingInt(pin_config.function)][gpio_num])
+                        @compileError(comptimePrint("{s} cannot be configured for {}", .{ field, pin_config.function }));
 
                     if (pin_config.function == .SIO) {
                         switch (pin_config.get_direction()) {
@@ -886,9 +866,9 @@ pub const GlobalConfiguration = struct {
             }
         }
 
-        inline for (@typeInfo(GlobalConfiguration).@"struct".fields) |field| {
-            if (@field(config, field.name)) |pin_config| {
-                const gpio_pin = gpio.num(@intFromEnum(@field(Pin, field.name)));
+        inline for (@typeInfo(GlobalConfiguration).@"struct".field_names) |field| {
+            if (@field(config, field)) |pin_config| {
+                const gpio_pin = gpio.num(@backingInt(@field(Pin, field)));
                 const func = pin_config.function;
 
                 if (func == .SIO) {
@@ -916,8 +896,8 @@ pub const GlobalConfiguration = struct {
                 } else if (comptime func == .HSTX) {
                     gpio_pin.set_function(.hstx);
                 } else if (comptime func.is_adc()) {
-                    const adc_num = @intFromEnum(func) - @intFromEnum(Function.ADC0);
-                    adc.Input.configure_gpio_pin(@as(adc.Input, @enumFromInt(adc_num)));
+                    const adc_num = @backingInt(func) - @backingInt(Function.ADC0);
+                    adc.Input.configure_gpio_pin(@as(adc.Input, @fromBackingInt(@intCast(adc_num))));
                 } else if (comptime func == .QMI_CS1) {
                     gpio_pin.set_function(.gpck); // Shares function number with clock
                     XIP_CTRL.CTRL.modify(.{
@@ -926,7 +906,7 @@ pub const GlobalConfiguration = struct {
                 } else {
                     @compileError(std.fmt.comptimePrint("Unimplemented pin function. Please implement setting pin function {s} for GPIO {}", .{
                         @tagName(func),
-                        @intFromEnum(gpio_pin),
+                        @backingInt(gpio_pin),
                     }));
                 }
             }
@@ -938,9 +918,9 @@ pub const GlobalConfiguration = struct {
                 SIO.GPIO_HI_OE_SET.raw = @truncate(output_gpios >> 32);
         }
 
-        inline for (@typeInfo(GlobalConfiguration).@"struct".fields) |field|
-            if (@field(config, field.name)) |pin_config| {
-                const gpio_num = @intFromEnum(@field(Pin, field.name));
+        inline for (@typeInfo(GlobalConfiguration).@"struct".field_names) |field|
+            if (@field(config, field)) |pin_config| {
+                const gpio_num = @backingInt(@field(Pin, field));
                 if (pin_config.pull) |pull| {
                     gpio.num(gpio_num).set_pull(pull);
                 }

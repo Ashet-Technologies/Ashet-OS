@@ -55,16 +55,16 @@ const AsyncHandler = struct {
         const fun_info = @typeInfo(F).@"fn";
 
         std.debug.assert(fun_info.return_type == void);
-        std.debug.assert(fun_info.is_var_args == false);
+        std.debug.assert(fun_info.attrs.varargs == false);
         std.debug.assert(fun_info.is_generic == false);
 
-        const Wrap = switch (fun_info.params.len) {
+        const Wrap = switch (fun_info.param_types.len) {
             1 => struct {
                 const call = func;
             },
 
             2 => struct {
-                const Inputs = fun_info.params[1].type.?;
+                const Inputs = fun_info.param_types[1].?;
                 const Generic = Inputs.Overlapped;
                 comptime {
                     std.debug.assert(@typeInfo(Inputs) == .@"struct");
@@ -374,7 +374,7 @@ pub fn cancel_with_context(call: *AsyncCall, context: *Context, queue_name: Cont
             } else {
                 // TODO: Implement actual cancelling of events
                 logger.err("non-implemented cancel of type {!} ({})", .{
-                    std.meta.intToEnum(ARC.Type, @intFromEnum(call.arc.type)),
+                    (std.enums.fromInt(ARC.Type, @intFromEnum(call.arc.type)) orelse error.InvalidEnumTag),
                     @intFromEnum(call.arc.type),
                 });
                 @panic("AshetOS has no idea how to cancel this!");

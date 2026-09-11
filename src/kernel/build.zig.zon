@@ -4,6 +4,10 @@
     .fingerprint = 0x5dd29aabcec30063,
     .paths = .{"."},
     .dependencies = .{
+        .translate_c = .{
+            .url = "git+https://codeberg.org/ziglang/translate-c.git#d67f0a5821b0c5ad16f60c425ad2af3499e7995f",
+            .hash = "translate_c-0.0.0-Q_BUWho9BwAx1Nyc_gDzXBjXZg62qETbgze15f50x29Y",
+        },
         // Internal dependencies:
         .@"ashet-abi" = .{
             .path = "../abi",
@@ -58,8 +62,8 @@
 
         // External dependencieS:
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
-            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+            .url = "git+https://github.com/ikskuh/zig-args.git#fae95c8350c8791752392cc24efa17b5b8b9275b",
+            .hash = "args-0.0.0-CiLiqrjgAAAJ1dlySoNHUhYpX1btAdDU2Rr4Ls61VTbO",
         },
 
         .network = .{
@@ -71,8 +75,9 @@
             .hash = "zvnc-0.0.0-imcThRuRAAAuAawQaXqZ_bPaTBIqGQNkrwy3m1JC-1b3",
         },
         .@"foundation-libc" = .{
-            .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
-            .hash = "foundationlibc-0.0.0-LAEuPBSUAAALxr9rsAHYDP21d2KTAd_3tCP_5vO4ap16",
+            .path = "../../zig-pkg/foundation-libc",
+            // .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
+            // .hash = "foundationlibc-0.0.0-LAEuPBSUAAALxr9rsAHYDP21d2KTAd_3tCP_5vO4ap16",
         },
         .zfat = .{
             .url = "git+https://github.com/ZigEmbeddedGroup/zfat.git#0571b0d8c8cc4fcb037a1d5e7ea5666cb2f83ddf",

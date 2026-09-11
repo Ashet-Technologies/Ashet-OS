@@ -104,7 +104,7 @@ pub fn install(driver: *Driver) void {
 
     logger.info("installed {s} driver '{s}'", .{ @tagName(driver.class), driver.name });
 
-    if (builtin.mode == .Debug) {
+    if (builtin.mode == .debug) {
         var cnt: usize = 0;
         var head = installation.head;
         while (head) |item| {
@@ -165,7 +165,7 @@ fn ResolvedDriverInterface(comptime class: DriverClass) type {
 pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface(class)) []const u8 {
     // if (@offsetOf(DriverInterface, @tagName(class)) != 0) @compileError("oh no!");
 
-    // if (@import("builtin").mode == .Debug) {
+    // if (@import("builtin").mode == .debug) {
     //     const dummyValue = @unionInit(DriverInterface, @tagName(class), undefined);
     //     const field_ptr = &@field(&dummyValue, @tagName(class));
     //     const field_as_dummy: *const DriverInterface = @ptrCast(field_ptr);

@@ -17,7 +17,7 @@ screen: ashet.drivers.video.Host_VNC_Output,
 input: ashet.drivers.input.Host_VNC_Input,
 
 /// Guards the `current_session` field access.
-session_lock: std.Thread.Mutex = .{},
+session_lock: std.Io.Mutex = .init,
 current_session: ?*Session_State = null,
 
 pub fn init(
@@ -86,7 +86,7 @@ fn connection_handler(vd: *VNC_Server) !void {
 
         var read_buffer: [1024]u8 = undefined;
         var write_buffer: [1024]u8 = undefined;
-        var server = try vnc.Server.open(std.heap.page_allocator, client, .{
+        var server = try vnc.Server.open(ashet.platform.hosted.io(), std.heap.page_allocator, client, .{
             .screen_width = vd.screen.width,
             .screen_height = vd.screen.height,
             .desktop_name = "Ashet OS",
@@ -114,14 +114,14 @@ fn connection_handler(vd: *VNC_Server) !void {
 
         // Now store the session thread-safe into the server:
         {
-            vd.session_lock.lock();
+            vd.session_lock.lockUncancelable(ashet.platform.hosted.io());
             vd.current_session = &session;
-            vd.session_lock.unlock();
+            vd.session_lock.unlock(ashet.platform.hosted.io());
         }
         defer {
-            vd.session_lock.lock();
+            vd.session_lock.lockUncancelable(ashet.platform.hosted.io());
             vd.current_session = null;
-            vd.session_lock.unlock();
+            vd.session_lock.unlock(ashet.platform.hosted.io());
         }
 
         request_loop: while (true) {
@@ -224,7 +224,7 @@ const Session_State = struct {
     sent_full_update: bool = false,
 
     // Guards all socket writes on the VNC server and all of the following fields:
-    write_lock: std.Thread.Mutex = .{},
+    write_lock: std.Io.Mutex = .init,
 
     incremental_update_request: ?vnc.ClientEvent.FramebufferUpdateRequest = null,
 
@@ -234,13 +234,13 @@ const Session_State = struct {
 /// Notifies the VNC_Server of a flush event of the screen device.
 /// This allows us to hold back incremental updates until new content arrives.
 pub fn notify_flush(vd: *VNC_Server) void {
-    vd.session_lock.lock();
-    defer vd.session_lock.unlock();
+    vd.session_lock.lockUncancelable(ashet.platform.hosted.io());
+    defer vd.session_lock.unlock(ashet.platform.hosted.io());
 
     const session = vd.current_session orelse return;
 
-    session.write_lock.lock();
-    defer session.write_lock.unlock();
+    session.write_lock.lockUncancelable(ashet.platform.hosted.io());
+    defer session.write_lock.unlock(ashet.platform.hosted.io());
 
     const incremental_update_req = session.incremental_update_request orelse return;
 
@@ -258,8 +258,8 @@ pub fn notify_flush(vd: *VNC_Server) void {
 
 fn send_incremental_update(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, req: vnc.ClientEvent.FramebufferUpdateRequest) !void {
     {
-        // vd.screen.backbuffer_lock.lock();
-        // defer vd.screen.backbuffer_lock.unlock();
+        // vd.screen.backbuffer_lock.lockUncancelable(ashet.platform.hosted.io());
+        // defer vd.screen.backbuffer_lock.unlock(ashet.platform.hosted.io());
         @memcpy(state.new_framebuffer, vd.screen.backbuffer);
     }
 
@@ -351,8 +351,8 @@ fn send_incremental_update(vd: *VNC_Server, state: *Session_State, request_alloc
 }
 
 fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, event: vnc.ClientEvent) !void {
-    state.write_lock.lock();
-    defer state.write_lock.unlock();
+    state.write_lock.lockUncancelable(ashet.platform.hosted.io());
+    defer state.write_lock.unlock(ashet.platform.hosted.io());
 
     logger.debug("client event {}", .{event});
 
@@ -369,7 +369,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
         },
 
         .key_event => |ev| {
-            if (x11.keyFromKeySym(@intFromEnum(ev.key))) |usage| {
+            if (x11.keyFromKeySym(@backingInt(ev.key))) |usage| {
                 var cs = ashet.CriticalSection.enter();
                 defer cs.leave();
 
@@ -380,7 +380,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                     },
                 });
             } else {
-                logger.warn("unmapped x11 key sym: {}", .{@intFromEnum(ev.key)});
+                logger.warn("unmapped x11 key sym: {}", .{@backingInt(ev.key)});
             }
         },
 

@@ -216,16 +216,16 @@ pub const Info = extern struct {
             try writer.writeAll("{");
 
             var any = false;
-            inline for (comptime std.meta.fields(Flags)) |fld| {
-                if (fld.name[0] == '_')
+            inline for (comptime std.meta.fieldNames(Flags)) |fld| {
+                if (fld[0] == '_')
                     continue;
 
-                if (@field(flags, fld.name)) {
+                if (@field(flags, fld)) {
                     if (any) {
                         try writer.writeAll(",");
                     }
                     try writer.writeAll(" ");
-                    try writer.writeAll(fld.name);
+                    try writer.writeAll(fld);
 
                     any = true;
                 }

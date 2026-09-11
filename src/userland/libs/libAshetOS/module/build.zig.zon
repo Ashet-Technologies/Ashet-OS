@@ -12,7 +12,7 @@
         .abi = .{
             .path = "../../../../abi",
         },
-        .std = .{
+        .@"ashet-std" = .{
             .path = "../../../../../vendor/ashet-std",
         },
         .agp = .{

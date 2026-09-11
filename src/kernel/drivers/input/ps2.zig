@@ -361,7 +361,7 @@ pub const ScanCodeMap = struct {
     }
 
     pub fn compile(comptime source: []const u8) ScanCodeMap {
-        @setEvalBranchQuota(50_000);
+        @setEvalBranchQuota(1_000_000);
         var line_iter: ConfigFileIterator = .init(source);
 
         var bare: [256]?KeyUsageCode = @splat(null);

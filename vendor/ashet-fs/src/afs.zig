@@ -86,7 +86,7 @@ pub const FileDataCache = struct {
 
     const cache_size = 16;
 
-    entry_valid: std.StaticBitSet(cache_size) = std.StaticBitSet(cache_size).initEmpty(),
+    entry_valid: std.StaticBitSet(cache_size) = std.StaticBitSet(cache_size).empty,
     associated_file: [cache_size]FileHandle = undefined,
     associated_index: [cache_size]u32 = undefined,
     cached_refs: [cache_size][127]u32 = undefined,

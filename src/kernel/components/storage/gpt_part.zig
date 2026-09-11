@@ -127,7 +127,7 @@ pub const Iterator = struct {
 
         const expected_crc: u32 = header.header_crc;
         header.header_crc = 0;
-        const actual_crc: u32 = std.hash.crc.Crc32.hash(std.mem.asBytes(header));
+        const actual_crc: u32 = std.hash.crc.@"CRC-32/ISO-HDLC".hash(std.mem.asBytes(header));
         if (expected_crc != actual_crc) {
             logger.warn("GPT header checksum mismatch. Header encodes 0x{X:0>8}, but actually has 0x{X:0>8}", .{
                 expected_crc,

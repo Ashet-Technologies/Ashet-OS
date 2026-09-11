@@ -41,20 +41,23 @@ pub fn reset() !void {
     hw_alloc.uart.propeller2.clear_errors();
     hw_alloc.uart.propeller2.read_blocking(&buffer, .init_relative(rp2350.time.get_time_since_boot(), .from_ms(1))) catch {};
 
-    const reader = hw_alloc.uart.propeller2.reader(.init_relative(rp2350.time.get_time_since_boot(), .from_ms(150)));
+    var read_buffer: [1]u8 = undefined;
+    var uart_reader = hw_alloc.uart.propeller2.reader(.init_relative(rp2350.time.get_time_since_boot(), .from_ms(150)), &read_buffer);
+    const reader = &uart_reader.interface;
 
     try hw_alloc.uart.propeller2.write_blocking("> Prop_Chk 0 0 0 0\r", .no_deadline);
 
     // Skip over "\r\n" reply from P2
-    try reader.skipUntilDelimiterOrEof('\n');
+    _ = reader.discardDelimiterInclusive('\n') catch |err| return uart_reader.err orelse err;
 
-    var fbs = std.io.fixedBufferStream(&buffer);
+    var fbs: std.Io.Writer = .fixed(&buffer);
 
-    try reader.streamUntilDelimiter(fbs.writer(), '\n', null);
+    _ = reader.streamDelimiter(&fbs, '\n') catch |err| return uart_reader.err orelse err;
+    reader.toss(1);
 
-    logger.info("received \"{f}\" from P2", .{std.zig.fmtString(fbs.getWritten())});
+    logger.info("received \"{f}\" from P2", .{std.zig.fmtString(fbs.buffered())});
 
-    if (!std.mem.eql(u8, fbs.getWritten(), "Prop_Ver G\r")) {
+    if (!std.mem.eql(u8, fbs.buffered(), "Prop_Ver G\r")) {
         logger.err("no southbridge detected!", .{});
         return error.BadHandshake;
     }

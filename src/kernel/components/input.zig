@@ -289,7 +289,7 @@ pub const keyboard = struct {
                     strings: Strings = .{},
                 };
 
-                @setEvalBranchQuota(100_000);
+                @setEvalBranchQuota(1_000_000);
                 var lines = ConfigFileIterator.init(source_def);
 
                 var mapping_list: []const Entry = &.{};
@@ -347,9 +347,9 @@ pub const keyboard = struct {
                 .NBSPACE = "\u{A0}",
             };
 
-            inline for (std.meta.fields(@TypeOf(map))) |fld| {
-                if (std.mem.eql(u8, str, "<" ++ fld.name ++ ">")) {
-                    const name = @field(map, fld.name);
+            inline for (comptime std.meta.fieldNames(@TypeOf(map))) |fld| {
+                if (std.mem.eql(u8, str, "<" ++ fld ++ ">")) {
+                    const name = @field(map, fld);
                     return internString(name.len, name.*);
                 }
             }

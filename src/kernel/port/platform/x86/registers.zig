@@ -56,8 +56,8 @@ pub const CR0 = packed struct(u32) {
 
     pub inline fn modify(items: anytype) void {
         var value = read();
-        inline for (std.meta.fields(@TypeOf(items))) |fld| {
-            @field(value, fld.name) = @field(items, fld.name);
+        inline for (comptime std.meta.fieldNames(@TypeOf(items))) |fld| {
+            @field(value, fld) = @field(items, fld);
         }
         write(value);
     }
@@ -95,8 +95,8 @@ pub const CR3 = packed struct(u32) {
 
     pub inline fn modify(items: anytype) void {
         var value = read();
-        inline for (std.meta.fields(@TypeOf(items))) |fld| {
-            @field(value, fld.name) = @field(items, fld.name);
+        inline for (comptime std.meta.fieldNames(@TypeOf(items))) |fld| {
+            @field(value, fld) = @field(items, fld);
         }
         write(value);
     }
@@ -131,8 +131,8 @@ pub const CR4 = packed struct(u32) {
 
     pub inline fn modify(items: anytype) void {
         var value = read();
-        inline for (std.meta.fields(@TypeOf(items))) |fld| {
-            @field(value, fld.name) = @field(items, fld.name);
+        inline for (comptime std.meta.fieldNames(@TypeOf(items))) |fld| {
+            @field(value, fld) = @field(items, fld);
         }
         write(value);
     }
@@ -157,8 +157,8 @@ pub const CR8 = packed struct(u32) {
 
     pub inline fn modify(items: anytype) void {
         var value = read();
-        inline for (std.meta.fields(@TypeOf(items))) |fld| {
-            @field(value, fld.name) = @field(items, fld.name);
+        inline for (comptime std.meta.fieldNames(@TypeOf(items))) |fld| {
+            @field(value, fld) = @field(items, fld);
         }
         write(value);
     }

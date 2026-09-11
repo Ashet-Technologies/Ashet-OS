@@ -11,13 +11,13 @@ const CliOptions = struct {
     @"id-db": []const u8 = "",
 };
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
 
-    var args = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
+    var args = args_parser.parseForCurrentProcess(CliOptions, init, .print) catch return 1;
     defer args.deinit();
 
     if (args.positionals.len != 1) {
@@ -32,10 +32,11 @@ pub fn main() !u8 {
         return 1;
     }
 
-    const input_text = try std.fs.cwd().readFileAlloc(
-        allocator,
+    const input_text = try std.Io.Dir.cwd().readFileAlloc(
+        init.io,
         args.positionals[0],
-        1 << 20,
+        allocator,
+        .limited(1 << 20),
     );
 
     var tokenizer: syntax.Tokenizer = .init(input_text, args.positionals[0]);
@@ -59,7 +60,7 @@ pub fn main() !u8 {
     // Load UID database if --id-db was specified
     const id_db_path = args.options.@"id-db";
     var uid_database: ?sema.uid_db.UidDatabase = if (id_db_path.len > 0)
-        try sema.uid_db.UidDatabase.load(allocator, id_db_path)
+        try sema.uid_db.UidDatabase.load(init.io, allocator, id_db_path)
     else
         null;
     defer if (uid_database) |*db| db.deinit();
@@ -81,24 +82,26 @@ pub fn main() !u8 {
 
     // Save UID database back if it was loaded
     if (uid_database != null and id_db_path.len > 0) {
-        try uid_database.?.save(id_db_path);
+        try uid_database.?.save(init.io, id_db_path);
     }
 
     var atomic_buffer: [4096]u8 = undefined;
-    var atomic_output = try std.fs.cwd().atomicFile(
+    var atomic_output = try std.Io.Dir.cwd().createFileAtomic(
+        init.io,
         args.options.output,
-        .{ .write_buffer = &atomic_buffer },
+        .{ .make_path = true, .replace = true },
     );
-    defer atomic_output.deinit();
+    defer atomic_output.deinit(init.io);
     {
-        const output_writer = &atomic_output.file_writer.interface;
+        var file_writer = atomic_output.file.writer(init.io, &atomic_buffer);
+        const output_writer = &file_writer.interface;
 
         try model.to_json_str(analyzed_document, output_writer);
 
-        try output_writer.flush();
+        try file_writer.flush();
     }
 
-    try atomic_output.finish();
+    try atomic_output.replace(init.io);
 
     return 0;
 }

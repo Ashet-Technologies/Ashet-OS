@@ -17,6 +17,8 @@ pub fn build(b: *std.Build) void {
     const agp_mod = agp_dep.module("agp");
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
     const widgets_mod = widgets_dep.module("draw");
+    widgets_mod.addImport("ashet", b.dependency("AshetOS", .{ .module_only = true }).module("ashet"));
+    widgets_mod.addImport("agp-swrast", agp_swrast_mod);
 
     const exe = b.addExecutable(.{
         .name = "agp-tester",

@@ -95,9 +95,9 @@ pub const ResourceAttachBacking = extern struct {
     hdr: CtrlHdr = .{ .type = cmd.resource_attach_backing },
     resource_id: u32,
     nr_entries: u32,
-    pub fn entries(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), MemEntry) {
-        const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
-        const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), MemEntry);
+    pub fn entries(self: anytype) FlexibleArrayType(@TypeOf(self), MemEntry) {
+        const Intermediate = FlexibleArrayType(@TypeOf(self), u8);
+        const ReturnType = FlexibleArrayType(@TypeOf(self), MemEntry);
         return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 32)));
     }
 };
@@ -159,3 +159,8 @@ pub const Response = extern union {
 };
 
 pub const VIRTIO_GPU_MAX_SCANOUTS = 16;
+
+fn FlexibleArrayType(comptime SelfType: type, comptime ElementType: type) type {
+    const attrs = @typeInfo(SelfType).pointer.attrs;
+    return @Pointer(.c, .{ .@"const" = attrs.@"const", .@"volatile" = attrs.@"volatile", .@"allowzero" = true }, ElementType, null);
+}

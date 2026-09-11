@@ -24,43 +24,39 @@ const CliArguments = struct {
     pub const meta = .{};
 };
 
-pub fn main() !u8 {
-    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    const allocator = arena.allocator();
-
-    const cli = arg_parser.parseForCurrentProcess(CliArguments, allocator, .print) catch return 1;
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
+    const cli = arg_parser.parseForCurrentProcess(CliArguments, init, .print) catch return 1;
     defer cli.deinit();
 
     if (cli.options.help) {
-        try print_help(cli.executable_name, .stdout());
+        try print_help(io, cli.executable_name, .stdout());
         return 0;
     }
 
     const port_path = switch (cli.positionals.len) {
         0 => {
-            try print_help(cli.executable_name, .stderr());
+            try print_help(io, cli.executable_name, .stderr());
             return 1;
         },
 
         1 => cli.positionals[0],
 
         else => {
-            return usage_error("expects only a single positional argument", .{});
+            return usage_error(io, "expects only a single positional argument", .{});
         },
     };
 
-    const output_file: std.fs.File = .stdout();
-    const stderr_file: std.fs.File = .stderr();
+    const output_file: std.Io.File = .stdout();
+    const stderr_file: std.Io.File = .stderr();
 
     var stderr_buff: [1024]u8 = undefined;
-    var stderr_writer = stderr_file.writer(&stderr_buff);
+    var stderr_writer = stderr_file.writer(io, &stderr_buff);
     const stderr = &stderr_writer.interface;
     defer stderr.flush() catch {};
 
     var output_buff: [1024]u8 = undefined;
-    var output_writer = output_file.writer(&output_buff);
+    var output_writer = output_file.writer(io, &output_buff);
     const output = &output_writer.interface;
     defer output.flush() catch {};
 
@@ -77,7 +73,7 @@ pub fn main() !u8 {
         var spinner: Spinner = .ascii;
 
         while (true) {
-            const stream_result = stream_port(output_file, any_run_executed, port_path, .{
+            const stream_result = stream_port(io, output_file, any_run_executed, port_path, .{
                 .baud_rate = cli.options.baud,
                 .parity = cli.options.parity,
                 .stop_bits = cli.options.@"stop-bits",
@@ -119,7 +115,7 @@ pub fn main() !u8 {
                 }
             }
 
-            std.Thread.sleep(100 * std.time.ns_per_ms);
+            try io.sleep(.fromMilliseconds(100), .awake);
         }
     }
 
@@ -146,23 +142,23 @@ const Spinner = struct {
     }
 };
 
-fn stream_port(output: std.fs.File, print_connect_msg: bool, port_path: []const u8, config: serial.SerialConfig) !void {
-    const port = try std.fs.cwd().openFile(port_path, .{ .mode = .read_only });
-    defer port.close();
+fn stream_port(io: std.Io, output: std.Io.File, print_connect_msg: bool, port_path: []const u8, config: serial.SerialConfig) !void {
+    const port = try std.Io.Dir.cwd().openFile(io, port_path, .{ .mode = .read_only });
+    defer port.close(io);
 
     try serial.flushSerialPort(port, .both);
 
     try serial.configureSerialPort(port, config);
 
     if (print_connect_msg) {
-        try output.writeAll("\r<<connected>>\r\n");
+        try output.writeStreamingAll(io, "\r<<connected>>\r\n");
     }
 
     var last_was_lf = true; // the last line was properly terminated by our application
     while (true) {
         var buffer: [1024]u8 = undefined;
 
-        const count = try port.read(&buffer);
+        const count = try port.readStreaming(io, &.{&buffer});
         if (count == 0) {
             // end of file
             break;
@@ -170,24 +166,24 @@ fn stream_port(output: std.fs.File, print_connect_msg: bool, port_path: []const 
 
         const chunk = buffer[0..count];
 
-        try output.writeAll(chunk);
+        try output.writeStreamingAll(io, chunk);
 
         last_was_lf = std.mem.endsWith(u8, chunk, "\n");
     }
 
     if (!last_was_lf) {
-        try output.writeAll("\r\n");
+        try output.writeStreamingAll(io, "\r\n");
     }
 }
 
-fn usage_error(comptime fmt: []const u8, args: anytype) u8 {
-    var stderr = std.fs.File.stderr().writer(&.{});
+fn usage_error(io: std.Io, comptime fmt: []const u8, args: anytype) u8 {
+    var stderr = std.Io.File.stderr().writer(io, &.{});
     stderr.interface.print("usage error: " ++ fmt ++ "\n", args) catch {};
     return 1;
 }
 
-fn print_help(exe_name: ?[]const u8, stream: std.fs.File) !void {
-    var file_writer = stream.writer(&.{});
+fn print_help(io: std.Io, exe_name: ?[]const u8, stream: std.Io.File) !void {
+    var file_writer = stream.writer(io, &.{});
     try arg_parser.printHelp(CliArguments, exe_name orelse "sermon", &file_writer.interface);
     try file_writer.interface.flush();
 }
@@ -204,7 +200,7 @@ const IoOptions = switch (builtin.os.tag) {
 
         restore_mode: ?DWORD,
 
-        fn configureOutputUncooked(file: std.fs.File) !IoOptions {
+        fn configureOutputUncooked(file: std.Io.File) !IoOptions {
             var mode: DWORD = 0;
             if (kernel32.GetConsoleMode(file.handle, &mode) != 0) {
                 const new_mode = mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
@@ -218,7 +214,7 @@ const IoOptions = switch (builtin.os.tag) {
             }
         }
 
-        fn restore(options: IoOptions, file: std.fs.File) !void {
+        fn restore(options: IoOptions, file: std.Io.File) !void {
             if (options.restore_mode) |old_mode| {
                 if (kernel32.SetConsoleMode(file.handle, old_mode) == 0)
                     return error.ConsoleConfigFailed;
@@ -233,7 +229,7 @@ const IoOptions = switch (builtin.os.tag) {
 
         termios: ?std.posix.termios,
 
-        fn configureOutputUncooked(file: std.fs.File) !IoOptions {
+        fn configureOutputUncooked(file: std.Io.File) !IoOptions {
             const original = std.posix.tcgetattr(file.handle) catch |err| switch (err) {
                 error.NotATerminal => return .{ .termios = null },
                 else => |e| return e,
@@ -262,7 +258,7 @@ const IoOptions = switch (builtin.os.tag) {
             };
         }
 
-        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
+        fn configureTtyNonBlocking(file: std.Io.File) !IoOptions {
             const original = try std.posix.tcgetattr(file.handle);
 
             var settings = original;
@@ -289,7 +285,7 @@ const IoOptions = switch (builtin.os.tag) {
             };
         }
 
-        fn configureSerialNonBlocking(file: std.fs.File) !void {
+        fn configureSerialNonBlocking(file: std.Io.File) !void {
             _ = try std.posix.fcntl(
                 file.handle,
                 std.posix.F.SETFL,
@@ -297,7 +293,7 @@ const IoOptions = switch (builtin.os.tag) {
             );
         }
 
-        fn restore(options: IoOptions, file: std.fs.File) !void {
+        fn restore(options: IoOptions, file: std.Io.File) !void {
             if (options.termios) |termios| {
                 try std.posix.tcsetattr(file.handle, .NOW, termios);
             }

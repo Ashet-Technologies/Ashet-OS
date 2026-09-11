@@ -212,42 +212,24 @@ pub fn type_from_usize(comptime T: type, value: usize) T {
 /// The event router is a convenience structure that helps mapping out widgets into a
 /// structured, unwrapped definition of events.
 pub fn EventRouter(comptime Mapping: type) type {
-    var mapped_event_fields: []const std.builtin.Type.UnionField = &.{};
-
     const mapping_info = @typeInfo(Mapping).@"struct";
-    for (mapping_info.fields) |fld| {
-        const ptr = @typeInfo(fld.type).pointer;
+    var event_types: [mapping_info.field_names.len]type = undefined;
+    for (mapping_info.field_types, 0..) |field_type, i| {
+        const ptr = @typeInfo(field_type).pointer;
         std.debug.assert(ptr.size == .one);
-
         if (@typeInfo(ptr.child) != .@"opaque")
             @compileError("Mapping must be struct of fields to pointers to opaque");
         if (!@hasDecl(ptr.child, "uuid"))
             @compileError("Each widget type requires a .uuid decl in its definition");
         if (!@hasDecl(ptr.child, "Event"))
             @compileError("Each widget type requires a .Event decl in its definition");
-
-        const mapped: std.builtin.Type.UnionField = .{
-            .alignment = @alignOf(ptr.child.Event),
-            .name = fld.name,
-            .type = ptr.child.Event,
-        };
-
-        mapped_event_fields = mapped_event_fields ++ &[1]std.builtin.Type.UnionField{mapped};
+        event_types[i] = ptr.child.Event;
     }
-
-    const mapped_event_fields_const = mapped_event_fields;
+    const mapped_event_types = event_types;
 
     return struct {
         const Router = @This();
-
-        pub const MappedEvent = @Type(.{
-            .@"union" = .{
-                .fields = mapped_event_fields_const,
-                .layout = .auto,
-                .tag_type = std.meta.FieldEnum(Mapping),
-                .decls = &.{},
-            },
-        });
+        pub const MappedEvent = @Union(.auto, std.meta.FieldEnum(Mapping), mapping_info.field_names, &mapped_event_types, &@splat(.{}));
 
         mapping: Mapping,
 
@@ -256,10 +238,10 @@ pub fn EventRouter(comptime Mapping: type) type {
         }
 
         pub fn match(router: *const Router, event: *const WidgetNotifyEvent) ?MappedEvent {
-            inline for (mapping_info.fields) |fld| {
-                const widget = @field(router.mapping, fld.name);
+            inline for (mapping_info.field_names) |fld| {
+                const widget = @field(router.mapping, fld);
                 if (widget.match_event(event)) |widget_event| {
-                    return @unionInit(MappedEvent, fld.name, widget_event);
+                    return @unionInit(MappedEvent, fld, widget_event);
                 }
             }
             return null;

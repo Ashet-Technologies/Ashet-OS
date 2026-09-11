@@ -19,11 +19,11 @@ pub fn main() !u8 {
 
     for (argv[1..]) |arg| {
         if (std.mem.startsWith(u8, arg, "--output=")) {
-            output_dir = std.mem.trimLeft(u8, arg[9..], " \t");
+            output_dir = std.mem.trimStart(u8, arg[9..], " \t");
         } else if (std.mem.startsWith(u8, arg, "--source=")) {
-            source_dir = std.mem.trimLeft(u8, arg[9..], " \t");
+            source_dir = std.mem.trimStart(u8, arg[9..], " \t");
         } else if (std.mem.startsWith(u8, arg, "--patch=")) {
-            const patch_file = std.mem.trimLeft(u8, arg[8..], " \t");
+            const patch_file = std.mem.trimStart(u8, arg[8..], " \t");
             try patches.append(static_allocator, patch_file);
         } else {
             std.debug.print("Unknown argument: {s}\n", .{arg});

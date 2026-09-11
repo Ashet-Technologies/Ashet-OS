@@ -6,7 +6,7 @@ pub fn StaticPool(comptime T: type, comptime max_size: comptime_int) type {
 
         pub const capacity = max_size;
 
-        allocation: std.bit_set.StaticBitSet(max_size) = std.bit_set.StaticBitSet(max_size).initFull(),
+        allocation: std.bit_set.StaticBitSet(max_size) = std.bit_set.StaticBitSet(max_size).full,
         storage: [max_size]T = undefined,
 
         pub fn create(pool: *Pool) error{OutOfMemory}!*T {

@@ -149,11 +149,12 @@ fn createInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, bloc
             .driver = dri,
             .vtable = &Instance.vtable,
         },
-        .enumerator_pool = std.heap.MemoryPool(Enumerator).init(allocator),
+        .enumerator_pool = .empty,
+        .allocator = allocator,
 
         .disk_index = undefined,
     };
-    errdefer instance.enumerator_pool.deinit();
+    errdefer instance.enumerator_pool.deinit(instance.allocator);
 
     instance.init() catch |err| switch (err) {
         else => return error.DeviceError,
@@ -186,6 +187,7 @@ const Directory = struct {
 };
 
 const Instance = struct {
+    allocator: std.mem.Allocator = undefined,
     disk_index: u8,
     generic: GenericInstance,
     filesystem: fatfs.FileSystem = undefined, // requires pointer stability
@@ -205,21 +207,21 @@ const Instance = struct {
 
         var path_buffer: [8]u8 = undefined;
 
-        const path = std.fmt.bufPrintZ(&path_buffer, "{d}:", .{instance.disk_index}) catch unreachable;
+        const path = std.fmt.bufPrintSentinel(&path_buffer, "{d}:", .{instance.disk_index}, 0) catch unreachable;
 
         try fatfs.FileSystem.mount(&instance.filesystem, path, true);
     }
 
     fn deinit(instance: *Instance) void {
-        instance.enumerator_pool.deinit();
+        instance.enumerator_pool.deinit(instance.allocator);
         instance.* = undefined;
     }
 
     fn buildPath(instance: *Instance, root: []const u8, path: []const u8) error{ InvalidPath, SystemResources }!PathBuffer {
         var buf = PathBuffer{ .buffer = undefined };
-        var stream = std.io.fixedBufferStream(buf.buffer[0 .. buf.buffer.len - 1]);
+        var stream: std.Io.Writer = .fixed(buf.buffer[0 .. buf.buffer.len - 1]);
         {
-            const writer = stream.writer();
+            const writer = &stream;
 
             if (root.len > 0) {
                 const index = std.mem.indexOfScalar(u8, root, ':').?;
@@ -239,7 +241,7 @@ const Instance = struct {
                 writer.writeAll(path) catch return error.SystemResources;
             }
         }
-        @memset(buf.buffer[stream.pos..], 0); // add NUL termination
+        @memset(buf.buffer[stream.end..], 0); // add NUL termination
         return buf;
     }
 
@@ -424,7 +426,7 @@ const Instance = struct {
         };
         errdefer child_dir.close();
 
-        const enumerator = instance.enumerator_pool.create() catch return error.SystemResources;
+        const enumerator = instance.enumerator_pool.create(instance.allocator) catch return error.SystemResources;
         errdefer instance.enumerator_pool.destroy(enumerator);
 
         enumerator.* = Enumerator{

@@ -384,7 +384,7 @@ const Renderer = struct {
                 }
 
                 const line = if (flags.trim_spaces and set.isAtStartOfLine())
-                    std.mem.trimLeft(u8, raw_line, whitespace)
+                    std.mem.trimStart(u8, raw_line, whitespace)
                 else
                     raw_line;
 

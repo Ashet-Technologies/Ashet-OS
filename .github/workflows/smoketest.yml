@@ -1,7 +1,7 @@
 name: Smoke Test
 
 env:
-  ZIG_VERSION: "0.15.2"
+  ZIG_VERSION: "0.17.0-dev.2085+5e36170b5"
   ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-global-cache
 
 on:

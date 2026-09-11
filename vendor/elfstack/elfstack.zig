@@ -9,7 +9,8 @@ const CliOptions = struct {
     output: []const u8 = "-",
 };
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
 
     const allocator = arena.allocator();
@@ -39,31 +40,33 @@ pub fn main() !u8 {
     //     return usage_error("--base must not be higher than --limit.");
     // }
 
-    var input_file = try std.fs.cwd().openFile("zig-out/arm-ashet-hc/kernel.elf", .{});
-    defer input_file.close();
+    var input_file = try std.Io.Dir.cwd().openFile(io, "zig-out/arm-ashet-hc/kernel.elf", .{});
+    defer input_file.close(io);
 
     var read_buffer: [1024]u8 = undefined;
-    var input_file_reader = input_file.reader(&read_buffer);
+    var input_file_reader = input_file.reader(io, &read_buffer);
 
     const output_to_stdout = std.mem.eql(u8, cli_options.output, "-");
 
     var output_buffer: [1024]u8 = undefined;
-    var output_disk_file: std.fs.AtomicFile = undefined;
-    var stdout_writer: std.fs.File.Writer = undefined;
+    var output_disk_file: std.Io.File.Atomic = undefined;
+    var stdout_writer: std.Io.File.Writer = undefined;
+    var disk_writer: std.Io.File.Writer = undefined;
 
     const svg: SvgWriter = if (output_to_stdout) blk: {
-        stdout_writer = std.fs.File.stdout().writer(&output_buffer);
+        stdout_writer = std.Io.File.stdout().writer(io, &output_buffer);
         break :blk .{ .writer = &stdout_writer.interface };
     } else blk: {
-        output_disk_file = try std.fs.cwd().atomicFile(
-            cli_options.output,
-            .{ .write_buffer = &output_buffer },
+        output_disk_file = try std.Io.Dir.cwd().createFileAtomic(
+            io, cli_options.output,
+            .{ .replace = true },
         );
-        break :blk .{ .writer = &output_disk_file.file_writer.interface };
+        disk_writer = output_disk_file.file.writer(io, &output_buffer);
+        break :blk .{ .writer = &disk_writer.interface };
     };
 
     defer if (!output_to_stdout)
-        output_disk_file.deinit();
+        output_disk_file.deinit(io);
 
     var header = try elf.Header.read(&input_file_reader.interface);
 
@@ -83,10 +86,10 @@ pub fn main() !u8 {
     //     var low: u64 = std.math.maxInt(u64);
     //     var high: u64 = std.math.minInt(u64);
     //     while (try pgm_headers.next()) |pgm_header| {
-    //         if (pgm_header.p_type != elf.PT_LOAD)
+    //         if (pgm_header.type != .LOAD)
     //             continue;
-    //         low = @min(low, pgm_header.p_paddr);
-    //         high = @max(high, pgm_header.p_paddr + pgm_header.p_memsz);
+    //         low = @min(low, pgm_header.paddr);
+    //         high = @max(high, pgm_header.paddr + pgm_header.memsz);
     //     }
     //     break :blk .{ low, high };
     // };
@@ -188,21 +191,21 @@ pub fn main() !u8 {
         "#00FFBF",
     };
 
-    var program_headers: std.ArrayList(elf.Elf64_Phdr) = .empty;
+    var program_headers: std.ArrayList(elf.Elf64.Phdr) = .empty;
 
     var pgm_headers = header.iterateProgramHeaders(&input_file_reader);
     while (try pgm_headers.next()) |pgm_header| {
-        if (pgm_header.p_type != elf.PT_LOAD)
+        if (pgm_header.type != .LOAD)
             continue;
 
         const current_id = program_headers.items.len;
         for (program_headers.items, 0..) |previous, i| {
-            if (range_overlap_check(pgm_header.p_paddr, pgm_header.p_filesz, previous.p_paddr, previous.p_filesz)) {
+            if (range_overlap_check(pgm_header.paddr, pgm_header.filesz, previous.paddr, previous.filesz)) {
                 std.log.err("program headers {} and {} overlap in physical memory", .{
                     i, program_headers.items.len,
                 });
             }
-            if (range_overlap_check(pgm_header.p_vaddr, pgm_header.p_memsz, previous.p_vaddr, previous.p_memsz)) {
+            if (range_overlap_check(pgm_header.vaddr, pgm_header.memsz, previous.vaddr, previous.memsz)) {
                 std.log.err("program headers {} and {} overlap in virtual memory", .{
                     i, program_headers.items.len,
                 });
@@ -213,14 +216,14 @@ pub fn main() !u8 {
 
         var title_buf: [1024]u8 = undefined;
 
-        const flag_x = has_flag(pgm_header.p_flags, elf.PF_X);
-        const flag_w = has_flag(pgm_header.p_flags, elf.PF_W);
-        const flag_r = has_flag(pgm_header.p_flags, elf.PF_R);
+        const flag_x = pgm_header.flags.X;
+        const flag_w = pgm_header.flags.W;
+        const flag_r = pgm_header.flags.R;
 
-        const vaddr = pgm_header.p_vaddr;
-        const paddr = pgm_header.p_paddr;
-        const filesz = pgm_header.p_filesz;
-        const memsz = pgm_header.p_memsz;
+        const vaddr = pgm_header.vaddr;
+        const paddr = pgm_header.paddr;
+        const filesz = pgm_header.filesz;
+        const memsz = pgm_header.memsz;
 
         var color_buf: [16]u8 = undefined;
         const color = try std.fmt.bufPrint(&color_buf, "{s}80", .{
@@ -364,7 +367,8 @@ pub fn main() !u8 {
     try svg.write_footer();
 
     if (!output_to_stdout) {
-        try output_disk_file.finish();
+        try disk_writer.interface.flush();
+        try output_disk_file.replace(io);
     } else {
         try stdout_writer.interface.flush();
     }
