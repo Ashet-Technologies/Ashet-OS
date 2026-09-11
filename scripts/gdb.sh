@@ -5,8 +5,8 @@ export "PATH=/home/felix/projects/forks/binutils-gdb/prefix/bin/:${PATH}"
 
 case $MACHINE in
     rv32_virt)
-      exec riscv32-none-eabi-gdb \
-        "${ROOT}/zig-out/bin/ashet-os" \
+      exec riscv32-elf-gdb \
+        "${ROOT}/zig-out/rv32-qemu-virt/kernel.elf" \
         -ex "target remote localhost:1234"
       ;;
     microvm)

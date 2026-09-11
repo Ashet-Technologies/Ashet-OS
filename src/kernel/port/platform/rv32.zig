@@ -22,6 +22,8 @@ pub const scheduler = struct {
 
 pub const start = struct {
     fn handleTrap() align(4) callconv(.c) noreturn {
+        ashet.machine_config.debug_write("RISC-V TRAP\r\n");
+
         const trap_reason = csr.ControlStatusRegister.read(.mcause);
         const trap_location = csr.ControlStatusRegister.read(.mepc);
         const trap_status = csr.ControlStatusRegister.read(.mstatus);

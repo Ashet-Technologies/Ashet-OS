@@ -44,7 +44,7 @@ pub const video = struct {
     pub const VESA_BIOS_Extension = @import("video/VESA_BIOS_Extension.zig");
     pub const VGA = @import("video/VGA.zig");
     pub const Virtual_Video_Output = @import("video/Virtual_Video_Output.zig");
-    pub const Host_VNC_Output = @import("video/Host_VNC_Output.zig");
+    pub const Externally_Managed_Output = @import("video/Externally_Managed_Output.zig");
     pub const Host_SDL_Output = @import("video/Host_SDL_Output.zig");
     pub const ILI9488 = @import("video/ILI9488.zig");
     pub const HSTX_DVI = @import("video/HSTX_DVI.zig");
@@ -52,6 +52,8 @@ pub const video = struct {
     pub const Multiboot_Framebuffer = @import("video/Multiboot_Framebuffer.zig");
     pub const Memory_Mapped_Framebuffer = @import("video/Memory_Mapped_Framebuffer.zig");
     pub const Ashet_Framebuffer = @import("video/Ashet_Framebuffer.zig");
+
+    pub const AVAPv1_Framebuffer = @import("video/AVAPv1_Framebuffer.zig");
 };
 
 pub const network = struct {

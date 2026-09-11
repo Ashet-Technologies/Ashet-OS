@@ -48,23 +48,6 @@ pub fn main() !void {
         fb_size.height,
     });
 
-    const vmem = try video_output.get_video_memory();
-    std.log.info("video memory: base=0x{X:0>8}, stride={}, width={}, height={}", .{
-        @intFromPtr(vmem.base),
-        vmem.stride,
-        vmem.width,
-        vmem.height,
-    });
-
-    // Load nice pattern:
-    var scanline: [*]abi.Color = vmem.base;
-    for (0..vmem.height) |y| {
-        for (scanline[0..vmem.width], 0..) |*pixel, x| {
-            pixel.* = Color.from_u8(@as(u4, @truncate(x ^ y)));
-        }
-        scanline += vmem.stride;
-    }
-
     // Let the rest of the system continue to boot:
     ashet.process.thread.yield();
 

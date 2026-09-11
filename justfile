@@ -12,9 +12,20 @@ build:
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
 
+run-avap-simulation:
+    {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} tools x86-hosted-linux
+
+    zig-out/bin/debug-filter --elf kernel=./zig-out/x86-hosted-linux/kernel.elf \
+        ./zig-out/x86-hosted-linux/kernel.elf \
+        "drive;zig-out/x86-hosted-linux/disk.img" \
+        "video;avap-v1;640;400;/dev/serial/by-id/usb-Ashet_Technologies_Fast_Bridge_AT-FB-00001-if00-port0" 
+
+run machine:
+    {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} -Dmachine={{machine}} tools run
+
 [working-directory: 'src/kernel']
 build-kernel:
-    {{zig}} build {{default_params}} -Dmachine=arm-ashet-hc -Dno-emit-bin
+    {{zig}} build {{default_params}} -Dmachine=x86-hosted-linux -Dno-emit-bin
 
     {{zig}} build {{default_params}} -Dmachine=arm-ashet-hc
     {{zig}} build {{default_params}} -Dmachine=arm-ashet-vhc

@@ -15,16 +15,16 @@ backing_buffer: [max_width * max_height]Color align(ashet.memory.page_size) = un
 
 gpu: GPU,
 
-graphics_resized: bool = true,
-graphics_width: u16 = 256,
-graphics_height: u16 = 128,
+graphics_resized: bool, // TODO(gpu_support): Drop this, and compute the border once at the start
+graphics_width: u16,
+graphics_height: u16,
 
 driver: Driver = .{
     .name = "Virtio GPU Device",
     .class = .{
         .video = .{
             .get_properties_fn = get_properties,
-            .flush_fn = flush,
+            .begin_write_pixels_fn = begin_write_pixels,
         },
     },
 },
@@ -36,12 +36,12 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
 
     vd.* = Virtio_GPU_Device{
         .gpu = undefined,
+        .graphics_resized = true,
+        .graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width)),
+        .graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height)),
     };
 
     try vd.gpu.initialize(allocator, regs);
-
-    vd.graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width));
-    vd.graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height));
 
     @memset(&vd.backing_buffer, ashet.video.defaults.border_color);
 
@@ -52,7 +52,8 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
         .stride = vd.graphics_width,
     });
 
-    vd.driver.class.video.flush();
+    logger.info("write initial flush", .{});
+    vd.flush();
 
     return vd;
 }
@@ -77,6 +78,49 @@ inline fn pal(vd: *Virtio_GPU_Device, color: Color) u32 {
     // return @intFromEnum(color.to_abgr8888());
 }
 
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
+
+    // TODO(gpu_support): We can refactor this to directly convert the pixels into the expected virtio GPU format.
+
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = &vd.backing_buffer,
+                .width = vd.graphics_width,
+                .height = vd.graphics_height,
+                .stride = vd.graphics_width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
+
+    switch (mode) {
+        .immediate, .vblank => vd.flush(),
+        .dont_care => {},
+    }
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
+}
+
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
     return .{
@@ -84,9 +128,6 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .width = vd.graphics_width,
             .height = vd.graphics_height,
         },
-        .stride = vd.graphics_width,
-        .video_memory = &vd.backing_buffer,
-        .video_memory_mapping = .buffered,
     };
 }
 
@@ -101,9 +142,7 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
 /// no_mul,Debug:    debug(platform-virt): frame flush time:  38071785 cycles, avg  41297847 cycles
 /// no_runsaf,Debug: debug(platform-virt): frame flush time:  36532901 cycles, avg  41069180 cycles
 /// no safety,Debug: debug(platform-virt): frame flush time:  35441413 cycles, avg  35434932 cycles
-fn flush(driver: *Driver) void {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-
+fn flush(vd: *Virtio_GPU_Device) void {
     @setRuntimeSafety(false);
     // const flush_time_start = readHwCounter();
 
@@ -198,6 +237,7 @@ const GPU = struct {
             return;
         }
 
+        logger.debug("initialize gpu.vq", .{});
         try gpu.vq.init(0, regs);
         // try cursor_vq.init(1, regs);
 
@@ -211,6 +251,7 @@ const GPU = struct {
         //     // Those descriptors are not full, so reset avail_i
         //     cursor_vq.avail_i = 0;
 
+        logger.debug("get display info...", .{});
         const di = (try gpu.getDisplayInfo()) orelse {
             logger.err("failed to query gpu display info!", .{});
             return;
@@ -229,6 +270,7 @@ const GPU = struct {
 
         logger.info("detected framebuffer size: {}x{}", .{ width, height });
 
+        logger.debug("setup framebuffer...", .{});
         gpu.fb_mem = gpu.setupFramebuffer(allocator, Scanout.first, ResourceId.framebuffer, width, height) catch |err| {
             logger.err("failed to setup framebuffer: {s}", .{@errorName(err)});
             return;

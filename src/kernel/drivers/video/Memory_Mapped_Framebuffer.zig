@@ -25,7 +25,7 @@ byte_per_pixel: u32,
 backing_buffer: []align(ashet.memory.page_size) Color,
 border_color: Color = ashet.video.defaults.border_color,
 
-pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Config) !Memory_Mapped_Framebuffer {
+pub fn create(allocator: std.mem.Allocator, comptime driver_name: []const u8, config: Config) !Memory_Mapped_Framebuffer {
     const framebuffer = try config.instantiate();
 
     const width = std.math.cast(u16, framebuffer.width) orelse return error.FramebufferSize;
@@ -47,7 +47,7 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
             .name = driver_name,
             .class = .{
                 .video = .{
-                    .flush_fn = framebuffer.flush_fn,
+                    .begin_write_pixels_fn = begin_write_pixels,
                     .get_properties_fn = get_properties,
                 },
             },
@@ -75,6 +75,56 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
     framebuffer.flush_fn(&driver.driver);
 
     return driver;
+}
+
+fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
+    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
+    return .{
+        .resolution = .{
+            .width = vd.width,
+            .height = vd.height,
+        },
+
+        .buffer_support = .none,
+    };
+}
+
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
+
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = vd.backing_buffer.ptr,
+                .width = vd.width,
+                .height = vd.height,
+                .stride = vd.width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
+
+    _ = mode;
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }
 
 pub const Framebuffer = struct {
@@ -241,16 +291,3 @@ pub const Config = struct {
         }.flush;
     }
 };
-
-fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
-    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
-    return .{
-        .resolution = .{
-            .width = vd.width,
-            .height = vd.height,
-        },
-        .stride = vd.width,
-        .video_memory = vd.backing_buffer,
-        .video_memory_mapping = .buffered,
-    };
-}

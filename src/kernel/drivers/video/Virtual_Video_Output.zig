@@ -7,38 +7,49 @@ const Driver = ashet.drivers.Driver;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
-pub const width = 320;
-pub const height = 240;
-
-backbuffer: [width * height]Color align(ashet.memory.page_size) = undefined,
+pub const width = 640;
+pub const height = 400;
 
 driver: Driver = .{
     .name = "Virtual Screen",
     .class = .{
         .video = .{
             .get_properties_fn = get_properties,
-            .flush_fn = flush,
+            .begin_write_pixels_fn = driver_begin_write_pixels,
         },
     },
 },
+resolution: Resolution,
 
-pub fn init() Virtual_Video_Output {
-    return .{};
+pub fn init(resolution: Resolution) Virtual_Video_Output {
+    std.debug.assert(resolution.width > 0 and resolution.height > 0);
+    return .{
+        .resolution = resolution,
+    };
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
-    const vd = driver.resolve(Virtual_Video_Output, "driver");
+    // const vd = driver.resolve(Virtual_Video_Output, "driver");
+    _ = driver;
     return .{
-        .video_memory = &vd.backbuffer,
-        .video_memory_mapping = .unbuffered,
-        .stride = width,
         .resolution = .{
             .width = width,
             .height = height,
         },
     };
 }
-fn flush(driver: *Driver) void {
-    const vd = driver.resolve(Virtual_Video_Output, "driver");
-    _ = vd;
+fn driver_begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    _ = driver;
+    _ = rectangle;
+    _ = pixels;
+    _ = stride;
+    _ = mode;
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }

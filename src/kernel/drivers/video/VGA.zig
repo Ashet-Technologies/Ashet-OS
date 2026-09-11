@@ -20,7 +20,12 @@ driver: Driver = .{
     .class = .{
         .video = .{
             .get_properties_fn = get_properties,
-            .flush_fn = flush,
+            .begin_write_pixels_fn = begin_write_pixels,
+            .mapping_fns = .{
+                .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
+                .get_mapped_buffer_fn = get_mapped_buffer,
+                .destroy_mapped_buffer_fn = ashet.video.VideoDevice.destroy_mapped_buffer_noop,
+            },
         },
     },
 },
@@ -58,24 +63,66 @@ pub fn init(vga: *VGA) !void {
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
+    _ = vd;
     return .{
         .resolution = .{
             .width = width,
             .height = height,
         },
-        .stride = width,
-        .video_memory = &vd.backbuffer,
-        .video_memory_mapping = .buffered,
+        .buffer_support = .front_stable,
     };
 }
 
-fn flush(driver: *Driver) void {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
+fn get_mapped_buffer(driver: *Driver, buffer: ashet.video.BufferKind) ashet.video.VideoMemory {
+    _ = driver;
+    return switch (buffer) {
+        .front_buffer => .{
+            .base = @ptrFromInt(0xA0000),
+            .stride = width,
+        },
+        .back_buffer => @panic("kernel bug: driver layer invoked get_mapped_buffer for unsupported buffer"),
+    };
+}
 
-    // vd.loadPalette(vd.palette);
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
+    _ = vd;
 
     const target = @as([*]align(ashet.memory.page_size) Color, @ptrFromInt(0xA0000))[0 .. width * height];
-    std.mem.copyForwards(Color, target, &vd.backbuffer);
+
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = target,
+                .width = width,
+                .height = height,
+                .stride = width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
+
+    _ = mode;
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }
 
 fn writeVgaRegisters(regs: [61]u8) void {
