@@ -77,8 +77,11 @@ pub const VideoDevice = struct {
         ) void,
     };
 
+    pub const VBlankFunctions = struct {
+        get_one_vblank_event_fn: *const fn (*ashet.drivers.Driver) bool, // TODO(gpu_support): Go through all drivers and see which actually support this
+    };
+
     get_properties_fn: *const fn (*ashet.drivers.Driver) DeviceProperties,
-    get_one_vblank_event_fn: ?*const fn (*ashet.drivers.Driver) bool = null, // TODO(gpu_support): Go through all drivers and see which actually support this
 
     begin_write_pixels_fn: *const fn (
         driver: *ashet.drivers.Driver,
@@ -89,7 +92,8 @@ pub const VideoDevice = struct {
         mode: PresentMode,
     ) void,
 
-    mapping_fns: ?MappingFunctions = null,
+    vblank_fns: ?VBlankFunctions,
+    mapping_fns: ?MappingFunctions,
 
     fn get_properties(vd: *VideoDevice) DeviceProperties {
         return vd.get_properties_fn(ashet.drivers.resolveDriver(.video, vd));
@@ -97,13 +101,13 @@ pub const VideoDevice = struct {
 
     /// Returns true if the video device does support waiting for vertical blanking intervals.
     fn supports_vblank_event(vd: *VideoDevice) bool {
-        return vd.get_one_vblank_event_fn != null;
+        return vd.vblank_fns != null;
     }
 
     /// Returns `true` if a vertical blanking interval has happened since the last call.
     fn get_one_vblank_event(vd: *VideoDevice) bool {
-        if (vd.get_one_vblank_event_fn) |get_one_vblank_event_fn| {
-            return get_one_vblank_event_fn(ashet.drivers.resolveDriver(.video, vd));
+        if (vd.vblank_fns) |*funcs| {
+            return funcs.get_one_vblank_event_fn(ashet.drivers.resolveDriver(.video, vd));
         } else {
             @panic("invalid API use");
         }
@@ -416,6 +420,10 @@ pub const BufferMapping = struct {
 
 var video_outputs: []Output = &.{};
 
+var next_expected_synthetic_frame: ashet.time.Instant = .system_start;
+
+const synthetic_frame_time_ms = 33; // roughly 30 FPS for synthetic video outputs
+
 pub fn initialize() !void {
     const count: usize = blk: {
         var drivers = ashet.drivers.enumerate(.video);
@@ -444,23 +452,35 @@ pub fn initialize() !void {
             });
         }
     }
+    next_expected_synthetic_frame = ashet.time.Instant.now().add_ms(synthetic_frame_time_ms);
 }
 
 ///Ticks the video subsystem
 pub fn tick() void {
-    for (video_outputs) |*video_output| {
-        // Go through all video outputs that support vertical blanking
-        // notifications and complete the awaiters:
-        if (!video_output.video_driver.supports_vblank_event())
-            continue;
+    const had_synthetic_virtual_vblank = get_one_synthetic_vblank_event();
 
-        if (video_output.video_driver.get_one_vblank_event()) {
-            // video_output.force_flush();
+    // Go through all video outputs and check if they had a vertical blanking event:
+    for (video_outputs) |*video_output| {
+        const had_vblank_event = if (video_output.video_driver.supports_vblank_event())
+            video_output.video_driver.get_one_vblank_event()
+        else
+            had_synthetic_virtual_vblank;
+
+        if (had_vblank_event) {
             video_output.notify_vblank_awaiters();
         }
     }
+}
 
-    // TODO(gpu_support): How to implement non-vblanking video outputs with WaitForVSync?
+fn get_one_synthetic_vblank_event() bool {
+    const now = ashet.time.Instant.now();
+
+    var had_vblank_event = false;
+    while (next_expected_synthetic_frame.less_or_equal(now)) {
+        next_expected_synthetic_frame = next_expected_synthetic_frame.add_ms(16);
+        had_vblank_event = true;
+    }
+    return had_vblank_event;
 }
 
 pub fn enumerate(maybe_ids: ?[]OutputID) usize {

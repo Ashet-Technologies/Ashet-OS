@@ -14,26 +14,7 @@ const modes = @import("x86/vga-mode-presets.zig");
 const width = 320;
 const height = 200;
 
-backbuffer: [width * height]Color align(ashet.memory.page_size) = undefined,
-
-driver: Driver = .{
-    .name = "VGA",
-    .class = .{
-        .video = .{
-            .get_properties_fn = get_properties,
-            .begin_write_pixels_fn = begin_write_pixels,
-            .get_one_vblank_event_fn = get_one_vblank_event,
-            .mapping_fns = .{
-                .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
-                .get_mapped_buffer_fn = get_mapped_buffer,
-                .destroy_mapped_buffer_fn = ashet.video.VideoDevice.destroy_mapped_buffer_noop,
-            },
-        },
-    },
-},
-
-vblank_irq_support: VBlankIrqSupport,
-next_expected_retrace: ashet.time.Instant,
+driver: Driver,
 
 const memory_ranges = [_]x86.vmm.Range{
     .{ .base = 0xA0000, .length = 0x20000 },
@@ -67,14 +48,29 @@ pub fn init(vga: *VGA) !void {
         .stride = width,
     });
 
-    const next_expected_retrace: ashet.time.Instant = switch (vblank_irq_support) {
-        .supported => undefined,
-        .unsupported => ashet.time.Instant.now().add_ms(16),
-    };
-
     vga.* = VGA{
-        .vblank_irq_support = vblank_irq_support,
-        .next_expected_retrace = next_expected_retrace,
+        .driver = .{
+            .name = "VGA",
+            .class = .{
+                .video = .{
+                    .get_properties_fn = get_properties,
+                    .begin_write_pixels_fn = begin_write_pixels,
+
+                    .mapping_fns = .{
+                        .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
+                        .get_mapped_buffer_fn = get_mapped_buffer,
+                        .destroy_mapped_buffer_fn = ashet.video.VideoDevice.destroy_mapped_buffer_noop,
+                    },
+
+                    .vblank_fns = switch (vblank_irq_support) {
+                        .unsupported => null,
+                        .supported => .{
+                            .get_one_vblank_event_fn = get_one_vblank_event,
+                        },
+                    },
+                },
+            },
+        },
     };
 }
 
@@ -92,20 +88,8 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
 
 fn get_one_vblank_event(driver: *Driver) bool {
     const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-
-    return switch (vd.vblank_irq_support) {
-        .supported => readAndResetIrq(),
-
-        .unsupported => blk: {
-            var had_vblank_event = false;
-            const now = ashet.time.Instant.now();
-            while (vd.next_expected_retrace.less_or_equal(now)) {
-                vd.next_expected_retrace = vd.next_expected_retrace.add_ms(16);
-                had_vblank_event = true;
-            }
-            break :blk had_vblank_event;
-        },
-    };
+    _ = vd;
+    return readAndResetIrq();
 }
 
 fn get_mapped_buffer(driver: *Driver, buffer: ashet.video.BufferKind) ashet.video.VideoMemory {

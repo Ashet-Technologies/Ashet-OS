@@ -38,17 +38,17 @@ pub const Header = extern struct {
 
     const Flags = packed struct(u32) {
         /// If bit 0 in the ‘flags’ word is set, then all boot modules loaded along with the operating system must be aligned on page (4KB) boundaries. Some operating systems expect to be able to map the pages containing boot modules directly into a paged address space during startup, and thus need the boot modules to be page-aligned.
-        req_modules_align_4k: bool,
+        req_modules_align_4k: bool, // [0]
 
         /// If bit 1 in the ‘flags’ word is set, then information on available memory via at least the ‘mem_*’ fields of the Multiboot information structure (see Boot information format) must be included. If the boot loader is capable of passing a memory map (the ‘mmap_*’ fields) and one exists, then it may be included as well.
-        req_mem_info: bool,
+        req_mem_info: bool, // [1]
 
         /// If bit 2 in the ‘flags’ word is set, information about the video mode table (see Boot information format) must be available to the kernel.
-        req_video_mode: bool,
+        req_video_mode: bool, // [2]
         padding0: u13 = 0,
 
         /// If bit 16 in the ‘flags’ word is set, then the fields at offsets 12-28 in the Multiboot header are valid, and the boot loader should use them instead of the fields in the actual executable header to calculate where to load the OS image. This information does not need to be provided if the kernel image is in ELF format, but it must be provided if the images is in a.out format or in some other format. Compliant boot loaders must be able to load images that either are in ELF format or contain the load address information embedded in the Multiboot header; they may also directly support other executable formats, such as particular a.out variants, but are not required to.
-        hint_use_embedded_offsets: bool,
+        hint_use_embedded_offsets: bool, // [16]
         padding1: u15 = 0,
     };
 
@@ -197,19 +197,19 @@ pub const Info = extern struct {
     framebuffer: Framebuffer,
 
     pub const Flags = packed struct(u32) {
-        mem: bool,
-        boot_device: bool,
-        cmdline: bool,
-        mods: bool,
-        syms_v1: bool,
-        syms_v2: bool,
-        mmap: bool,
-        drives: bool,
-        config_table: bool,
-        boot_loader_name: bool,
-        apm_table: bool,
-        vbe: bool,
-        framebuffer: bool,
+        mem: bool, // [0]
+        boot_device: bool, // [1]
+        cmdline: bool, // [2]
+        mods: bool, // [3]
+        syms_v1: bool, // [4]
+        syms_v2: bool, // [5]
+        mmap: bool, // [6]
+        drives: bool, // [7]
+        config_table: bool, // [8]
+        boot_loader_name: bool, // [9]
+        apm_table: bool, // [10]
+        vbe: bool, // [11]
+        framebuffer: bool, // [12]
         _reserved: u19,
 
         pub fn format(flags: Flags, writer: *std.Io.Writer) !void {
