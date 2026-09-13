@@ -95,10 +95,12 @@ pub const VideoDevice = struct {
         return vd.get_properties_fn(ashet.drivers.resolveDriver(.video, vd));
     }
 
+    /// Returns true if the video device does support waiting for vertical blanking intervals.
     fn supports_vblank_event(vd: *VideoDevice) bool {
         return vd.get_one_vblank_event_fn != null;
     }
 
+    /// Returns `true` if a vertical blanking interval has happened since the last call.
     fn get_one_vblank_event(vd: *VideoDevice) bool {
         if (vd.get_one_vblank_event_fn) |get_one_vblank_event_fn| {
             return get_one_vblank_event_fn(ashet.drivers.resolveDriver(.video, vd));

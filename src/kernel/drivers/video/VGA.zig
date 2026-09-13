@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.vga);
+const vga_regs = @import("x86/vga-regs.zig");
 
 const x86 = ashet.ports.platforms.x86;
 const VGA = @This();
@@ -21,6 +22,7 @@ driver: Driver = .{
         .video = .{
             .get_properties_fn = get_properties,
             .begin_write_pixels_fn = begin_write_pixels,
+            .get_one_vblank_event_fn = get_one_vblank_event,
             .mapping_fns = .{
                 .create_mapped_buffer_fn = ashet.video.VideoDevice.default_create_mapped_buffer_front,
                 .get_mapped_buffer_fn = get_mapped_buffer,
@@ -29,6 +31,9 @@ driver: Driver = .{
         },
     },
 },
+
+vblank_irq_support: VBlankIrqSupport,
+next_expected_retrace: ashet.time.Instant,
 
 const memory_ranges = [_]x86.vmm.Range{
     .{ .base = 0xA0000, .length = 0x20000 },
@@ -43,11 +48,13 @@ pub fn init(vga: *VGA) !void {
         x86.vmm.update(range, .read_write);
     }
 
-    vga.* = VGA{};
+    writeVgaRegisters(g_320x200x256);
 
-    writeVgaRegisters(modes.g_320x200x256);
+    loadFixedPalette();
 
-    vga.loadFixedPalette();
+    setupVBlankIrq();
+
+    const vblank_irq_support = test_blank_irq();
 
     const vmem = @as([*]align(ashet.memory.page_size) Color, @ptrFromInt(0xA0000))[0 .. width * height];
 
@@ -59,6 +66,16 @@ pub fn init(vga: *VGA) !void {
         .height = height,
         .stride = width,
     });
+
+    const next_expected_retrace: ashet.time.Instant = switch (vblank_irq_support) {
+        .supported => undefined,
+        .unsupported => ashet.time.Instant.now().add_ms(16),
+    };
+
+    vga.* = VGA{
+        .vblank_irq_support = vblank_irq_support,
+        .next_expected_retrace = next_expected_retrace,
+    };
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
@@ -70,6 +87,24 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .height = height,
         },
         .buffer_support = .front_stable,
+    };
+}
+
+fn get_one_vblank_event(driver: *Driver) bool {
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
+
+    return switch (vd.vblank_irq_support) {
+        .supported => readAndResetIrq(),
+
+        .unsupported => blk: {
+            var had_vblank_event = false;
+            const now = ashet.time.Instant.now();
+            while (vd.next_expected_retrace.less_or_equal(now)) {
+                vd.next_expected_retrace = vd.next_expected_retrace.add_ms(16);
+                had_vblank_event = true;
+            }
+            break :blk had_vblank_event;
+        },
     };
 }
 
@@ -97,6 +132,14 @@ fn begin_write_pixels(
 
     const target = @as([*]align(ashet.memory.page_size) Color, @ptrFromInt(0xA0000))[0 .. width * height];
 
+    switch (mode) {
+        .dont_care, .immediate => {},
+
+        // TODO(gpu_support): This is blocking, which is really *not nice*, but it's a kind of viable
+        //                    solution for a first draft.
+        .vblank => wait_for_vsync(),
+    }
+
     ashet.video.utils.copy_pixels(
         Color,
         .{
@@ -120,89 +163,167 @@ fn begin_write_pixels(
         null,
     );
 
-    _ = mode;
-
     return call.finalize(ashet.abi.video.WritePixels, .{});
 }
 
-fn writeVgaRegisters(regs: [61]u8) void {
-    var index: usize = 0;
-    var i: u8 = 0;
+const VBlankIrqSupport = enum { supported, unsupported };
 
-    // write MISCELLANEOUS reg
-    x86.out(u8, VGA_MISC_WRITE, regs[index]);
-    index += 1;
+///
+/// As QEMU does not actually implement the latching vertical blanking IRQ
+/// we need for Ashet OS "await vblank" semantics, we need to emulate this.
+///
+/// On a real VGA card we can rely on the blanking interval though.
+///
+/// To detect if the IRQ is supported, we manually await a vertical blank
+///
+fn test_blank_irq() VBlankIrqSupport {
+    logger.info("testing VGA IRQ support...", .{});
+    wait_for_vsync();
 
-    // write SEQUENCER regs
-    i = 0;
-    while (i < VGA_NUM_SEQ_REGS) : (i += 1) {
-        x86.out(u8, VGA_SEQ_INDEX, i);
-        x86.out(u8, VGA_SEQ_DATA, regs[index]);
-        index += 1;
+    _ = readAndResetIrq(); // IRQ is now off
+
+    // Wait for the next frame to happen
+    wait_for_vsync();
+
+    // If an IRQ has latched after a frame, we are now actually safe that we can rely on the vblank information:
+    if (readAndResetIrq()) {
+        return .supported;
     }
 
-    // unlock CRTC registers
-    x86.out(u8, VGA_CRTC_INDEX, 0x03);
-    x86.out(u8, VGA_CRTC_DATA, x86.in(u8, VGA_CRTC_DATA) | 0x80);
-    x86.out(u8, VGA_CRTC_INDEX, 0x11);
-    x86.out(u8, VGA_CRTC_DATA, x86.in(u8, VGA_CRTC_DATA) & ~@as(u8, 0x80));
-
-    // make sure they remain unlocked
-    // TODO: Reinsert again
-    // regs[0x03] |= 0x80;
-    // regs[0x11] &= ~0x80;
-
-    // write CRTC regs
-
-    i = 0;
-    while (i < VGA_NUM_CRTC_REGS) : (i += 1) {
-        x86.out(u8, VGA_CRTC_INDEX, i);
-        x86.out(u8, VGA_CRTC_DATA, regs[index]);
-        index += 1;
-    }
-    // write GRAPHICS CONTROLLER regs
-    i = 0;
-    while (i < VGA_NUM_GC_REGS) : (i += 1) {
-        x86.out(u8, VGA_GC_INDEX, i);
-        x86.out(u8, VGA_GC_DATA, regs[index]);
-        index += 1;
-    }
-    // write ATTRIBUTE CONTROLLER regs
-    i = 0;
-    while (i < VGA_NUM_AC_REGS) : (i += 1) {
-        _ = x86.in(u8, VGA_INSTAT_READ);
-        x86.out(u8, VGA_AC_INDEX, i);
-        x86.out(u8, VGA_AC_WRITE, regs[index]);
-        index += 1;
-    }
-    // lock 16-color palette and unblank display
-    _ = x86.in(u8, VGA_INSTAT_READ);
-    x86.out(u8, VGA_AC_INDEX, 0x20);
+    return .unsupported;
 }
 
-pub fn setPlane(plane: u2) void {
-    const pmask: u8 = u8(1) << plane;
+pub fn setupVBlankIrq() void {
+    const io_address_select = vga_regs.MiscellaneousOutputRegister.read().io_address_select;
 
-    // set read plane
-    x86.out(u8, VGA_GC_INDEX, 4);
-    x86.out(u8, VGA_GC_DATA, plane);
-    // set write plane
-    x86.out(u8, VGA_SEQ_INDEX, 2);
-    x86.out(u8, VGA_SEQ_DATA, pmask);
+    const crtc_index = io_address_select.crtcIndexPort();
+    const crtc_data = io_address_select.crtcDataPort();
+
+    // Preserve the currently selected CRTC register.
+    const previous_index = crtc_index.read();
+    defer crtc_index.write(previous_index);
+
+    // Vertical Retrace End register.
+    crtc_index.write(0x11);
+
+    var value = crtc_data.read();
+
+    // Bit 5 = 0: enable vertical-retrace interrupt generation.
+    //
+    // Bit 4 = 0: clear the pending vertical-retrace interrupt.
+    value &= ~@as(u8, 0x30);
+    crtc_data.write(value);
+
+    // Bit 4 = 1: permit the next vertical-retrace interrupt to occur.
+    value |= 0x10;
+    crtc_data.write(value);
+}
+
+/// Reads the VGA vertical-retrace interrupt latch and, if set, clears and
+/// rearms it for the next vertical retrace.
+///
+/// Returns whether a vertical-retrace interrupt was pending.
+pub fn readAndResetIrq() bool {
+    const pending = vga_regs.InputStatus0Register.read().crt_interrupt_pending;
+
+    // Don't touch the latch when there is nothing to acknowledge. In
+    // particular, this avoids clearing an interrupt that arrives immediately
+    // after the status read.
+    if (!pending)
+        return false;
+
+    const io_address_select = vga_regs.MiscellaneousOutputRegister.read().io_address_select;
+
+    const crtc_index = io_address_select.crtcIndexPort();
+    const crtc_data = io_address_select.crtcDataPort();
+
+    // Preserve the currently selected CRTC register.
+    const previous_index = crtc_index.read();
+    defer crtc_index.write(previous_index);
+
+    crtc_index.write(0x11);
+
+    const value = crtc_data.read();
+
+    // Bit 4 = 0 clears the interrupt latch.
+    crtc_data.write(value & ~@as(u8, 0x10));
+
+    // Bit 4 = 1 rearms it for the next vertical retrace.
+    crtc_data.write(value | 0x10);
+
+    return true;
+}
+
+fn writeVgaRegisters(config: VgaRegisterConfig) void {
+    // Write MISCELLANEOUS register.
+    config.miscellaneous_output.write();
+
+    const io_address_select = config.miscellaneous_output.io_address_select;
+    const crtc_index = io_address_select.crtcIndexPort();
+    const crtc_data = io_address_select.crtcDataPort();
+
+    // Write SEQUENCER registers.
+    for (config.sequencer, 0..) |value, index| {
+        vga_regs.VgaPort.sequencer_index.write(@intCast(index));
+        vga_regs.VgaPort.sequencer_data.write(value);
+    }
+
+    // Unlock CRTC registers.
+    crtc_index.write(0x03);
+    crtc_data.write(crtc_data.read() | 0x80);
+
+    crtc_index.write(0x11);
+    crtc_data.write(crtc_data.read() & ~@as(u8, 0x80));
+
+    // Write CRTC registers.
+    for (config.crtc, 0..) |value, index| {
+        crtc_index.write(@intCast(index));
+        crtc_data.write(value);
+    }
+
+    // Write GRAPHICS CONTROLLER registers.
+    for (config.graphics_controller, 0..) |value, index| {
+        vga_regs.VgaPort.graphics_controller_index.write(@intCast(index));
+        vga_regs.VgaPort.graphics_controller_data.write(value);
+    }
+
+    // Write ATTRIBUTE CONTROLLER registers.
+    for (config.attribute_controller, 0..) |value, index| {
+        // Reset Attribute Controller flip-flop to index state.
+        _ = vga_regs.InputStatus1Register.read(io_address_select);
+
+        vga_regs.VgaPort.attribute_index_data.write(@intCast(index));
+        vga_regs.VgaPort.attribute_index_data.write(value);
+    }
+
+    // Lock 16-color palette and unblank display.
+    _ = vga_regs.InputStatus1Register.read(io_address_select);
+    vga_regs.VgaPort.attribute_index_data.write(0x20);
+}
+
+fn setPlane(plane: u2) void {
+    const pmask: u8 = @as(u8, 1) << plane;
+
+    // Set read plane.
+    vga_regs.VgaPort.graphics_controller_index.write(4);
+    vga_regs.VgaPort.graphics_controller_data.write(plane);
+
+    // Set write plane.
+    vga_regs.VgaPort.sequencer_index.write(2);
+    vga_regs.VgaPort.sequencer_data.write(pmask);
 }
 
 fn getFramebufferSegment() [*]volatile u8 {
-    x86.out(u8, VGA_GC_INDEX, 6);
-    const seg = (x86.in(u8, VGA_GC_DATA) >> 2) & 3;
+    vga_regs.VgaPort.graphics_controller_index.write(6);
+
+    const seg = (vga_regs.VgaPort.graphics_controller_data.read() >> 2) & 3;
+
     return @as([*]volatile u8, @ptrFromInt(switch (@as(u2, @truncate(seg))) {
         0, 1 => @as(u32, 0xA0000),
         2 => @as(u32, 0xB0000),
         3 => @as(u32, 0xB8000),
     }));
 }
-
-const PALETTE_INDEX = 0x03c8;
-const PALETTE_DATA = 0x03c9;
 
 const RGB = packed struct {
     b: u8,
@@ -215,146 +336,153 @@ const RGB = packed struct {
 fn loadPalette(vga: VGA, palette: [256]Color) void {
     _ = vga;
 
-    x86.out(u8, PALETTE_INDEX, 0); // tell the VGA that palette data is coming.
-    for (palette) |rgb| {
+    // Tell the VGA that palette data is coming, starting at entry 0.
+    vga_regs.VgaPort.palette_write_index.write(0);
 
-        // enhance RGB565 to RGB666
-        x86.out(u8, PALETTE_DATA, (@as(u6, rgb.r) << 1) | (rgb.r >> 4));
-        x86.out(u8, PALETTE_DATA, (@as(u6, rgb.g) << 0));
-        x86.out(u8, PALETTE_DATA, (@as(u6, rgb.b) << 1) | (rgb.b >> 4));
+    for (palette) |rgb| {
+        // Enhance RGB565 to RGB666.
+        vga_regs.VgaPort.palette_data.write(
+            (@as(u6, rgb.r) << 1) | (rgb.r >> 4),
+        );
+        vga_regs.VgaPort.palette_data.write(
+            @as(u6, rgb.g),
+        );
+        vga_regs.VgaPort.palette_data.write(
+            (@as(u6, rgb.b) << 1) | (rgb.b >> 4),
+        );
     }
 }
 
-fn loadFixedPalette(vga: VGA) void {
+fn loadFixedPalette() void {
     @setEvalBranchQuota(10_000);
-    _ = vga;
 
-    x86.out(u8, PALETTE_INDEX, 0); // tell the VGA that palette data is coming.
+    // Tell the VGA that palette data is coming, starting at entry 0.
+    vga_regs.VgaPort.palette_write_index.write(0);
+
     inline for (0..256) |index| {
         const color: Color = comptime .from_u8(@intCast(index));
-
         const rgb = comptime color.to_rgb888();
 
         const r6 = comptime Color.compress_channel(rgb.r, u6);
         const g6 = comptime Color.compress_channel(rgb.g, u6);
         const b6 = comptime Color.compress_channel(rgb.b, u6);
 
-        x86.out(u8, PALETTE_DATA, r6);
-        x86.out(u8, PALETTE_DATA, g6);
-        x86.out(u8, PALETTE_DATA, b6);
+        vga_regs.VgaPort.palette_data.write(r6);
+        vga_regs.VgaPort.palette_data.write(g6);
+        vga_regs.VgaPort.palette_data.write(b6);
     }
 }
 
 // pub fn setPaletteEntry(entry: u8, color: RGB) void {
-//     io.out(u8, PALETTE_INDEX, entry); // tell the VGA that palette data is coming.
-//     io.out(u8, PALETTE_DATA, color.r >> 2); // write the data
-//     io.out(u8, PALETTE_DATA, color.g >> 2);
-//     io.out(u8, PALETTE_DATA, color.b >> 2);
+//     vga_regs.VgaPort.palette_write_index.write(entry);
+//     vga_regs.VgaPort.palette_data.write(color.r >> 2);
+//     vga_regs.VgaPort.palette_data.write(color.g >> 2);
+//     vga_regs.VgaPort.palette_data.write(color.b >> 2);
 // }
 
-// see: http://www.brackeen.com/vga/source/bc31/palette.c.html
-pub fn waitForVSync() void {
-    const INPUT_STATUS = 0x03da;
-    const VRETRACE = 0x08;
+fn wait_for_vsync() void {
+    const io_address_select = vga_regs.MiscellaneousOutputRegister.read().io_address_select;
 
-    // wait until done with vertical retrace
-    while ((x86.in(u8, INPUT_STATUS) & VRETRACE) != 0) {}
-    // wait until done refreshing
-    while ((x86.in(u8, INPUT_STATUS) & VRETRACE) == 0) {}
+    // Wait until the current vertical retrace has ended.
+    while (vga_regs.InputStatus1Register.read(io_address_select).vertical_retrace) {}
+
+    // Wait until the next vertical retrace begins.
+    while (!vga_regs.InputStatus1Register.read(io_address_select).vertical_retrace) {}
 }
 
-const VGA_AC_INDEX = 0x3C0;
-const VGA_AC_WRITE = 0x3C0;
-const VGA_AC_READ = 0x3C1;
-const VGA_MISC_WRITE = 0x3C2;
-const VGA_SEQ_INDEX = 0x3C4;
-const VGA_SEQ_DATA = 0x3C5;
-const VGA_DAC_READ_INDEX = 0x3C7;
-const VGA_DAC_WRITE_INDEX = 0x3C8;
-const VGA_DAC_DATA = 0x3C9;
-const VGA_MISC_READ = 0x3CC;
-const VGA_GC_INDEX = 0x3CE;
-const VGA_GC_DATA = 0x3CF;
-//            COLOR emulation        MONO emulation
-const VGA_CRTC_INDEX = 0x3D4; // 0x3B4
-const VGA_CRTC_DATA = 0x3D5; // 0x3B5
-const VGA_INSTAT_READ = 0x3DA;
+const VGA_NUM_REGS =
+    1 +
+    VGA_NUM_SEQ_REGS +
+    VGA_NUM_CRTC_REGS +
+    VGA_NUM_GC_REGS +
+    VGA_NUM_AC_REGS;
 
 const VGA_NUM_SEQ_REGS = 5;
 const VGA_NUM_CRTC_REGS = 25;
 const VGA_NUM_GC_REGS = 9;
 const VGA_NUM_AC_REGS = 21;
-const VGA_NUM_REGS = (1 + VGA_NUM_SEQ_REGS + VGA_NUM_CRTC_REGS + VGA_NUM_GC_REGS + VGA_NUM_AC_REGS);
 
-// pub fn setPixelDirect(x: usize, y: usize, c: Color) void {
-//     switch (mode) {
-//         .mode320x200 => {
-//             // setPlane(@truncate(u2, 0));
-//             var segment = getFramebufferSegment();
-//             segment[320 * y + x] = c;
-//         },
+pub const VgaRegisterConfig = struct {
+    miscellaneous_output: vga_regs.MiscellaneousOutputRegister,
 
-//         .mode640x480 => {
-//             const wd_in_bytes = 640 / 8;
-//             const off = wd_in_bytes * y + x / 8;
-//             const px = @truncate(u3, x & 7);
-//             var mask: u8 = u8(0x80) >> px;
-//             var pmask: u8 = 1;
+    sequencer: [VGA_NUM_SEQ_REGS]u8,
+    crtc: [VGA_NUM_CRTC_REGS]u8,
+    graphics_controller: [VGA_NUM_GC_REGS]u8,
+    attribute_controller: [VGA_NUM_AC_REGS]u8,
+};
 
-//             comptime var p: usize = 0;
-//             inline while (p < 4) : (p += 1) {
-//                 setPlane(@truncate(u2, p));
-//                 var segment = getFramebufferSegment();
-//                 const src = segment[off];
-//                 segment[off] = if ((pmask & c) != 0) src | mask else src & ~mask;
-//                 pmask <<= 1;
-//             }
-//         },
-//     }
-// }
+pub const g_320x200x256: VgaRegisterConfig = .{
+    .miscellaneous_output = @bitCast(@as(u8, 0x63)),
 
-// pub fn swapBuffers() void {
-//     @setRuntimeSafety(false);
-//     @setCold(false);
+    .sequencer = .{
+        0x03,
+        0x01,
+        0x0F,
+        0x00,
+        0x0E,
+    },
 
-//     switch (mode) {
-//         .mode320x200 => {
-//             @intToPtr(*[height][width]Color, 0xA0000).* = backbuffer;
-//         },
-//         .mode640x480 => {
+    .crtc = .{
+        0x5F,
+        0x4F,
+        0x50,
+        0x82,
+        0x54,
+        0x80,
+        0xBF,
+        0x1F,
+        0x00,
+        0x41,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x9C,
+        0x0E,
+        0x8F,
+        0x28,
+        0x40,
+        0x96,
+        0xB9,
+        0xA3,
+        0xFF,
+    },
 
-//             // const bytes_per_line = 640 / 8;
-//             var plane: usize = 0;
-//             while (plane < 4) : (plane += 1) {
-//                 const plane_mask: u8 = u8(1) << @truncate(u3, plane);
-//                 setPlane(@truncate(u2, plane));
+    .graphics_controller = .{
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x40,
+        0x05,
+        0x0F,
+        0xFF,
+    },
 
-//                 var segment = get_fb_seg();
-
-//                 var offset: usize = 0;
-
-//                 var y: usize = 0;
-//                 while (y < 480) : (y += 1) {
-//                     var x: usize = 0;
-//                     while (x < 640) : (x += 8) {
-//                         // const offset = bytes_per_line * y + (x / 8);
-//                         var bits: u8 = 0;
-
-//                         // unroll for maximum fastness
-//                         comptime var px: usize = 0;
-//                         inline while (px < 8) : (px += 1) {
-//                             const mask = u8(0x80) >> px;
-//                             const index = backbuffer[y][x + px];
-//                             if ((index & plane_mask) != 0) {
-//                                 bits |= mask;
-//                             }
-//                         }
-
-//                         segment[offset] = bits;
-//                         offset += 1;
-//                     }
-//                 }
-//             }
-//         },
-//     }
-// }
+    .attribute_controller = .{
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
+        0x09,
+        0x0A,
+        0x0B,
+        0x0C,
+        0x0D,
+        0x0E,
+        0x0F,
+        0x41,
+        0x00,
+        0x0F,
+        0x00,
+        0x00,
+    },
+};
