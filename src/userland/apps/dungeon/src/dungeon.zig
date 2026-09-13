@@ -482,6 +482,8 @@ const Raycaster = struct {
             else => null,
         };
 
+        const use_textures = (ashet.abi.get_demo_mode() != 0);
+
         var scanline: [*]Color = &clonebuffer;
         for (0..height) |y| {
             defer scanline += max_size.width;
@@ -503,17 +505,18 @@ const Raycaster = struct {
                     if (ray.maybe_hit) |result| {
                         const tex_id = result.wall.texture_id;
 
-                        const color: Color = .from_u8(0x80 ^ @as(u8, @truncate(tex_id)));
+                        const color: Color = if (use_textures) blk: {
+                            const texture = &textures[tex_id];
 
-                        // const texture = &textures[tex_id];
+                            const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
+                            const v = @as(i32, @intCast(@divTrunc(
+                                texture.height * (yi - ray.wallTop),
+                                @as(i32, @intCast(ray.wallHeight)),
+                            )));
 
-                        // const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
-                        // const v = @as(i32, @intCast(@divTrunc(
-                        //     texture.height * (yi - ray.wallTop),
-                        //     @as(i32, @intCast(ray.wallHeight)),
-                        // )));
+                            break :blk sampleTexture(texture, u, v);
+                        } else .from_u8(0x80 ^ @as(u8, @truncate(tex_id)));
 
-                        // pixel.* = sampleTexture(texture, u, v);
                         pixel.* = color;
                         continue;
                     }
