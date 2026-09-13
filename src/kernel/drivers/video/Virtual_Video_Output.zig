@@ -16,6 +16,8 @@ driver: Driver = .{
         .video = .{
             .get_properties_fn = get_properties,
             .begin_write_pixels_fn = driver_begin_write_pixels,
+            .vblank_fns = null,
+            .mapping_fns = null,
         },
     },
 },
@@ -36,8 +38,10 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .width = width,
             .height = height,
         },
+        .buffer_support = .none,
     };
 }
+
 fn driver_begin_write_pixels(
     driver: *Driver,
     call: *ashet.overlapped.AsyncCall,

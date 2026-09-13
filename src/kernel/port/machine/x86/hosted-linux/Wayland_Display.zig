@@ -74,6 +74,7 @@ pub fn init(
             write_wayland_pixels,
             server,
             .allocate, // TODO(gpu_support): Is this necessary?
+            true,
         ),
         // .input = ashet.drivers.input.Host_SDL_Input.init(),
 
@@ -227,6 +228,7 @@ pub fn process_events(server: *Wayland_Display) !void {
 
             server.should_render = false;
             server.frame_count += 1;
+            server.screen.notify_vblank_event();
         }
 
         // logger.info("tick  {}", .{server.frame_count});

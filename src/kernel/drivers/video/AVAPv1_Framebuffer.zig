@@ -17,6 +17,8 @@ driver: Driver = .{
         .video = .{
             .get_properties_fn = get_properties,
             .begin_write_pixels_fn = driver_begin_write_pixels,
+            .mapping_fns = null,
+            .vblank_fns = null, // TODO(gpu_support): We actually can do AVAPv1 vertical blanking intervals, but we can't do them trivially yet
         },
     },
 },
@@ -121,6 +123,7 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .width = width,
             .height = height,
         },
+        .buffer_support = .none,
     };
 }
 

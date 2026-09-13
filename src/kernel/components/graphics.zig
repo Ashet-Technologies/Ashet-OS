@@ -37,7 +37,7 @@ pub const RasterizerBackend = enum {
     }
 };
 
-pub var selected_rasterizer: RasterizerBackend = .linear_async;
+pub var selected_rasterizer: RasterizerBackend = .linear_sync;
 pub var use_perfctrl: bool = false;
 
 comptime {

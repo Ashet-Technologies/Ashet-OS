@@ -51,6 +51,7 @@ pub fn init(
             write_vnc_pixels,
             server,
             .allocate,
+            true,
         ),
         .input = ashet.drivers.input.Host_VNC_Input.init(),
     };
@@ -391,10 +392,12 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
         }, // use internal handler
 
         .framebuffer_update_request => |req| {
-            _ = vd;
             _ = request_allocator;
             state.incremental_update_request = req;
             // try vd.send_incremental_update(state, request_allocator, req);
+
+            // Notify the OS that we have a new frame requested, and we shall provide more data
+            vd.screen.notify_vblank_event();
         },
 
         .key_event => |ev| {

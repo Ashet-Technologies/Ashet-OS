@@ -40,6 +40,8 @@ driver: Driver,
 write_pixels_fn: *const WritePixelsSyncFn,
 write_pixels_ctx: ?*anyopaque,
 
+had_vblank_event: std.atomic.Value(bool) = .init(false),
+
 pub fn init(
     comptime name: []const u8,
     width: u16,
@@ -47,6 +49,7 @@ pub fn init(
     comptime write_pixels_fn: WritePixelsSyncFn,
     write_pixels_ctx: ?*anyopaque,
     comptime backing: BackingStorage,
+    comptime supports_vblank_await: bool,
 ) !Host_VNC_Output {
     const fb: ?[]Color = switch (backing) {
         .allocate => try std.heap.page_allocator.alloc(Color, @as(u32, width) * @as(u32, height)),
@@ -61,6 +64,15 @@ pub fn init(
                 .video = .{
                     .get_properties_fn = get_properties,
                     .begin_write_pixels_fn = begin_write_pixels,
+
+                    .vblank_fns = if (supports_vblank_await)
+                        .{
+                            .get_one_vblank_event_fn = get_one_vblank_event,
+                        }
+                    else
+                        null,
+
+                    .mapping_fns = null,
                 },
             },
         },
@@ -74,6 +86,10 @@ pub fn init(
     };
 }
 
+pub fn notify_vblank_event(vd: *Host_VNC_Output) void {
+    vd.had_vblank_event.store(true, .seq_cst);
+}
+
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     return .{
@@ -81,7 +97,16 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .width = vd.width,
             .height = vd.height,
         },
+        .buffer_support = .none,
     };
+}
+
+fn get_one_vblank_event(driver: *Driver) bool {
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
+
+    const had_vblank = vd.had_vblank_event.swap(false, .seq_cst);
+
+    return had_vblank;
 }
 
 fn begin_write_pixels(

@@ -25,6 +25,8 @@ driver: Driver = .{
         .video = .{
             .get_properties_fn = get_properties,
             .begin_write_pixels_fn = begin_write_pixels,
+            .vblank_fns = null, // VirtIO does not support vertical blanking events
+            .mapping_fns = null, // VirtIO does not support memory mappings of 8bpp graphics
         },
     },
 },
@@ -128,6 +130,7 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
             .width = vd.graphics_width,
             .height = vd.graphics_height,
         },
+        .buffer_support = .none,
     };
 }
 

@@ -107,6 +107,7 @@ pub fn init(
             write_x11_pixels,
             null,
             .allocate,
+            false,
         ),
         // .input = ashet.drivers.input.Host_SDL_Input.init(),
 
