@@ -3,6 +3,7 @@
 //!
 
 const std = @import("std");
+const builtin = @import("builtin");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.hosted);
 
@@ -110,6 +111,29 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
             driver.* = try ashet.drivers.block.Host_Disk_Image.init(file, mode);
 
             ashet.drivers.install(&driver.driver);
+        } else if (std.mem.eql(u8, component, "input")) {
+            const device_type = iter.next() orelse badKernelOption("input", "missing input device type", .{});
+
+            if (std.mem.eql(u8, device_type, "evdev")) {
+                if (builtin.os.tag == .linux) {
+                    // "input;evdev;/dev/input/eventX"
+                    const path = iter.next() orelse badKernelOption("input", "missing evdev device path", .{});
+                    if (path.len == 0) badKernelOption("input", "empty evdev device path", .{});
+                    if (iter.next()) |option| badKernelOption("input", "unexpected option \"{f}\"", .{
+                        std.zig.fmtString(option),
+                    });
+
+                    const driver = try global_memory.create(ashet.drivers.input.Host_EvDev_Input);
+                    driver.* = ashet.drivers.input.Host_EvDev_Input.init(path) catch |err| {
+                        badKernelOption("input", "cannot initialize evdev device '{s}': {s}", .{ path, @errorName(err) });
+                    };
+                    ashet.drivers.install(&driver.driver);
+                } else {
+                    badKernelOption("input", "evdev is only supported on Linux", .{});
+                }
+            } else {
+                badKernelOption("input", "bad input device type '{s}'", .{device_type});
+            }
         } else if (std.mem.eql(u8, component, "video")) {
             // "video:<type>:<width>:<height>:<args>"
             const device_type = iter.next() orelse badKernelOption("video", "missing video device type", .{});

@@ -72,6 +72,7 @@ pub const input = struct {
 
     pub const Host_VNC_Input = @import("input/Host_VNC_Input.zig");
     pub const Host_SDL_Input = @import("input/Host_SDL_Input.zig");
+    pub const Host_EvDev_Input = @import("input/Host_EvDev_Input.zig");
 
     pub const Generic_PS2_Device = @import("input/Generic_PS2_Device.zig");
     pub const PropIO_PS2_Device = @import("input/PropIO_PS2_Device.zig");

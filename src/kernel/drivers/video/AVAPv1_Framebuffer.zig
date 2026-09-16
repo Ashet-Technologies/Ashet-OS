@@ -32,6 +32,9 @@ pub fn init(
         .device = undefined,
     };
 
+    logger.debug("try opening AVAPv1 device at \"{f}\"", .{
+        std.zig.fmtString(file_name),
+    });
     fb.device = std.fs.cwd().openFile(file_name, .{ .mode = .read_write }) catch |err| switch (err) {
         error.FileNotFound,
         => return error.FileNotFound,
@@ -186,7 +189,7 @@ fn begin_write_pixels(
     stride: usize,
     mode: ashet.abi.video.PresentMode,
 ) !void {
-    // logger.debug("write buffer", .{});
+    logger.debug("write buffer({f}, {})", .{ rectangle, pixels.len });
     try write_rectangle(vd.device, rectangle, pixels, stride);
 
     // logger.debug("swap buffers", .{});
@@ -239,7 +242,7 @@ pub fn write_rectangle(port: std.fs.File, rectangle: ashet.abi.Rectangle, pixels
     const x = std.math.cast(u16, rectangle.x).?;
     const y = std.math.cast(u16, rectangle.y).?;
 
-    try write_header(port, length, .write_buffer);
+    try write_header(port, length, .write_rectangle);
 
     try write_all(port, &int_slice(u16, x));
     try write_all(port, &int_slice(u16, y));
@@ -290,6 +293,8 @@ pub fn swap_buffers(port: std.fs.File) !void {
 }
 
 fn write_command(port: std.fs.File, cmd: Command, buffer: []const u8) !void {
+    logger.debug("=> cmd({t}, {} bytes)", .{ cmd, buffer.len });
+
     try write_header(port, buffer.len, cmd);
     if (buffer.len > 0) {
         try write_all(port, buffer);
@@ -332,9 +337,13 @@ fn write_footer(port: std.fs.File, total_length: usize) !void {
 }
 
 fn read_header(port: std.fs.File, deadline: Deadline) !Header {
+    logger.debug("read cmd...", .{});
     var buffer: [4]u8 = undefined;
     try read_all(port, &buffer, deadline);
-    return @bitCast(std.mem.readInt(u32, &buffer, .little));
+    const header: Header = @bitCast(std.mem.readInt(u32, &buffer, .little));
+
+    logger.debug("<= rsp({t}, {s}, {} bytes)", .{ header.cmd, if (header.ack) "ack" else "nak", header.length });
+    return header;
 }
 
 fn read_footer(port: std.fs.File, response: Header, deadline: Deadline) !void {
@@ -353,7 +362,10 @@ fn read_discarding(port: std.fs.File, length: usize, deadline: Deadline, output:
         const len = try port.read(buffer[0..limit]);
 
         if (len > 0 and output == .log) {
-            logger.err("unexpected data from device: {x}", .{buffer[0..len]});
+            logger.err("unexpected data from device: {x} (\"{f}\")", .{
+                buffer[0..len],
+                std.zig.fmtString(buffer[0..len]),
+            });
         }
 
         count += len;

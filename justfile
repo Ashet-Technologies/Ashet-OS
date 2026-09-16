@@ -18,7 +18,9 @@ run-avap-simulation:
     zig-out/bin/debug-filter --elf kernel=./zig-out/x86-hosted-linux/kernel.elf \
         ./zig-out/x86-hosted-linux/kernel.elf \
         "drive;zig-out/x86-hosted-linux/disk.img" \
-        "video;avap-v1;640;400;/dev/serial/by-id/usb-Ashet_Technologies_Fast_Bridge_AT-FB-00001-if00-port0" 
+        "video;avap-v1;640;400;/dev/serial/by-id/usb-Ashet_Technologies_Fast_Bridge_AT-FB-00001-if00-port0"  \
+        "input;evdev;/dev/input/event24" \
+        "input;evdev;/dev/input/event7"
 
 run machine:
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} -Dmachine={{machine}} tools run
