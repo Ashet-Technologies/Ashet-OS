@@ -397,13 +397,14 @@ fn window_from_cursor(wm: *WindowManager, point: Point) ?WindowSurface {
     return null;
 }
 
-pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes.Theme) !void {
+pub const RenderMode = enum { incremental, full };
+pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes.Theme, mode: RenderMode) !void {
     {
         var iter = wm.minimized_iterator();
         while (iter.next()) |mini| {
             const window = mini.window;
 
-            if (!wm.damage_tracking.is_area_tainted(mini.bounds))
+            if (mode != .full and !wm.damage_tracking.is_area_tainted(mini.bounds))
                 continue;
 
             const style = if (window.flags.focus)
@@ -433,7 +434,7 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
             const client_rectangle = window.client_rectangle;
             const window_rectangle = window.screenRectangle();
 
-            if (!wm.damage_tracking.is_area_tainted(window_rectangle))
+            if (mode != .full and !wm.damage_tracking.is_area_tainted(window_rectangle))
                 continue;
 
             const style = if (window.flags.focus)
@@ -984,9 +985,16 @@ pub fn window_iterator(wm: *WindowManager, filter: WindowIterator.Filter, direct
 /// will move the window to the top, and unminimizes it.
 fn move_window_to_top(wm: *WindowManager, window: *Window) void {
     window.flags.minimized = false;
+
+    if (wm.focused_window != null and wm.focused_window != window) {
+        wm.damage_tracking.invalidate_region(wm.focused_window.?.screenRectangle());
+    }
+
     wm.active_windows.remove(&window.node);
     wm.active_windows.append(&window.node);
     wm.focused_window = window;
+
+    wm.damage_tracking.invalidate_region(window.screenRectangle());
 }
 
 fn top_window(wm: *WindowManager) ?*Window {

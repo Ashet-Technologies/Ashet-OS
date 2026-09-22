@@ -48,23 +48,6 @@ pub fn main() !void {
         fb_size.height,
     });
 
-    const vmem = try video_output.get_video_memory();
-    std.log.info("video memory: base=0x{X:0>8}, stride={}, width={}, height={}", .{
-        @intFromPtr(vmem.base),
-        vmem.stride,
-        vmem.width,
-        vmem.height,
-    });
-
-    // Load nice pattern:
-    var scanline: [*]abi.Color = vmem.base;
-    for (0..vmem.height) |y| {
-        for (scanline[0..vmem.width], 0..) |*pixel, x| {
-            pixel.* = Color.from_u8(@as(u4, @truncate(x ^ y)));
-        }
-        scanline += vmem.stride;
-    }
-
     // Let the rest of the system continue to boot:
     ashet.process.thread.yield();
 
@@ -161,6 +144,9 @@ pub fn main() !void {
 
     std.log.info("classic desktop ready!", .{});
 
+    var incremental_rendering = true;
+    var damage_rendering = false;
+
     while (true) {
         const completed = try ashet.overlapped.await_events(.{
             .input = &wait_input_event.arc,
@@ -175,51 +161,78 @@ pub fn main() !void {
             if (damage_tracking.is_tainted()) {
                 defer damage_tracking.clear();
 
-                // try render_queue.clear(current_theme.desktop_color);
+                if (incremental_rendering) {
 
-                if (maybe_wallpaper) |wallpaper| {
-                    for (damage_tracking.tainted_regions()) |rect| {
-                        try render_queue.blit_partial_framebuffer(rect, rect.position(), wallpaper);
+                    // try render_queue.clear(current_theme.desktop_color);
+
+                    if (maybe_wallpaper) |wallpaper| {
+                        for (damage_tracking.tainted_regions()) |rect| {
+                            try render_queue.blit_partial_framebuffer(rect, rect.position(), wallpaper);
+                        }
+                    } else {
+                        for (damage_tracking.tainted_regions()) |rect| {
+                            try render_queue.fill_rect(rect, current_theme.desktop_color);
+                        }
                     }
-                } else {
-                    for (damage_tracking.tainted_regions()) |rect| {
-                        try render_queue.fill_rect(rect, current_theme.desktop_color);
-                    }
-                }
+                    for (damage_tracking.tainted_regions()) |clip_rect| {
+                        try render_queue.set_clip_rect(clip_rect);
 
-                // Draw desktop:
-                {
-                    var iter = apps.iterate(fb_size);
-
-                    icon_iter: while (iter.next()) |desktop_icon| {
-                        const text_size = try ashet.graphics.measure_text_size(default_font, desktop_icon.app.get_display_name());
-
-                        const text_rect: Rectangle = .new(desktop_icon.bounds.corner(.bottom_left).move_by(0, 2), text_size);
-                        const icon_rect = desktop_icon.bounds.grow(2);
-
-                        // if (!damage_tracking.is_area_tainted(icon_rect.enclosingRegion(text_rect)))
-                        //     continue;
-
-                        var icon_obscured = false;
-                        var text_obscured = false;
+                        // Draw desktop:
                         {
-                            var win_iter = window_manager.window_iterator(WindowManager.WindowIterator.is_regular, .bottom_to_top);
-                            while (win_iter.next()) |window| {
-                                const window_rectangle = window.screenRectangle();
+                            var iter = apps.iterate(fb_size);
 
-                                if (!icon_obscured) {
-                                    icon_obscured = window_rectangle.containsRectangle(icon_rect);
-                                }
-                                if (!text_obscured) {
-                                    text_obscured = window_rectangle.containsRectangle(text_rect);
+                            while (iter.next()) |desktop_icon| {
+                                const text_size = try ashet.graphics.measure_text_size(default_font, desktop_icon.app.get_display_name());
+
+                                const text_rect: Rectangle = .new(desktop_icon.bounds.corner(.bottom_left).move_by(0, 2), text_size);
+                                const icon_rect = desktop_icon.bounds.grow(2);
+
+                                try render_queue.blit_framebuffer(
+                                    desktop_icon.bounds.corner(.top_left),
+                                    desktop_icon.icon,
+                                );
+
+                                if (selected_app_icon == desktop_icon.index) {
+                                    try render_queue.draw_rect(
+                                        icon_rect,
+                                        Color.red,
+                                    );
+                                } else {
+                                    try render_queue.draw_rect(
+                                        icon_rect,
+                                        Color.black,
+                                    );
                                 }
 
-                                if (text_obscured and icon_obscured)
-                                    continue :icon_iter;
+                                try render_queue.draw_text(
+                                    text_rect.position(),
+                                    default_font,
+                                    Color.black,
+                                    desktop_icon.app.get_display_name(),
+                                );
                             }
                         }
 
-                        if (!icon_obscured and damage_tracking.is_area_tainted(icon_rect)) {
+                        try window_manager.render(&render_queue, current_theme, .incremental);
+                    }
+                    try render_queue.set_clip_rect(.everything);
+                } else {
+                    if (maybe_wallpaper) |wallpaper| {
+                        try render_queue.blit_framebuffer(.zero, wallpaper);
+                    } else {
+                        try render_queue.clear(current_theme.desktop_color);
+                    }
+
+                    // Draw desktop:
+                    {
+                        var iter = apps.iterate(fb_size);
+
+                        while (iter.next()) |desktop_icon| {
+                            const text_size = try ashet.graphics.measure_text_size(default_font, desktop_icon.app.get_display_name());
+
+                            const text_rect: Rectangle = .new(desktop_icon.bounds.corner(.bottom_left).move_by(0, 2), text_size);
+                            const icon_rect = desktop_icon.bounds.grow(2);
+
                             try render_queue.blit_framebuffer(
                                 desktop_icon.bounds.corner(.top_left),
                                 desktop_icon.icon,
@@ -236,9 +249,7 @@ pub fn main() !void {
                                     Color.black,
                                 );
                             }
-                        }
 
-                        if (!text_obscured and damage_tracking.is_area_tainted(text_rect)) {
                             try render_queue.draw_text(
                                 text_rect.position(),
                                 default_font,
@@ -247,11 +258,17 @@ pub fn main() !void {
                             );
                         }
                     }
+
+                    try window_manager.render(&render_queue, current_theme, .full);
                 }
 
-                try window_manager.render(&render_queue, current_theme);
-
                 try Cursor.paint(&render_queue, cursor.position, Color.black);
+
+                if (damage_rendering) {
+                    for (damage_tracking.tainted_regions()) |rect| {
+                        try render_queue.draw_rect(rect, .red);
+                    }
+                }
 
                 try render_queue.submit(video_fb, .{});
             }
@@ -283,6 +300,21 @@ pub fn main() !void {
                     },
                     .mouse_rel_motion => |motion| {
                         cursor.move(motion.dx, motion.dy);
+                    },
+
+                    .key_press => |key| {
+                        if (key.modifiers.shift and key.usage == .f10) {
+                            incremental_rendering = !incremental_rendering;
+                            damage_tracking.invalidate_screen();
+
+                            logger.info("render mode now {s}", .{if (incremental_rendering) "incremental" else "full"});
+                        }
+                        if (key.modifiers.shift and key.usage == .f11) {
+                            damage_rendering = !damage_rendering;
+                            damage_tracking.invalidate_screen();
+
+                            logger.info("damage tracking is now {s}", .{if (damage_rendering) "visible" else "hidden"});
+                        }
                     },
 
                     else => {},

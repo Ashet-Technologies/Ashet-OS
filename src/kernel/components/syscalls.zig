@@ -373,40 +373,39 @@ pub const syscalls = struct {
     };
 
     pub const video = struct {
-        pub fn enumerate(ids: ?[]abi.VideoOutputID) usize {
+        pub fn enumerate(ids: ?[]abi.video.VideoOutputID) usize {
             return ashet.video.enumerate(ids);
         }
 
-        pub fn acquire(output: abi.VideoOutputID) error{ SystemResources, NotFound, NotAvailable }!abi.VideoOutput {
+        pub fn acquire(output_id: abi.video.VideoOutputID) error{ OutputInUse, InvalidId, SystemResources }!abi.video.VideoOutput {
             const proc = get_current_process();
 
-            const video_output = try ashet.video.acquire_output(output);
+            const video_output = try ashet.video.acquire_output(output_id);
 
             const handle = try ashet.resources.add_to_process(proc, &video_output.system_resource);
 
-            return handle.unsafe_cast(.video_output);
+            return handle.unsafe_cast(.video_video_output);
         }
 
-        pub fn get_resolution(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.Size {
+        pub fn get_resolution(output_handle: abi.video.VideoOutput) error{InvalidHandle}!abi.Size {
             _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
             return output.get_resolution();
         }
 
-        pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.VideoMemory {
-            _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
-            return output.get_video_memory();
+        pub fn create_buffer_mapping(output_handle: abi.video.VideoOutput, requested_kind: abi.video.BufferKind) error{ InvalidHandle, Unsupported, AlreadyExists, SystemResources }!abi.video.BufferMapping {
+            const proc, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
+
+            const mapping = try output.get_or_create_buffer_mapping(requested_kind, .exclusive);
+            errdefer mapping.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &mapping.system_resource);
+
+            return handle.unsafe_cast(.video_buffer_mapping);
         }
 
-        pub fn get_palette(output: abi.VideoOutput, palette: *[abi.palette_size]abi.Color) error{InvalidHandle}!void {
-            _ = output;
-            _ = palette;
-            not_implemented_yet(@src());
-        }
-
-        pub fn set_palette(output: abi.VideoOutput, palette: *const [abi.palette_size]abi.Color) error{ InvalidHandle, Unsupported } {
-            _ = output;
-            _ = palette;
-            not_implemented_yet(@src());
+        pub fn get_video_memory(buffer_handle: abi.video.BufferMapping) error{InvalidHandle}!abi.video.VideoMemory {
+            _, const mapping = try resolve_typed_resource(ashet.video.BufferMapping, buffer_handle.as_resource());
+            return mapping.get_video_memory();
         }
     };
 
@@ -493,7 +492,7 @@ pub const syscalls = struct {
 
         /// Creates a new framebuffer based off a video output. Can be used to output pixels
         /// to the screen.
-        pub fn create_video_framebuffer(video_output: abi.VideoOutput) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+        pub fn create_video_framebuffer(video_output: abi.video.VideoOutput) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
             const proc, const output = try resolve_typed_resource(ashet.video.Output, video_output.as_resource());
 
             const fb = try ashet.graphics.Framebuffer.create_video_output(output);
@@ -542,7 +541,7 @@ pub const syscalls = struct {
             return fb.get_size();
         }
 
-        pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.VideoMemory {
+        pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.video.VideoMemory {
             _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
             return switch (fb.type) {
                 .memory => |mem| .{
@@ -551,7 +550,6 @@ pub const syscalls = struct {
                     .stride = mem.stride,
                     .base = mem.pixels,
                 },
-                .video => |vdev| vdev.memory, // TODO: Temporary hack until a true "create_buffer_mapping" syscall is available
                 else => error.Unsupported,
             };
         }
@@ -561,19 +559,9 @@ pub const syscalls = struct {
         pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, region: abi.Rectangle) error{InvalidHandle}!void {
             _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
 
-            switch (fb.type) {
-                .video => |vdev| vdev.output.flush(), // TODO: Decide if asynchronous or synchronous flush
-
-                .memory => {}, // always ok
-
-                .widget => |widget| widget.window.invalidate_region(.{
-                    .x = widget.bounds.x +| region.x,
-                    .y = widget.bounds.y +| region.y,
-                    .width = region.width,
-                    .height = region.height,
-                }),
-                .window => |window| window.invalidate_region(region),
-            }
+            _ = fb;
+            _ = region;
+            not_implemented_yet(@src()); // TODO(gpu_support)
         }
 
         // Drawing:

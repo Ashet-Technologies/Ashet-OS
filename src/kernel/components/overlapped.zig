@@ -142,6 +142,8 @@ const async_call_handlers = std.EnumArray(ashet.abi.overlapped.ARC.Type, AsyncHa
     .draw_render = AsyncHandler.wrap(ashet.graphics.render_async),
 
     .video_wait_for_v_blank = AsyncHandler.wrap(ashet.video.wait_for_vblank_async),
+    .video_write_pixels = AsyncHandler.wrap(ashet.video.write_pixels_async),
+    .video_present = AsyncHandler.wrap(ashet.video.present_async),
 
     .io_serial_configure = AsyncHandler.todo("io_serial_configure"),
     .io_serial_control = AsyncHandler.todo("io_serial_control"),

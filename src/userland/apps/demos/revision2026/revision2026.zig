@@ -101,10 +101,10 @@ pub fn main() !void {
     const video_output = try ashet.video.acquire(.primary);
     defer video_output.release();
 
-    const video_fb = try ashet.graphics.create_video_framebuffer(video_output);
-    defer video_fb.release();
+    const mapping = try video_output.create_mapping(.back_buffer);
+    defer mapping.release();
 
-    const vmem = try ashet.graphics.get_framebuffer_memory(video_fb);
+    const vmem = try mapping.get_video_memory();
 
     var loop: u32 = 0;
     var time: f32 = 0.0;
@@ -173,10 +173,11 @@ pub fn main() !void {
             }
         }
 
-        try ashet.abi.draw.invalidate_framebuffer(video_fb, .everything);
-
         ashet.process.thread.yield();
 
+        try mapping.present(.vblank);
+
+        // TODO(gpu_support): Remove this call once properly implemented:
         _ = try ashet.overlapped.performOne(ashet.video.WaitForVBlank, .{
             .output = @ptrCast(video_output),
         });
