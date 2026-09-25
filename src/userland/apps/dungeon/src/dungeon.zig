@@ -482,7 +482,7 @@ const Raycaster = struct {
             else => null,
         };
 
-        const use_textures = (ashet.abi.get_demo_mode() != 0);
+        const use_textures = (ashet.abi.get_demo_mode() == 0);
 
         var scanline: [*]Color = &clonebuffer;
         for (0..height) |y| {
