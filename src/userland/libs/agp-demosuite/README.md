@@ -6,23 +6,26 @@ Host-side AGP rendering with `agp-swrast`. The package depends on `ashet-abi`,
 ```zig
 const suite = @import("agp-demosuite");
 
-var context = try suite.create_context(allocator, 640, 480);
+var context = suite.create_context(allocator);
 defer context.deinit();
+var framebuffer = try context.create_framebuffer(640, 480);
+defer framebuffer.deinit();
 
 const font = try context.load_font(@embedFile("my.font"), .{ .size = 12 });
 const size = try context.measure_text_size(font, "Hello");
-const image = try suite.bitmap_from_abm(@embedFile("my.abm"));
+const image = try context.load_bitmap(@embedFile("my.abm"));
 
-const enc = context.encoder();
+const enc = framebuffer.encoder();
 try enc.clear(.black);
 try enc.draw_text(10, 10, font, .white, "Hello");
-try enc.blit_bitmap(10, 20 + @as(i16, @intCast(size.height)), &image);
+try enc.blit_bitmap(10, 20 + @as(i16, @intCast(size.height)), image);
 
-const commands = context.get_agp_stream();
-const pixels = try context.get_framebuffer();
-try context.write_to(std.fs.cwd(), "output.gif");
+const commands = framebuffer.get_agp_stream();
+const pixels = try framebuffer.render();
+try framebuffer.write_to(std.fs.cwd(), "output.gif");
 ```
 
-The command stream remains valid until the next encoder write. The framebuffer
-is owned by the context and is refreshed on each render. Font and ABM byte
-slices must remain alive while the context renders their commands.
+The command stream remains valid until the next encoder write. Each framebuffer
+owns its stream and pixels, which are refreshed on each render. The context
+copies font and ABM pixel data into an arena; deinitialize framebuffers before
+the context.
