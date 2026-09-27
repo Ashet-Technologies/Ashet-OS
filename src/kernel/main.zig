@@ -103,6 +103,7 @@ pub const log_levels = struct {
     pub var nested_i2c_device: LogLevel = .debug;
 
     pub var generic_ps2: LogLevel = .info;
+    pub var ashet_fb: LogLevel = .info;
 
     pub var ds1306: LogLevel = .info;
 

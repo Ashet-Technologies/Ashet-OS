@@ -1,0 +1,11 @@
+.{
+    .name = .agp_demosuite,
+    .fingerprint = 0x6fbfb20e93e348b2,
+    .version = "0.1.0",
+    .dependencies = .{
+        .abi = .{ .path = "../../../abi" },
+        .agp = .{ .path = "../agp" },
+        .agp_swrast = .{ .path = "../agp-swrast" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}

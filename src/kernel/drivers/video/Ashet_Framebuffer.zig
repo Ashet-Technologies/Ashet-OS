@@ -16,7 +16,7 @@ driver: Driver = .{
     .class = .{
         .video = .{
             .get_properties_fn = get_properties,
-            .flush_fn = flush,
+            .begin_write_pixels_fn = begin_write_pixels,
         },
     },
 },
@@ -57,10 +57,40 @@ fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     };
 }
 
-fn flush(driver: *Driver) void {
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
     const vd = driver.resolve(Ashet_Framebuffer, "driver");
 
-    vd.control.flush = 1;
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = vd.framebuffer,
+                .width = width,
+                .height = height,
+                .stride = width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
 
-    // TODO: wait for vblank?
+    _ = mode;
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
 }

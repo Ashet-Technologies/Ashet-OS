@@ -496,7 +496,8 @@ pub fn InstanceType(comptime type_enum: TypeId) type {
         .file => ashet.filesystem.File,
         .directory => ashet.filesystem.Directory,
 
-        .video_output => ashet.video.Output,
+        .video_video_output => ashet.video.Output,
+        .video_buffer_mapping => ashet.video.BufferMapping,
         .framebuffer => ashet.graphics.Framebuffer,
         .font => ashet.graphics.Font,
 
