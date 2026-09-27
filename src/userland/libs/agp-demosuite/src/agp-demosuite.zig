@@ -66,6 +66,18 @@ pub const Context = struct {
         const self: *Context = @ptrCast(@alignCast(ctx));
         return self.find_font(handle);
     }
+
+    fn resolve_framebuffer(ctx: *anyopaque, handle: agp.Framebuffer) ?swrast.Image {
+        const self: *Context = @ptrCast(@alignCast(ctx));
+        const framebuffer: *Framebuffer = @ptrCast(@alignCast(handle));
+        if (framebuffer.context != self) return null;
+        return .{
+            .pixels = framebuffer.pixels.ptr,
+            .width = framebuffer.width,
+            .height = framebuffer.height,
+            .stride = framebuffer.width,
+        };
+    }
 };
 
 pub const Framebuffer = struct {
@@ -79,6 +91,11 @@ pub const Framebuffer = struct {
         self.context.allocator.free(self.pixels);
         self.stream.deinit();
         self.* = undefined;
+    }
+
+    /// The handle is valid until this framebuffer moves or is deinitialized.
+    pub fn handle(self: *Framebuffer) agp.Framebuffer {
+        return @ptrCast(self);
     }
 
     pub fn encoder(self: *Framebuffer) agp.Encoder {
@@ -103,7 +120,7 @@ pub const Framebuffer = struct {
         const resolver: swrast.Rasterizer.Resolver = .{
             .ctx = self.context,
             .resolve_font_fn = Context.resolve_font,
-            .resolve_framebuffer_fn = unsupported_framebuffer,
+            .resolve_framebuffer_fn = Context.resolve_framebuffer,
         };
         while (try decoder.next()) |cmd| rasterizer.execute(cmd, resolver);
         return self.pixels;
@@ -111,10 +128,6 @@ pub const Framebuffer = struct {
 
     pub fn write_to(self: *Framebuffer, dir: std.fs.Dir, path: []const u8) !void {
         try gif.write_to_file_path(dir, path, self.width, self.height, try self.render());
-    }
-
-    fn unsupported_framebuffer(_: *anyopaque, _: agp.Framebuffer) ?swrast.Image {
-        return null;
     }
 };
 
@@ -233,6 +246,54 @@ test "framebuffers share context resources but keep independent streams and pixe
     try a.set_pixel(0, 0, .red);
     try std.testing.expectEqual(abi.Color.red, (try first.render())[0]);
     try std.testing.expectEqual(abi.Color.blue, (try second.render())[0]);
+}
+
+test "framebuffer handles follow the value and resolve within their context" {
+    var context = create_context(std.testing.allocator);
+    defer context.deinit();
+    var source = try context.create_framebuffer(2, 2);
+    var source_alive = true;
+    defer if (source_alive) source.deinit();
+    var target = try context.create_framebuffer(4, 3);
+    defer target.deinit();
+
+    const source_enc = source.encoder();
+    try source_enc.clear(.black);
+    try source_enc.set_pixel(0, 0, .red);
+    try source_enc.set_pixel(1, 0, .blue);
+    try source_enc.set_pixel(0, 1, .green);
+    try source_enc.set_pixel(1, 1, .white);
+    const old_handle = source.handle();
+    var moved = source;
+    source = undefined;
+    source_alive = false;
+    defer moved.deinit();
+    _ = try moved.render();
+
+    const handle = moved.handle();
+    try std.testing.expectEqual(@intFromPtr(&moved), @intFromPtr(handle));
+    try std.testing.expect(@intFromPtr(old_handle) != @intFromPtr(handle));
+    try std.testing.expectEqual(handle, moved.handle());
+    const target_enc = target.encoder();
+    try target_enc.clear(.black);
+    try target_enc.blit_framebuffer(1, 0, handle);
+    try target_enc.blit_partial_framebuffer(0, 2, 1, 1, 1, 1, handle);
+
+    var other = create_context(std.testing.allocator);
+    defer other.deinit();
+    var foreign = try other.create_framebuffer(1, 1);
+    defer foreign.deinit();
+    try foreign.encoder().clear(.magenta);
+    _ = try foreign.render();
+    try target_enc.blit_framebuffer(3, 0, foreign.handle());
+
+    const pixels = try target.render();
+    try std.testing.expectEqual(abi.Color.red, pixels[1]);
+    try std.testing.expectEqual(abi.Color.blue, pixels[2]);
+    try std.testing.expectEqual(abi.Color.green, pixels[1 + 4]);
+    try std.testing.expectEqual(abi.Color.white, pixels[2 + 4]);
+    try std.testing.expectEqual(abi.Color.white, pixels[2 * 4]);
+    try std.testing.expectEqual(abi.Color.black, pixels[3]);
 }
 
 test "ABM images validate headers and preserve transparency" {
