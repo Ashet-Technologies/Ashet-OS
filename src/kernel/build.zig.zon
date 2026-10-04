@@ -5,8 +5,8 @@
     .paths = .{"."},
     .dependencies = .{
         .translate_c = .{
-            .url = "git+https://codeberg.org/ziglang/translate-c.git#d67f0a5821b0c5ad16f60c425ad2af3499e7995f",
-            .hash = "translate_c-0.0.0-Q_BUWho9BwAx1Nyc_gDzXBjXZg62qETbgze15f50x29Y",
+            .url = "git+https://codeberg.org/ziglang/translate-c?ref=zig-0.17.x#02ff0c523fb92a38939b04d0145c4a9602a74d56",
+            .hash = "translate_c-2.0.0-Q_BUWltOBwBYABF84EUL208pIFeUIwbBs29FmVBaafN5",
         },
         // Internal dependencies:
         .@"ashet-abi" = .{
@@ -62,8 +62,8 @@
 
         // External dependencieS:
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#fae95c8350c8791752392cc24efa17b5b8b9275b",
-            .hash = "args-0.0.0-CiLiqrjgAAAJ1dlySoNHUhYpX1btAdDU2Rr4Ls61VTbO",
+            .url = "git+https://github.com/ikskuh/zig-args#ad3c89ecdb2979b8b5d52b43b78e79bf51293235",
+            .hash = "args-0.0.0-CiLiqmHiAABlN6icC9sZHdp8HVplOXDxuUNz2VUY_K2X",
         },
 
         .network = .{
@@ -75,13 +75,12 @@
             .hash = "zvnc-0.0.0-imcThRuRAAAuAawQaXqZ_bPaTBIqGQNkrwy3m1JC-1b3",
         },
         .@"foundation-libc" = .{
-            .path = "../../zig-pkg/foundation-libc",
-            // .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
-            // .hash = "foundationlibc-0.0.0-LAEuPBSUAAALxr9rsAHYDP21d2KTAd_3tCP_5vO4ap16",
+            .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.17.12/foundationlibc.tar.gz",
+            .hash = "foundationlibc-0.0.0-LAEuPAqkAAAB0mq-cnxjoiCj3-LqiNt8eYDwME7HVy5S",
         },
         .zfat = .{
-            .url = "git+https://github.com/ZigEmbeddedGroup/zfat.git#0571b0d8c8cc4fcb037a1d5e7ea5666cb2f83ddf",
-            .hash = "zfat-0.15.0-SNNK9RRqcgCLQ5mjXghbB6mokzcHORsGnY7GtbfOt2k3",
+            .url = "git+https://github.com/der-teufel-programming/zfat?ref=0.17.x#3d1ab96eb184862cd0800425fb25a4d1a37da7f8",
+            .hash = "zfat-0.0.1-SNNK9XdqcgD2xmhOxReIQobM1lff3FDkAtvEOPoCG0tt",
         },
         .turtlefont = .{
             .url = "git+https://github.com/ikskuh/turtlefont.git?#ff599916181027b20dab62d4ccb6579b8761bdaf",
@@ -119,8 +118,8 @@
         },
 
         .regz = .{
-            .url = "https://github.com/Ashet-Technologies/deps/raw/5ee40b64012181eb25e6e85c254e59d8929d1575/regz-0.15.2.tar.gz",
-            .hash = "mz_tools_regz-0.0.0-lIs8m2hkBgCKgV9mrHi_O8AeDy76rWTvT9rwMrcgWe_j",
+            .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.17.12/mz_tools_regz.tar.gz",
+            .hash = "mz_tools_regz-0.0.0-lIs8m2zbBgAKIi_NwBwgumGac224yhp_ObOm_9BoTyIb",
         },
     },
 }

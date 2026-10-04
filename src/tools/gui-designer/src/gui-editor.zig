@@ -281,7 +281,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     try zopengl.loadCoreProfile(glfw.getProcAddress, gl_major, gl_minor);
 
-    zgui.init(io, allocator);
+    zgui.init(allocator);
     defer zgui.deinit();
 
     defer editor.deinit();

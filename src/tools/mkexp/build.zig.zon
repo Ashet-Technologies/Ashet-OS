@@ -9,7 +9,7 @@
     },
     .dependencies = .{
         .args = .{
-            .url = "git+https://github.com/der-teufel-programming/zig-args.git#4f4e484dc0fd5d26a96aee655972b32138f5f85d",
+            .url = "git+https://github.com/ikskuh/zig-args#ad3c89ecdb2979b8b5d52b43b78e79bf51293235",
             .hash = "args-0.0.0-CiLiqmHiAABlN6icC9sZHdp8HVplOXDxuUNz2VUY_K2X",
         },
         .expcard = .{
