@@ -156,28 +156,28 @@ fn load_app(file: ashet.fs.File, file_name: [ashet.abi.max_file_name_len]u8) !vo
         if (try file.read(0, &header_chunk) != 512)
             return error.InvalidFile;
 
-        var fbs = std.io.fixedBufferStream(&header_chunk);
+        var fbs: std.Io.Reader = .fixed(&header_chunk);
 
-        const reader = fbs.reader();
+        const reader = &fbs;
         var magic: [4]u8 = undefined;
-        try reader.readNoEof(&magic);
+        try reader.readSliceAll(&magic);
         if (!std.mem.eql(u8, &magic, "ASHX"))
             return error.InvalidFile;
 
-        const version = try reader.readInt(u8, .little);
+        const version = try reader.takeInt(u8, .little);
         if (version != 0)
             return error.InvalidVersion;
-        const file_type = try reader.readInt(u8, .little);
+        const file_type = try reader.takeInt(u8, .little);
         if (file_type != 0)
             return error.InvalidFileType;
 
-        const platform = try reader.readInt(u8, .little);
+        const platform = try reader.takeInt(u8, .little);
         _ = platform;
 
-        try reader.skipBytes(1, .{});
+        try reader.discardAll(1);
 
-        const icon_byte_size = try reader.readInt(u32, .little);
-        const icon_offset = try reader.readInt(u32, .little);
+        const icon_byte_size = try reader.takeInt(u32, .little);
+        const icon_offset = try reader.takeInt(u32, .little);
 
         break :blk .{ icon_byte_size, icon_offset };
     };

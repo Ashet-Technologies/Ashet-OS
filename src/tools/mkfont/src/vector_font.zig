@@ -38,8 +38,8 @@ pub fn validate(font: schema.TurtleFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file_writer: *std.fs.File.Writer,
-    root_dir: std.fs.Dir,
+    file_writer: *std.Io.File.Writer,
+    root_dir: std.Io.Dir,
     font: *schema.TurtleFontFile,
 ) !void {
     _ = allocator;
@@ -47,7 +47,7 @@ pub fn generate(
 
     // Glyphs must be sorted in the font:
     font.glyphs.sort(struct {
-        glyphs: *std.AutoArrayHashMap(u21, schema.TurtleFontFile.Glyph),
+        glyphs: *std.array_hash_map.Auto(u21, schema.TurtleFontFile.Glyph),
         pub fn lessThan(self: @This(), lhs_index: usize, rhs_index: usize) bool {
             return self.glyphs.keys()[lhs_index] < self.glyphs.keys()[rhs_index];
         }

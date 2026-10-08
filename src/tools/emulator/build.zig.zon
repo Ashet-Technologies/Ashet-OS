@@ -5,20 +5,20 @@
     .fingerprint = 0x9c696d3fa0d72f0c,
     .dependencies = .{
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
-            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+            .url = "git+https://github.com/ikskuh/zig-args#ad3c89ecdb2979b8b5d52b43b78e79bf51293235",
+            .hash = "args-0.0.0-CiLiqmHiAABlN6icC9sZHdp8HVplOXDxuUNz2VUY_K2X",
         },
         .zgui = .{
-            .url = "git+https://github.com/Ashet-Technologies/zgui.git#ab250513f2cd3b18aafea5afc054e7ea9172ec0b",
-            .hash = "zgui-0.6.0-dev--L6sZKlMbgBdMoT_4xL_Drs3U9qJyepYzJabVadI6F1v",
+            .url = "git+https://github.com/Ashet-Technologies/zgui?ref=zig-0.17-dev#af1bcf8e20ee31985b7d4e54133842a3f4db8abf",
+            .hash = "zgui-0.6.0-dev--L6sZGJIbgBQVTX6PpXEVpLi7hDoix9PAgOVtPduq0zY",
         },
         .zglfw = .{
-            .url = "https://github.com/zig-gamedev/zglfw/archive/0dd29d8073487c9fe1e45e6b729b3aac271d5a71.tar.gz",
-            .hash = "zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC",
+            .url = "git+https://github.com/Ashet-Technologies/zglfw?ref=0.17.x#9546a4d204967014edd4fad567540d541765ae44",
+            .hash = "zglfw-0.10.0-dev-zgVDNBe7IQCmutfxM4Pr_mOxiAcxErexVY-qvF52rMCB",
         },
         .zopengl = .{
-            .url = "https://github.com/zig-gamedev/zopengl/archive/db9d615c742086b39954eef064f957e92dafc7e2.tar.gz",
-            .hash = "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
+            .url = "git+https://github.com/zig-gamedev/zopengl#eda87248c6fa190fbb5fe78fc84c5e28d6b2032e",
+            .hash = "zopengl-0.6.0-dev-5-tnz8mnDgCHR72YtUpLBYW_u4JgZ0Ub-UFX-M0zRSG1",
         },
         .system_sdk = .{
             .url = "https://github.com/zig-gamedev/system_sdk/archive/777e76828f05d5d223df47a4c0de95ae4efde884.tar.gz",

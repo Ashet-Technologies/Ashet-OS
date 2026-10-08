@@ -76,7 +76,7 @@ pub const Desktop = struct {
         };
         errdefer desktop.associated_memory.deinit();
 
-        desktop.name = desktop.associated_memory.allocator().dupeZ(u8, name) catch return error.SystemResources;
+        desktop.name = desktop.associated_memory.allocator().dupeSentinel(u8, name, 0) catch return error.SystemResources;
 
         all_desktops.append(&desktop.global_link_node);
 
@@ -268,7 +268,7 @@ pub const Window = struct {
         window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"64", stride * window.max_size.height) catch return error.SystemResources;
         @memset(window.pixels, .from_hsv(.purple, 1, 1)); // TODO: Set obnoxious color here to force a default or allow passing a default via window parameters
 
-        window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
+        window.title = window.associated_memory.allocator().dupeSentinel(u8, title, 0) catch return error.SystemResources;
 
         desktop.windows.append(&window.desktop);
         errdefer desktop.windows.remove(&window.desktop);
@@ -613,7 +613,7 @@ pub const Window = struct {
             const intval = @intFromEnum(old.event_type);
 
             logger.warn("window event queue is full, dropping event {!} ({})", .{
-                std.meta.intToEnum(ashet.abi.WindowEvent.Type, intval),
+                (std.enums.fromInt(ashet.abi.WindowEvent.Type, intval) orelse error.InvalidEnumTag),
                 intval,
             });
         }

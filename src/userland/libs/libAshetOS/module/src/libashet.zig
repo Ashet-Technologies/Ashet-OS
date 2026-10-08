@@ -51,7 +51,7 @@ fn _start() callconv(.c) u32 {
 
 fn log_app_message(
     comptime message_level: std.log.Level,
-    comptime scope: @Type(.enum_literal),
+    comptime scope: @TypeOf(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {
@@ -120,9 +120,9 @@ pub const core = struct {
             write_panic_text(std.fmt.bufPrint(&buf, "return address: {s}:0x{X:0>8}\n", .{ proc_name, return_address - base_address }) catch "return address: ???\n");
         }
 
-        if (@import("builtin").mode == .Debug) {
+        if (@import("builtin").mode == .debug) {
             write_panic_text("stack trace:\n");
-            var iter = std.debug.StackIterator.init(null, null);
+            var iter = @import("ashet-std").StackIterator.init(null, null);
             while (iter.next()) |item| {
                 var buf: [64]u8 = undefined;
                 write_panic_text(std.fmt.bufPrint(&buf, "- {s}:0x{X:0>8}\n", .{ proc_name, item - base_address }) catch "- ???\n");
@@ -148,7 +148,7 @@ pub const core = struct {
             }
         }
 
-        if (@import("builtin").mode == .Debug) {
+        if (@import("builtin").mode == .debug) {
             write_panic_text("breakpoint.\n");
             process.debug.breakpoint();
         }
@@ -276,7 +276,34 @@ pub const process = struct {
 
     pub const debug = struct {
         pub const WriteError = error{};
-        pub const LogWriter = std.Io.GenericWriter(abi.LogLevel, WriteError, _write_log);
+        pub const LogWriter = struct {
+            context: abi.LogLevel,
+
+            pub fn write(self: LogWriter, bytes: []const u8) WriteError!usize {
+                return _write_log(self.context, bytes);
+            }
+            pub fn writeAll(self: LogWriter, bytes: []const u8) WriteError!void {
+                _ = try self.write(bytes);
+            }
+            pub fn print(self: LogWriter, comptime format: []const u8, args: anytype) WriteError!void {
+                var sink: Sink = .{ .level = self.context };
+                sink.interface.print(format, args) catch unreachable;
+            }
+            const Sink = struct {
+                level: abi.LogLevel,
+                interface: std.Io.Writer = .{ .buffer = &.{}, .vtable = &.{ .drain = drain } },
+                fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+                    const sink: *Sink = @fieldParentPtr("interface", w);
+                    var written: usize = 0;
+                    for (data[0 .. data.len - 1]) |bytes| {
+                        write_log(sink.level, bytes);
+                        written += bytes.len;
+                    }
+                    for (0..splat) |_| write_log(sink.level, data[data.len - 1]);
+                    return written + data[data.len - 1].len * splat;
+                }
+            };
+        };
 
         pub fn log_writer(log_level: abi.LogLevel) LogWriter {
             return .{ .context = log_level };
@@ -325,23 +352,7 @@ pub const overlapped = struct {
     fn Awaited_Events_Enum(comptime Events: type) type {
         const info = @typeInfo(Events).@"struct";
 
-        var items: [info.fields.len]std.builtin.Type.EnumField = undefined;
-        for (&items, info.fields, 0..) |*enum_field, struct_field, i| {
-            enum_field.* = .{
-                .name = struct_field.name,
-                .value = i,
-            };
-        }
-        const EventEnum = @Type(.{
-            .@"enum" = .{
-                .tag_type = u32,
-                .fields = &items,
-                .decls = &.{},
-                .is_exhaustive = true,
-            },
-        });
-
-        return EventEnum;
+        return @Enum(u32, .exhaustive, info.field_names, &std.simd.iota(u32, info.field_names.len));
     }
 
     fn Awaited_Events_Set(comptime Events: type) type {
@@ -355,12 +366,12 @@ pub const overlapped = struct {
         const Events = @TypeOf(events);
         const info = @typeInfo(Events).@"struct";
 
-        if (info.fields.len == 0)
+        if (info.field_names.len == 0)
             @compileError("Must await at least one event!");
 
-        var completed: [info.fields.len]?*ARC = undefined;
-        inline for (&completed, info.fields) |*event, field| {
-            const value = @field(events, field.name);
+        var completed: [info.field_names.len]?*ARC = undefined;
+        inline for (&completed, info.field_names) |*event, field| {
+            const value = @field(events, field);
             event.* = if (@TypeOf(value) == *ARC)
                 value
             else
@@ -369,7 +380,7 @@ pub const overlapped = struct {
 
         const count = try await_completion_of(&completed);
 
-        var set = Awaited_Events_Set(Events).initEmpty();
+        var set = Awaited_Events_Set(Events).empty;
         for (completed, 0..) |arc, i| {
             if (arc != null)
                 set.insert(@enumFromInt(i));

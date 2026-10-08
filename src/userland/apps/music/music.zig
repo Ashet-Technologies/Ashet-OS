@@ -8,7 +8,7 @@ comptime {
 }
 
 pub fn main() !void {
-    ashet.debug.write("Hello from App!\r\n");
+    ashet.Debug.write("Hello from App!\r\n");
 
     const window = try ashet.ui.createWindow(
         "Grammophone",

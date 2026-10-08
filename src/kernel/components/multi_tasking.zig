@@ -307,7 +307,7 @@ pub const Process = struct {
         errdefer process.resource_handles.deinit();
 
         process.name = if (options.name) |name|
-            try process.memory_arena.allocator().dupeZ(u8, name)
+            try process.memory_arena.allocator().dupeSentinel(u8, name, 0)
         else
             std.fmt.allocPrintSentinel(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)}, 0) catch "Unknown";
 
@@ -350,7 +350,7 @@ pub const Process = struct {
 
     // pub fn spawn(name: []const u8, process_memory: []align(ashet.memory.page_size) u8, entry_point: ashet.abi.ThreadFunction, arg: ?*anyopaque, options: SpawnOptions) !*Process {
 
-    // process.file_name = try process.memory_arena.allocator().dupeZ(u8, name);
+    // process.file_name = try process.memory_arena.allocator().dupeSentinel(u8, name, 0);
 
     // process.master_thread = try ashet.scheduler.Thread.spawn(entry_point, arg, .{
     //     .stack_size = options.stack_size,

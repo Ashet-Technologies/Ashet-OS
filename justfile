@@ -1,8 +1,8 @@
 
-zig := "zig-0.15.2"
+zig := "zig-0.17.0-dev.2085+5e36170b5"
 
 optimize_kernel := "false"
-optimize_apps := "Debug"
+optimize_apps := "debug"
 
 default_params := "--prominent-compile-errors -freference-trace=10"
 

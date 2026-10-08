@@ -70,9 +70,9 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
         }
     }
     inline for (comptime std.meta.declarations(virtio.network.FeatureFlags)) |decl| {
-        const has_feature = negotiated_features.contains(@field(virtio.network.FeatureFlags, decl.name));
+        const has_feature = negotiated_features.contains(@field(virtio.network.FeatureFlags, decl));
         if (has_feature) {
-            logger.info("- {s}", .{decl.name});
+            logger.info("- {s}", .{decl});
         }
     }
     logger.info("legacy: {}", .{regs.version});

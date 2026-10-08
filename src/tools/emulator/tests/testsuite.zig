@@ -28,7 +28,7 @@ fn run_program_full(comptime rom: []const u8, ram: []align(4) u8) !ProgramResult
     const S = struct {
         const padded_len = (rom.len + 3) & ~@as(usize, 3);
         const padded: [padded_len]u8 align(4) = blk: {
-            var p: [padded_len]u8 = [_]u8{0} ** padded_len;
+            var p: [padded_len]u8 = @splat(0);
             @memcpy(p[0..rom.len], rom);
             break :blk p;
         };
@@ -57,7 +57,7 @@ fn run_program(comptime rom: []const u8, ram: []align(4) u8) !emu.Cpu {
 }
 
 fn run_program_no_ram(comptime rom: []const u8) !emu.Cpu {
-    var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
+    var ram_backing: [4]u8 align(4) = @splat(0);
     return run_program(rom, ram_backing[0..0]);
 }
 
@@ -71,7 +71,7 @@ fn run_expecting_trap(comptime rom: []const u8, ram: []align(4) u8) !emu.CpuTrap
 }
 
 fn run_expecting_trap_no_ram(comptime rom: []const u8) !emu.CpuTrap {
-    var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
+    var ram_backing: [4]u8 align(4) = @splat(0);
     return run_expecting_trap(rom, ram_backing[0..0]);
 }
 
@@ -113,7 +113,7 @@ test "ECALL raises trap" {
     const rom = [_]u8{
         0x73, 0x00, 0x00, 0x00, // ecall
     };
-    var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
+    var ram_backing: [4]u8 align(4) = @splat(0);
     const trap = try run_expecting_trap(&rom, &ram_backing);
     try std.testing.expect(trap == .ecall);
 }
@@ -122,7 +122,7 @@ test "Illegal instruction raises trap" {
     const rom = [_]u8{
         0x00, 0x00, 0x00, 0x00,
     };
-    var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
+    var ram_backing: [4]u8 align(4) = @splat(0);
     const trap = try run_expecting_trap(&rom, &ram_backing);
     try std.testing.expect(trap == .illegal_instruction);
 }
@@ -138,7 +138,7 @@ test "Unaligned LH faults" {
         0x03, 0x91, 0x00, 0x00, // lh x2, 0(x1)
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
-    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    var ram_backing: [16]u8 align(4) = @splat(0);
     const trap = try run_expecting_trap(&rom, &ram_backing);
     try std.testing.expect(trap == .load_access_fault);
     try std.testing.expect(trap.load_access_fault.cause == error.UnalignedAccess);
@@ -151,7 +151,7 @@ test "Unaligned LW faults" {
         0x03, 0xA1, 0x00, 0x00, // lw x2, 0(x1)
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
-    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    var ram_backing: [16]u8 align(4) = @splat(0);
     const trap = try run_expecting_trap(&rom, &ram_backing);
     try std.testing.expect(trap == .load_access_fault);
     try std.testing.expect(trap.load_access_fault.cause == error.UnalignedAccess);
@@ -164,7 +164,7 @@ test "Unaligned SH faults" {
         0x23, 0x90, 0x00, 0x00, // sh x0, 0(x1)
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
-    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    var ram_backing: [16]u8 align(4) = @splat(0);
     const trap = try run_expecting_trap(&rom, &ram_backing);
     try std.testing.expect(trap == .store_access_fault);
     try std.testing.expect(trap.store_access_fault.cause == error.UnalignedAccess);
@@ -177,7 +177,7 @@ test "Unaligned SW faults" {
         0x23, 0xA0, 0x00, 0x00, // sw x0, 0(x1)
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
-    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    var ram_backing: [16]u8 align(4) = @splat(0);
     const trap = try run_expecting_trap(&rom, &ram_backing);
     try std.testing.expect(trap == .store_access_fault);
     try std.testing.expect(trap.store_access_fault.cause == error.UnalignedAccess);

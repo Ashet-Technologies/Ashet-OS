@@ -1,17 +1,16 @@
 const std = @import("std");
 const agp = @import("agp");
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
     // Demo: generate a palette + some frames, then stream a GIF to disk.
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}).init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     // Output path (default: "out.gif")
-    var args = try std.process.argsWithAllocator(allocator);
-    defer args.deinit();
-    _ = args.next(); // skip program name
-    const out_path = args.next() orelse "out.gif";
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    const out_path = if (args.len > 1) args[1] else "out.gif";
 
     const width: u16 = 96;
     const height: u16 = 64;
@@ -50,11 +49,13 @@ pub fn main() !void {
     }
 
     // Open file and stream the GIF (progressive: strictly forward writes).
-    var file = try std.fs.cwd().createFile(out_path, .{ .truncate = true });
-    defer file.close();
+    var file = try std.Io.Dir.cwd().createFile(io, out_path, .{ .truncate = true });
+    defer file.close(io);
 
+    var buffer: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &buffer);
     var encoder: GIF_Encoder = try .start(
-        file.writer().any(),
+        &file_writer.interface,
         width,
         height,
         delay_cs,
@@ -68,16 +69,18 @@ pub fn main() !void {
     std.debug.print("Wrote {s} ({d}x{d}, {d} frames)\n", .{ out_path, width, height, frame_count });
 }
 
-pub fn write_to_file_path(dir: std.fs.Dir, path: []const u8, width: u16, height: u16, pixels: []const agp.Color) !void {
-    var file = try dir.createFile(path, .{ .truncate = true });
-    defer file.close();
+pub fn write_to_file_path(io: std.Io, dir: std.Io.Dir, path: []const u8, width: u16, height: u16, pixels: []const agp.Color) !void {
+    var file = try dir.createFile(io, path, .{ .truncate = true });
+    defer file.close(io);
 
-    try write_to_file(file, width, height, pixels);
+    try write_to_file(io, file, width, height, pixels);
 }
 
-pub fn write_to_file(file: std.fs.File, width: u16, height: u16, pixels: []const agp.Color) !void {
+pub fn write_to_file(io: std.Io, file: std.Io.File, width: u16, height: u16, pixels: []const agp.Color) !void {
+    var buffer: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &buffer);
     var encoder: GIF_Encoder = try .start(
-        file.writer().any(),
+        &file_writer.interface,
         width,
         height,
         0,
@@ -89,19 +92,18 @@ pub fn write_to_file(file: std.fs.File, width: u16, height: u16, pixels: []const
 // ---------------- GIF Writer (progressive, no seeking) ----------------
 
 pub const GIF_Encoder = struct {
-    writer: std.io.BufferedWriter(4096, std.io.AnyWriter),
+    writer: *std.Io.Writer,
     width: u16,
     height: u16,
     delay_cs: u16,
 
     pub fn start(
-        _writer: std.io.AnyWriter,
+        _writer: *std.Io.Writer,
         width: u16,
         height: u16,
         delay_cs: u16,
     ) !GIF_Encoder {
-        var buf_writer: std.io.BufferedWriter(4096, std.io.AnyWriter) = .{ .unbuffered_writer = _writer };
-        const writer = buf_writer.writer();
+        const writer = _writer;
 
         // Header: GIF89a
         try writer.writeAll("GIF89a");
@@ -134,7 +136,7 @@ pub const GIF_Encoder = struct {
         try writer.writeByte(0); // terminator
 
         return .{
-            .writer = buf_writer,
+            .writer = writer,
             .width = width,
             .height = height,
             .delay_cs = delay_cs,
@@ -143,7 +145,7 @@ pub const GIF_Encoder = struct {
 
     pub fn add_frame(gif: *GIF_Encoder, frame: []const agp.Color) !void {
         std.debug.assert(frame.len == (@as(u32, gif.width) * gif.height));
-        const w = gif.writer.writer();
+        const w = gif.writer;
 
         // Graphics Control Extension
         try w.writeByte(0x21);
@@ -176,12 +178,12 @@ pub const GIF_Encoder = struct {
 
     pub fn end(gif: *GIF_Encoder) !void {
         // Trailer
-        try gif.writer.writer().writeByte(0x3B);
+        try gif.writer.writeByte(0x3B);
         try gif.writer.flush();
     }
 };
 
-fn writeU16LE(w: std.io.BufferedWriter(4096, std.io.AnyWriter).Writer, v: u16) !void {
+fn writeU16LE(w: *std.Io.Writer, v: u16) !void {
     var buf: [2]u8 = undefined;
     std.mem.writeInt(u16, &buf, v, .little);
     try w.writeAll(buf[0..]);
@@ -190,11 +192,11 @@ fn writeU16LE(w: std.io.BufferedWriter(4096, std.io.AnyWriter).Writer, v: u16) !
 // ---------------- Sub-block writer (≤255 bytes + size prefix) ----------------
 
 const SubBlockWriter = struct {
-    w: std.io.BufferedWriter(4096, std.io.AnyWriter).Writer,
+    w: *std.Io.Writer,
     buf: [255]u8 = undefined,
     len: u8 = 0,
 
-    pub fn init(w: std.io.BufferedWriter(4096, std.io.AnyWriter).Writer) SubBlockWriter {
+    pub fn init(w: *std.Io.Writer) SubBlockWriter {
         return .{ .w = w };
     }
 

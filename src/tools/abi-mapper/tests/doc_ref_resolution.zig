@@ -7,11 +7,7 @@ test "doc references resolve to contained syscall elements" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const abi_source = try std.fs.cwd().readFileAlloc(
-        allocator,
-        "tests/doc_ref_resolution.abi",
-        1 << 20,
-    );
+    const abi_source = @embedFile("doc_ref_resolution.abi");
 
     var tokenizer: abi_parser.syntax.Tokenizer = .init(abi_source, "tests/doc_ref_resolution.abi");
     var parser: abi_parser.syntax.Parser = .{

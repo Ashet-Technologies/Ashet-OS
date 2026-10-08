@@ -49,8 +49,8 @@ pub const HandlePool = struct {
     allocator: std.mem.Allocator,
 
     bit_map: std.DynamicBitSetUnmanaged = .{},
-    generations: std.ArrayListUnmanaged(EncodedHandle.Generation) = .{},
-    owners: std.SegmentedList(OwnershipNode, grow_margin) = .{},
+    generations: std.ArrayListUnmanaged(EncodedHandle.Generation) = .empty,
+    owners: @import("ashet-std").SegmentedList(OwnershipNode, grow_margin) = .{},
 
     pub fn init(allocator: std.mem.Allocator) HandlePool {
         return .{
@@ -280,10 +280,7 @@ pub const HandlePool = struct {
     pub const EncodedHandle = packed struct(usize) {
         const Checksum = u2;
         const Generation = u10;
-        const Index: type = @Type(.{ .int = .{
-            .signedness = .unsigned,
-            .bits = index_bits,
-        } });
+        const Index: type = @Int(.unsigned, index_bits);
 
         const generation_bits = @bitSizeOf(Generation);
         const checksum_bits = @bitSizeOf(Checksum);

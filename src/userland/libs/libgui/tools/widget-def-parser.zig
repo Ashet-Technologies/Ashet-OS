@@ -55,12 +55,12 @@ const DraftWidget = struct {
     types: []const DraftTypeDeclaration,
 };
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    const args = try std.process.argsAlloc(allocator);
+    const args = try init.minimal.args.toSlice(allocator);
 
     var output_path: ?[]const u8 = null;
     var input_path: ?[]const u8 = null;
@@ -86,7 +86,12 @@ pub fn main() !u8 {
     const resolved_input = input_path orelse return usage();
     const resolved_output = output_path orelse return usage();
 
-    const source = try std.fs.cwd().readFileAlloc(allocator, resolved_input, 1 * 1024 * 1024);
+    const source = try std.Io.Dir.cwd().readFileAlloc(
+        init.io,
+        resolved_input,
+        allocator,
+        .limited(1 * 1024 * 1024),
+    );
 
     var parser = try Parser.init(allocator, source);
     const document = parser.parseDocument() catch |err| switch (err) {
@@ -104,11 +109,11 @@ pub fn main() !u8 {
         else => return err,
     };
 
-    var output_file = try std.fs.cwd().createFile(resolved_output, .{});
-    defer output_file.close();
+    var output_file = try std.Io.Dir.cwd().createFile(init.io, resolved_output, .{});
+    defer output_file.close(init.io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(init.io, &output_buffer);
     try model.to_json_str(document, &output_writer.interface);
     try output_writer.interface.writeByte('\n');
     try output_writer.interface.flush();
@@ -186,7 +191,7 @@ const Parser = struct {
 
         while (iter.next()) |line_with_cr| {
             line_number += 1;
-            const line = std.mem.trimRight(u8, line_with_cr, "\r");
+            const line = std.mem.trimEnd(u8, line_with_cr, "\r");
             const without_comment = stripComment(line);
             if (isBlank(without_comment)) continue;
 
@@ -201,7 +206,7 @@ const Parser = struct {
                     continue;
                 }
 
-                const continuation = std.mem.trimRight(u8, without_comment[first_non_space + 1 ..], " ");
+                const continuation = std.mem.trimEnd(u8, without_comment[first_non_space + 1 ..], " ");
                 try parser.entries.items[parser.entries.items.len - 1].continuations.append(
                     parser.allocator,
                     try parser.allocator.dupe(u8, continuation),
@@ -209,7 +214,7 @@ const Parser = struct {
                 continue;
             }
 
-            const text = std.mem.trimRight(u8, without_comment[first_non_space..], " ");
+            const text = std.mem.trimEnd(u8, without_comment[first_non_space..], " ");
             try parser.entries.append(parser.allocator, .{
                 .line = line_number,
                 .indent = indent,

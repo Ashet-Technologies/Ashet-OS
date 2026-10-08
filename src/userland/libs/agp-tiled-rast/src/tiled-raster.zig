@@ -152,7 +152,7 @@ pub const OverlaySink = struct {
     }
 };
 
-const rastram_section = if (builtin.mode != .Debug)
+const rastram_section = if (builtin.mode != .debug)
     ".sram.bank0.fastram"
 else
     ".text";

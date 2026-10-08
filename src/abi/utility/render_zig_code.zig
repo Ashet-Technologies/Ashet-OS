@@ -13,23 +13,34 @@ const Mode = enum { userland, kernel, definition };
 
 const CodeWriter = code_writer.CodeWriter;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
+    const io = init.io;
 
-    const argv = try std.process.argsAlloc(allocator);
+    const argv = try init.minimal.args.toSlice(allocator);
 
     if (argv.len < 4 or argv.len > 5)
         @panic("<exe> <mode> <input> <output> [<patch>]");
 
     const mode: Mode = std.meta.stringToEnum(Mode, argv[1]) orelse return error.InvalidMode;
 
-    const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[2], 1 << 30);
+    const json_txt = try std.Io.Dir.cwd().readFileAlloc(
+        io,
+        argv[2],
+        allocator,
+        .limited(1 << 30),
+    );
 
     const patch_code = if (argv.len > 4)
-        try std.fs.cwd().readFileAlloc(allocator, argv[4], 1 << 30)
+        try std.Io.Dir.cwd().readFileAlloc(
+            io,
+            argv[4],
+            allocator,
+            .limited(1 << 30),
+        )
     else
         "";
 
@@ -38,13 +49,15 @@ pub fn main() !void {
     const schema = try model.from_json_str(allocator, json_txt);
 
     var output_buffer: [1024]u8 = undefined;
-    var output = try std.fs.cwd().atomicFile(
+    var output = try std.Io.Dir.cwd().createFileAtomic(
+        io,
         argv[3],
-        .{ .write_buffer = &output_buffer },
+        .{ .make_path = true, .replace = true },
     );
-    defer output.deinit();
+    defer output.deinit(io);
+    var file_writer = output.file.writer(io, &output_buffer);
 
-    var writer: CodeWriter = .init(&output.file_writer.interface);
+    var writer: CodeWriter = .init(&file_writer.interface, &.{});
 
     const document = schema.value;
     switch (mode) {
@@ -55,7 +68,7 @@ pub fn main() !void {
 
     try writer.flush();
 
-    try output.finish();
+    try output.replace(io);
 }
 
 fn render_header(writer: *CodeWriter) !void {
@@ -1288,7 +1301,7 @@ fn fmt_id(id: []const u8) @TypeOf(std.zig.fmtId(id)) {
     return std.zig.fmtId(id);
 }
 
-fn fmt_local(id: []const u8) std.fmt.Formatter([]const u8, format_local) {
+fn fmt_local(id: []const u8) std.fmt.Alt([]const u8, format_local) {
     return .{ .data = id };
 }
 

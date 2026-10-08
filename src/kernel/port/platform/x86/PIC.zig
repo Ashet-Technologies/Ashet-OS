@@ -27,10 +27,10 @@ pub fn initialize(pic: PIC, vector_offset: u8) void {
 
         @as(ICW2, vector_offset),
 
-        @as(u8, @bitCast(if (pic.control == primary.control)
-            ICW3{ .primary = .{ .mask = 1 << cascade_irq } }
+        if (pic.control == primary.control)
+            @bitCast(@as(@FieldType(ICW3, "primary"), .{ .mask = 1 << cascade_irq }))
         else
-            ICW3{ .secondary = .{ .id = cascade_irq } })),
+            @bitCast(@as(@FieldType(ICW3, "secondary"), .{ .id = cascade_irq })),
 
         @as(u8, @bitCast(ICW4{
             .mode = .@"8086",

@@ -99,7 +99,7 @@ fn timer_interrupt(state: *x86.idt.CpuState) void {
 
     timer_counter_ms += 1;
 
-    if (@import("builtin").mode == .Debug) {
+    if (@import("builtin").mode == .debug) {
         if (timer_counter_ms % 2500 == 0) {
             logger.debug("system still alive", .{});
         }

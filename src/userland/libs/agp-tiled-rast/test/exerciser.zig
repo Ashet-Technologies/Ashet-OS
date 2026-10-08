@@ -107,7 +107,7 @@ const SuiteRunStats = struct {
     skipped_cases: usize = 0,
     bad_pixels: usize = 0,
     total_pixels: usize = 0,
-    case_stats: std.ArrayListUnmanaged(CaseRunStats) = .{},
+    case_stats: std.ArrayList(CaseRunStats) = .empty,
 
     fn deinit(self: *SuiteRunStats, allocator: std.mem.Allocator) void {
         allocator.free(self.artifact_path);
@@ -833,13 +833,10 @@ const static_suites = [_]SuiteDef{
     .{ .name = "blit-partial-framebuffer", .capabilities = .{ .framebuffers = true }, .cases = framebuffer_partial_cases[0..] },
 };
 
-pub fn main() !u8 {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !u8 {
+    const allocator = init.gpa;
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     if (args.len > 3) {
         printUsage(args[0]);
@@ -849,10 +846,10 @@ pub fn main() !u8 {
     const suite_filter = if (args.len >= 2) args[1] else null;
     const case_filter = if (args.len >= 3) args[2] else null;
 
-    try std.fs.cwd().makePath(output_dir_path);
+    try std.Io.Dir.cwd().createDirPath(init.io, output_dir_path);
 
     var summary: RunSummary = .{};
-    var suite_reports: std.ArrayListUnmanaged(SuiteRunStats) = .{};
+    var suite_reports: std.ArrayList(SuiteRunStats) = .empty;
     defer {
         for (suite_reports.items) |*suite_report| {
             suite_report.deinit(allocator);
@@ -862,7 +859,7 @@ pub fn main() !u8 {
 
     if (suite_filter) |selected_suite_name| {
         if (std.mem.eql(u8, selected_suite_name, "seeded-random")) {
-            const random_stats = try run_seeded_random_suite(allocator, case_filter);
+            const random_stats = try run_seeded_random_suite(init.io, allocator, case_filter);
             if (case_filter != null and random_stats.executed_cases == 0 and random_stats.skipped_cases == 0) {
                 std.debug.print("unknown test '{s}' in suite 'seeded-random'\n", .{case_filter.?});
                 return 2;
@@ -885,18 +882,18 @@ pub fn main() !u8 {
                 filtered_suite.cases = selected_case;
             }
 
-            const stats = try run_static_suite(allocator, &filtered_suite);
+            const stats = try run_static_suite(init.io, allocator, &filtered_suite);
             accumulateSummary(&summary, stats);
             try suite_reports.append(allocator, stats);
         }
     } else {
         for (static_suites) |suite| {
-            const stats = try run_static_suite(allocator, &suite);
+            const stats = try run_static_suite(init.io, allocator, &suite);
             accumulateSummary(&summary, stats);
             try suite_reports.append(allocator, stats);
         }
 
-        const random_stats = try run_seeded_random_suite(allocator, null);
+        const random_stats = try run_seeded_random_suite(init.io, allocator, null);
         accumulateSummary(&summary, random_stats);
         try suite_reports.append(allocator, random_stats);
     }
@@ -944,7 +941,7 @@ fn findCaseInSuite(suite: SuiteDef, name: []const u8) ?[]const CaseDef {
     return null;
 }
 
-fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !SuiteRunStats {
+fn run_static_suite(io: std.Io, allocator: std.mem.Allocator, suite: *const SuiteDef) !SuiteRunStats {
     if (!suiteSupported(suite.capabilities)) {
         std.debug.print("skip suite {s}: unsupported capabilities\n", .{suite.name});
         var stats: SuiteRunStats = .{
@@ -980,13 +977,13 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
     const suite_path = try std.fmt.bufPrint(&suite_path_buffer, "{s}/{s}.gif", .{ output_dir_path, suite.name });
     var failures_path_buffer: [256]u8 = undefined;
     const failures_path = try std.fmt.bufPrint(&failures_path_buffer, "{s}/{s}-failures.gif", .{ output_dir_path, suite.name });
-    try ensureStaticSuiteDir(suite.name);
+    try ensureStaticSuiteDir(io, suite.name);
 
-    var suite_file = try std.fs.cwd().createFile(suite_path, .{ .truncate = true });
-    defer suite_file.close();
+    var suite_file = try std.Io.Dir.cwd().createFile(io, suite_path, .{ .truncate = true });
+    defer suite_file.close(io);
 
     var buffer: [8192]u8 = undefined;
-    var file_writer = suite_file.writer(&buffer);
+    var file_writer = suite_file.writer(io, &buffer);
 
     var suite_gif = try gif.GIF_Encoder.start(
         &file_writer.interface,
@@ -996,16 +993,16 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
     );
     defer suite_gif.end() catch {};
 
-    var failure_file: ?std.fs.File = null;
+    var failure_file: ?std.Io.File = null;
     var failure_gif: ?gif.GIF_Encoder = null;
     var failure_buffer: [8192]u8 = undefined;
-    var failure_file_writer: std.fs.File.Writer = undefined;
+    var failure_file_writer: std.Io.File.Writer = undefined;
     defer {
         if (failure_gif) |*enc| enc.end() catch {};
-        if (failure_file) |*file| file.close();
+        if (failure_file) |*file| file.close(io);
     }
 
-    var stats = SuiteRunStats{
+    var stats: SuiteRunStats = .{
         .name = suite.name,
         .artifact_path = try allocator.dupe(u8, suite_path),
     };
@@ -1046,7 +1043,14 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
             stats.failed_cases += 1;
             const static_composite = try compose_case_frame(allocator, case.canvas, &result);
             defer allocator.free(static_composite);
-            try writeStaticCaseArtifacts(suite.name, case.name, case.canvas, static_composite, result.sequences);
+            try writeStaticCaseArtifacts(
+                io,
+                suite.name,
+                case.name,
+                case.canvas,
+                static_composite,
+                result.sequences,
+            );
             std.debug.print(
                 "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                 .{
@@ -1060,8 +1064,8 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
             );
 
             if (failure_gif == null) {
-                failure_file = try std.fs.cwd().createFile(failures_path, .{ .truncate = true });
-                failure_file_writer = failure_file.?.writer(&failure_buffer);
+                failure_file = try std.Io.Dir.cwd().createFile(io, failures_path, .{ .truncate = true });
+                failure_file_writer = failure_file.?.writer(io, &failure_buffer);
 
                 failure_gif = try gif.GIF_Encoder.start(
                     &failure_file_writer.interface,
@@ -1072,18 +1076,18 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
             }
             try failure_gif.?.add_frame(composite);
         } else {
-            try deleteStaticCaseArtifacts(suite.name, case.name);
+            try deleteStaticCaseArtifacts(io, suite.name, case.name);
         }
     }
 
     if (stats.failed_cases == 0) {
-        try deleteFileIfPresent(failures_path);
+        try deleteFileIfPresent(io, failures_path);
     }
 
     return stats;
 }
 
-fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u8) !SuiteRunStats {
+fn run_seeded_random_suite(io: std.Io, allocator: std.mem.Allocator, case_filter: ?[]const u8) !SuiteRunStats {
     const suite_name = "seeded-random";
     const seeds = [_]u64{
         0x0000_0000_0000_0001,
@@ -1108,13 +1112,13 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
     const suite_path = try std.fmt.bufPrint(&suite_path_buffer, "{s}/{s}.gif", .{ output_dir_path, suite_name });
     var failures_path_buffer: [256]u8 = undefined;
     const failures_path = try std.fmt.bufPrint(&failures_path_buffer, "{s}/{s}-failures.gif", .{ output_dir_path, suite_name });
-    try ensureStaticSuiteDir(suite_name);
+    try ensureStaticSuiteDir(io, suite_name);
 
-    var suite_file = try std.fs.cwd().createFile(suite_path, .{ .truncate = true });
-    defer suite_file.close();
+    var suite_file = try std.Io.Dir.cwd().createFile(io, suite_path, .{ .truncate = true });
+    defer suite_file.close(io);
 
     var suite_buffer: [8192]u8 = undefined;
-    var suite_file_writer = suite_file.writer(&suite_buffer);
+    var suite_file_writer = suite_file.writer(io, &suite_buffer);
 
     var suite_gif = try gif.GIF_Encoder.start(
         &suite_file_writer.interface,
@@ -1124,16 +1128,16 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
     );
     defer suite_gif.end() catch {};
 
-    var failure_file: ?std.fs.File = null;
+    var failure_file: ?std.Io.File = null;
     var failure_gif: ?gif.GIF_Encoder = null;
     var failure_buffer: [8192]u8 = undefined;
-    var failure_file_writer: std.fs.File.Writer = undefined;
+    var failure_file_writer: std.Io.File.Writer = undefined;
     defer {
         if (failure_gif) |*enc| enc.end() catch {};
-        if (failure_file) |*file| file.close();
+        if (failure_file) |*file| file.close(io);
     }
 
-    var stats = SuiteRunStats{
+    var stats: SuiteRunStats = .{
         .name = suite_name,
         .artifact_path = try allocator.dupe(u8, suite_path),
     };
@@ -1147,7 +1151,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
                 .{ seed, canvas.width, canvas.height },
             );
 
-            const case = CaseDef{
+            const case: CaseDef = .{
                 .name = case_name,
                 .canvas = canvas,
                 .seed = seed,
@@ -1188,7 +1192,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
                 stats.failed_cases += 1;
                 const static_composite = try compose_case_frame(allocator, case.canvas, &result);
                 defer allocator.free(static_composite);
-                try writeStaticCaseArtifacts(suite_name, case.name, case.canvas, static_composite, result.sequences);
+                try writeStaticCaseArtifacts(io, suite_name, case.name, case.canvas, static_composite, result.sequences);
                 std.debug.print(
                     "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                     .{
@@ -1202,8 +1206,8 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
                 );
 
                 if (failure_gif == null) {
-                    failure_file = try std.fs.cwd().createFile(failures_path, .{ .truncate = true });
-                    failure_file_writer = failure_file.?.writer(&failure_buffer);
+                    failure_file = try std.Io.Dir.cwd().createFile(io, failures_path, .{ .truncate = true });
+                    failure_file_writer = failure_file.?.writer(io, &failure_buffer);
                     failure_gif = try gif.GIF_Encoder.start(
                         &failure_file_writer.interface,
                         compositeWidth(max_canvas.width),
@@ -1213,20 +1217,20 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u
                 }
                 try failure_gif.?.add_frame(composite);
             } else {
-                try deleteStaticCaseArtifacts(suite_name, case.name);
+                try deleteStaticCaseArtifacts(io, suite_name, case.name);
             }
         }
     }
 
     if (stats.failed_cases == 0) {
-        try deleteFileIfPresent(failures_path);
+        try deleteFileIfPresent(io, failures_path);
     }
 
     return stats;
 }
 
-fn deleteFileIfPresent(path: []const u8) !void {
-    std.fs.cwd().deleteFile(path) catch |err| switch (err) {
+fn deleteFileIfPresent(io: std.Io, path: []const u8) !void {
+    std.Io.Dir.cwd().deleteFile(io, path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
     };
@@ -1533,10 +1537,10 @@ fn compositeWidth(canvas_width: u16) u16 {
     return canvas_width * 3 + 2;
 }
 
-fn ensureStaticSuiteDir(suite_name: []const u8) !void {
+fn ensureStaticSuiteDir(io: std.Io, suite_name: []const u8) !void {
     var path_buffer: [256]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buffer, "{s}/{s}", .{ output_dir_path, suite_name });
-    try std.fs.cwd().makePath(path);
+    try std.Io.Dir.cwd().createDirPath(io, path);
 }
 
 fn sanitizeFileName(buf: []u8, name: []const u8) []const u8 {
@@ -1552,6 +1556,7 @@ fn sanitizeFileName(buf: []u8, name: []const u8) []const u8 {
 }
 
 fn writeStaticCaseArtifacts(
+    io: std.Io,
     suite_name: []const u8,
     case_name: []const u8,
     canvas: CanvasSize,
@@ -1560,24 +1565,24 @@ fn writeStaticCaseArtifacts(
 ) !void {
     var path_buffer: [512]u8 = undefined;
     const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
-    try gif.write_to_file_path(std.fs.cwd(), path, compositeWidth(canvas.width), canvas.height, composite);
+    try gif.write_to_file_path(.cwd(), io, path, compositeWidth(canvas.width), canvas.height, composite);
 
     var dump_path_buffer: [512]u8 = undefined;
     const dump_path = try staticCaseDumpPath(&dump_path_buffer, suite_name, case_name);
-    try writeCaseCommandDumpToPath(dump_path, canvas, sequences);
+    try writeCaseCommandDumpToPath(io, dump_path, canvas, sequences);
 }
 
-fn deleteStaticCaseArtifacts(suite_name: []const u8, case_name: []const u8) !void {
+fn deleteStaticCaseArtifacts(io: std.Io, suite_name: []const u8, case_name: []const u8) !void {
     var path_buffer: [512]u8 = undefined;
     const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
-    std.fs.cwd().deleteFile(path) catch |err| switch (err) {
+    std.Io.Dir.cwd().deleteFile(io, path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
     };
 
     var dump_path_buffer: [512]u8 = undefined;
     const dump_path = try staticCaseDumpPath(&dump_path_buffer, suite_name, case_name);
-    std.fs.cwd().deleteFile(dump_path) catch |err| switch (err) {
+    std.Io.Dir.cwd().deleteFile(io, dump_path) catch |err| switch (err) {
         error.FileNotFound => {},
         else => return err,
     };
@@ -1595,12 +1600,12 @@ fn staticCaseDumpPath(path_buffer: []u8, suite_name: []const u8, case_name: []co
     return std.fmt.bufPrint(path_buffer, "{s}/{s}/{s}.txt", .{ output_dir_path, suite_name, file_name });
 }
 
-fn writeCaseCommandDumpToPath(path: []const u8, canvas: CanvasSize, sequences: [][]u8) !void {
-    var file = try std.fs.cwd().createFile(path, .{ .truncate = true });
-    defer file.close();
+fn writeCaseCommandDumpToPath(io: std.Io, path: []const u8, canvas: CanvasSize, sequences: [][]u8) !void {
+    var file = try std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true });
+    defer file.close(io);
 
     var buffer: [8192]u8 = undefined;
-    var file_writer = file.writer(&buffer);
+    var file_writer = file.writer(io, &buffer);
     try writeCaseCommandDump(&file_writer.interface, canvas, sequences);
     try file_writer.interface.flush();
 }

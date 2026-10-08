@@ -1,16 +1,16 @@
 const std = @import("std");
 const agp = @import("agp");
 
-pub fn write_to_file_path(dir: std.fs.Dir, path: []const u8, width: u16, height: u16, pixels: []const agp.Color) !void {
-    var file = try dir.createFile(path, .{ .truncate = true });
-    defer file.close();
+pub fn write_to_file_path(dir: std.Io.Dir, io: std.Io, path: []const u8, width: u16, height: u16, pixels: []const agp.Color) !void {
+    var file = try dir.createFile(io, path, .{ .truncate = true });
+    defer file.close(io);
 
-    try write_to_file(file, width, height, pixels);
+    try write_to_file(file, io, width, height, pixels);
 }
 
-pub fn write_to_file(file: std.fs.File, width: u16, height: u16, pixels: []const agp.Color) !void {
+pub fn write_to_file(file: std.Io.File, io: std.Io, width: u16, height: u16, pixels: []const agp.Color) !void {
     var buffer: [8192]u8 = undefined;
-    var file_writer = file.writer(&buffer);
+    var file_writer = file.writer(io, &buffer);
 
     var encoder: GIF_Encoder = try .start(
         &file_writer.interface,

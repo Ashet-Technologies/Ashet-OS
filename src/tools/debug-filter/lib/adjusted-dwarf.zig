@@ -275,7 +275,7 @@ const Die = struct {
     arena: std.heap.ArenaAllocator,
     tag_id: u64,
     has_children: bool,
-    attrs: std.ArrayListUnmanaged(Attr) = .{},
+    attrs: std.ArrayList(Attr) = .empty,
 
     const Attr = struct {
         id: u64,
@@ -389,7 +389,7 @@ const FileEntry = struct {
     dir_index: u32 = 0,
     mtime: u64 = 0,
     size: u64 = 0,
-    md5: [16]u8 = [1]u8{0} ** 16,
+    md5: [16]u8 = @splat(0),
 };
 
 const LineNumberProgram = struct {
@@ -715,9 +715,9 @@ pub const DwarfInfo = struct {
     debug_names: ?[]const u8,
     debug_frame: ?[]const u8,
     // Filled later by the initializer
-    abbrev_table_list: std.ArrayListUnmanaged(AbbrevTableHeader) = .{},
-    compile_unit_list: std.ArrayListUnmanaged(CompileUnit) = .{},
-    func_list: std.ArrayListUnmanaged(Func) = .{},
+    abbrev_table_list: std.ArrayList(AbbrevTableHeader) = .empty,
+    compile_unit_list: std.ArrayList(CompileUnit) = .empty,
+    func_list: std.ArrayList(Func) = .empty,
 
     pub fn deinit(di: *DwarfInfo, allocator: mem.Allocator) void {
         for (di.abbrev_table_list.items) |*abbrev| {

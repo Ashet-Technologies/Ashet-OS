@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const is_debug = (builtin.mode == .Debug);
+const is_debug = (builtin.mode == .debug);
 
 const Allocator = std.mem.Allocator;
 

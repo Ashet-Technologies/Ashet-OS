@@ -204,7 +204,13 @@ fn kernelMain() noreturn {
 }
 
 fn main() !void {
-    errdefer |err| log.err("main() failed with {}", .{err});
+    return main_impl() catch |err| {
+        log.err("main() failed with {}", .{err});
+        return err;
+    };
+}
+
+fn main_impl() !void {
 
     // Initialize memory protection, which might need
     // dynamic page allocations to store certain data:
@@ -429,10 +435,10 @@ pub const Debug = struct {
         machine_config.debug_write(bytes);
         return bytes.len;
     }
-    const Writer = std.Io.GenericWriter(void, Error, writeWithErr);
+    const Writer = @import("ashet-std").CallbackWriter(void, Error, writeWithErr);
 
     fn write_with_indent(indent: usize, bytes: []const u8) Error!usize {
-        const indent_part: [8]u8 = .{' '} ** 8;
+        const indent_part: [8]u8 = @splat(' ');
 
         var spliter = std.mem.splitScalar(u8, bytes, '\n');
 
@@ -451,7 +457,7 @@ pub const Debug = struct {
 
         return bytes.len;
     }
-    const IndentWriter = std.Io.GenericWriter(usize, Error, write_with_indent);
+    const IndentWriter = @import("ashet-std").CallbackWriter(usize, Error, write_with_indent);
 
     pub fn writer() Writer {
         return .{ .context = {} };
@@ -525,11 +531,11 @@ var double_panic = false;
 var full_panic = false;
 
 pub const std_options = std.Options{
-    .log_level = if (@import("builtin").mode == .Debug) .debug else .info,
+    .log_level = if (@import("builtin").mode == .debug) .debug else .info,
     .logFn = kernel_log_fn,
 };
 
-fn kernel_log_once(comptime scope: @Type(.enum_literal)) void {
+fn kernel_log_once(comptime scope: @TypeOf(.enum_literal)) void {
     const T = struct {
         var triggered: bool = false;
 
@@ -549,7 +555,7 @@ var log_exclusive_lock: utils.SpinLock = .init;
 
 fn kernel_log_fn(
     comptime message_level: std.log.Level,
-    comptime scope: @Type(.enum_literal),
+    comptime scope: @TypeOf(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {
@@ -664,7 +670,7 @@ pub fn halt() noreturn {
         machine_halt();
     }
 
-    if (builtin.mode == .Debug) {
+    if (builtin.mode == .debug) {
         if (!double_panic) {
             @breakpoint();
         }
@@ -758,7 +764,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         Debug.write("\r\n");
     }
 
-    if (@import("builtin").mode == .Debug) {
+    if (@import("builtin").mode == .debug) {
         if (scheduler.Thread.current()) |thread| {
             Debug.print("current thread:\r\n", .{});
             Debug.print("  [!] {f}\r\n\r\n", .{thread});
@@ -787,7 +793,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     {
         Debug.write("stack trace:\r\n");
         var index: usize = 0;
-        var it = std.debug.StackIterator.init(@returnAddress(), null);
+        var it = @import("ashet-std").StackIterator.init(@returnAddress(), null);
         while (it.next()) |addr| : (index += 1) {
             Debug.print("{d: >4}: {f}\r\n", .{ index, fmtCodeLocation(addr) });
 
@@ -870,8 +876,12 @@ pub const CriticalSection = enum(u1) {
     }
 };
 
+comptime {
+    if (!machine_id.is_hosted()) @export(&memchr, .{ .name = "memchr" });
+}
+
 // TODO: move to foundation-libc
-export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
+fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) callconv(.c) ?[*]c_char {
     const s = buf orelse return null;
 
     const searched: c_char = @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(ch)))));

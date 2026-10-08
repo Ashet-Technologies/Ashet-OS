@@ -26,13 +26,14 @@ pub fn validate(font: schema.BitmapFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file_writer: *std.fs.File.Writer,
-    root_dir: std.fs.Dir,
+    io: std.Io,
+    file_writer: *std.Io.File.Writer,
+    root_dir: std.Io.Dir,
     font: *schema.BitmapFontFile,
 ) !void {
     // Glyphs must be sorted in the font:
     font.glyphs.sort(struct {
-        glyphs: *std.AutoArrayHashMap(u21, schema.BitmapFontFile.Glyph),
+        glyphs: *std.array_hash_map.Auto(u21, schema.BitmapFontFile.Glyph),
         pub fn lessThan(self: @This(), lhs_index: usize, rhs_index: usize) bool {
             return self.glyphs.keys()[lhs_index] < self.glyphs.keys()[rhs_index];
         }
@@ -45,12 +46,12 @@ pub fn generate(
     defer image_cache.deinit();
 
     if (font.defaults.image_file) |image_file| {
-        _ = try image_cache.get_or_load(image_file);
+        _ = try image_cache.get_or_load(io, image_file);
     }
 
     for (font.glyphs.values()) |glyph| {
         if (glyph.image_file) |image_file| {
-            _ = try image_cache.get_or_load(image_file);
+            _ = try image_cache.get_or_load(io, image_file);
         }
     }
 
@@ -61,7 +62,7 @@ pub fn generate(
 
     for (font.glyphs.keys(), font.glyphs.values()) |codepoint, glyph| {
         const image_file = glyph.image_file orelse font.defaults.image_file orelse @panic("missing validation");
-        const image = try image_cache.get_or_load(image_file);
+        const image = try image_cache.get_or_load(io, image_file);
         const select_pixels = glyph.select_pixels orelse font.defaults.select_pixels orelse @panic("missing validation");
 
         const maybe_index = glyph.index;
@@ -183,7 +184,7 @@ fn is_glyph_body(selector: schema.BitmapFontFile.SelectPixel, pix: zigimg.color.
 
 const ImageCache = struct {
     arena: std.heap.ArenaAllocator,
-    root: std.fs.Dir,
+    root: std.Io.Dir,
 
     images: std.StringHashMapUnmanaged(zigimg.Image) = .empty,
 
@@ -192,16 +193,16 @@ const ImageCache = struct {
         ic.* = undefined;
     }
 
-    pub fn get_or_load(ic: *ImageCache, path: []const u8) !*zigimg.Image {
+    pub fn get_or_load(ic: *ImageCache, io: std.Io, path: []const u8) !*zigimg.Image {
         const gop = try ic.images.getOrPut(ic.arena.allocator(), path);
         if (!gop.found_existing) {
             errdefer _ = ic.images.remove(path);
 
-            var file = try ic.root.openFile(path, .{});
-            defer file.close();
+            var file = try ic.root.openFile(io, path, .{});
+            defer file.close(io);
 
             var image_read_buff: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-            gop.value_ptr.* = try zigimg.Image.fromFile(ic.arena.allocator(), file, &image_read_buff);
+            gop.value_ptr.* = try zigimg.Image.fromFile(ic.arena.allocator(), io, file, &image_read_buff);
         }
         return gop.value_ptr;
     }

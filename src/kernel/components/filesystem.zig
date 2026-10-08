@@ -298,7 +298,13 @@ const iop_handlers = struct {
     }
 
     fn fs_open_drive(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inputs) fs_abi.OpenDrive.Error!fs_abi.OpenDrive.Outputs {
-        errdefer |err| logger.warn("fs_open_drive({}) => {}", .{ inputs.fs_id, err });
+        return fs_open_drive_impl(call, inputs) catch |err| {
+            logger.warn("fs_open_drive({}) => {}", .{ inputs.fs_id, err });
+            return err;
+        };
+    }
+
+    fn fs_open_drive_impl(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inputs) fs_abi.OpenDrive.Error!fs_abi.OpenDrive.Outputs {
 
         const disk_id = if (inputs.fs_id == .system)
             sys_disk_index
@@ -325,7 +331,13 @@ const iop_handlers = struct {
     }
 
     fn fs_open_dir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs) fs_abi.OpenDir.Error!fs_abi.OpenDir.Outputs {
-        errdefer |err| logger.warn("fs_open_dir('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
+        return fs_open_dir_impl(call, inputs) catch |err| {
+            logger.warn("fs_open_dir('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
+            return err;
+        };
+    }
+
+    fn fs_open_dir_impl(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs) fs_abi.OpenDir.Error!fs_abi.OpenDir.Outputs {
 
         const ctx: *Directory = try resolve_dir(call, inputs.start_dir);
 
@@ -412,7 +424,13 @@ const iop_handlers = struct {
     }
 
     fn fs_open_file(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenFile.Inputs) fs_abi.OpenFile.Error!fs_abi.OpenFile.Outputs {
-        errdefer |err| logger.warn("fs_open_file('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
+        return fs_open_file_impl(call, inputs) catch |err| {
+            logger.warn("fs_open_file('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
+            return err;
+        };
+    }
+
+    fn fs_open_file_impl(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenFile.Inputs) fs_abi.OpenFile.Error!fs_abi.OpenFile.Outputs {
 
         const ctx: *Directory = try resolve_dir(call, inputs.dir);
 

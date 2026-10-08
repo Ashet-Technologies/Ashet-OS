@@ -1,12 +1,13 @@
 const std = @import("std");
 const model = @import("widget-def-model");
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    const args = try std.process.argsAlloc(allocator);
+    const args = try init.minimal.args.toSlice(allocator);
 
     var input_path: ?[]const u8 = null;
     var output_path: ?[]const u8 = null;
@@ -32,15 +33,15 @@ pub fn main() !u8 {
     const resolved_input = input_path orelse return usage();
     const resolved_output = output_path orelse return usage();
 
-    const source = try std.fs.cwd().readFileAlloc(allocator, resolved_input, 1 * 1024 * 1024);
+    const source = try std.Io.Dir.cwd().readFileAlloc(io, resolved_input, allocator, .limited(1 * 1024 * 1024));
     const parsed = try model.from_json_str(allocator, source);
     const document = parsed.value;
 
-    var output_file = try std.fs.cwd().createFile(resolved_output, .{});
-    defer output_file.close();
+    var output_file = try std.Io.Dir.cwd().createFile(io, resolved_output, .{});
+    defer output_file.close(io);
 
     var buffer: [1024]u8 = undefined;
-    var file_writer = output_file.writer(&buffer);
+    var file_writer = output_file.writer(io, &buffer);
     const writer = &file_writer.interface;
 
     try writer.writeAll(

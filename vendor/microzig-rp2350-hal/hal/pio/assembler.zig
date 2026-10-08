@@ -140,8 +140,8 @@ fn format_compile_error(comptime message: []const u8, comptime source: []const u
         \\
     , .{
         line_str,
-        [_]u8{' '} ** column,
-        [_]u8{' '} ** column,
+        @as([column]u8, @splat(' ')),
+        @as([column]u8, @splat(' ')),
         message,
     });
 }

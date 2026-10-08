@@ -30,11 +30,17 @@ pub fn validate(font: schema.FonFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file_writer: *std.fs.File.Writer,
-    root_dir: std.fs.Dir,
+    io: std.Io,
+    file_writer: *std.Io.File.Writer,
+    root_dir: std.Io.Dir,
     font: *schema.FonFontFile,
 ) !void {
-    const fon_data = try root_dir.readFileAlloc(allocator, font.file, 1 * 1024 * 1024);
+    const fon_data = try root_dir.readFileAlloc(
+        io,
+        font.file,
+        allocator,
+        .limited(1 * 1024 * 1024),
+    );
     defer allocator.free(fon_data);
 
     if (fon_data.len < 0x40)
@@ -637,8 +643,8 @@ inline fn packedStructSize(comptime T: type) usize {
         const info = @typeInfo(T).@"struct";
 
         var size = 0;
-        for (info.fields) |fld| {
-            size += @sizeOf(fld.type);
+        for (info.field_types) |Type| {
+            size += @sizeOf(Type);
         }
         break :blk size;
     };
@@ -649,24 +655,24 @@ fn sliceToStruct(comptime T: type, data: *const [packedStructSize(T)]u8) T {
 
     const info = @typeInfo(T).@"struct";
     comptime var offset: usize = 0;
-    inline for (info.fields) |fld| {
-        const field_ptr = data[offset..][0..@sizeOf(fld.type)];
+    inline for (info.field_names, info.field_types) |fld_name, fld_type| {
+        const field_ptr = data[offset..][0..@sizeOf(fld_type)];
 
-        @field(header, fld.name) = switch (@typeInfo(fld.type)) {
-            .int => std.mem.readInt(fld.type, field_ptr, .little),
+        @field(header, fld_name) = switch (@typeInfo(fld_type)) {
+            .int => std.mem.readInt(fld_type, field_ptr, .little),
             .array => field_ptr.*,
             .@"struct" => |s_info| if (s_info.backing_integer) |int|
                 @bitCast(std.mem.readInt(int, field_ptr, .little))
             else
-                @compileError("unsupported type: " ++ @typeName(fld.type)),
-            .@"enum" => |e_info| if (e_info.is_exhaustive == false)
+                @compileError("unsupported type: " ++ @typeName(fld_type)),
+            .@"enum" => |e_info| if (e_info.mode == .nonexhaustive)
                 @enumFromInt(std.mem.readInt(e_info.tag_type, field_ptr, .little))
             else
-                @compileError("unsupported type: " ++ @typeName(fld.type)),
-            else => @compileError("unsupported type: " ++ @typeName(fld.type)),
+                @compileError("unsupported type: " ++ @typeName(fld_type)),
+            else => @compileError("unsupported type: " ++ @typeName(fld_type)),
         };
 
-        offset += @sizeOf(fld.type);
+        offset += @sizeOf(fld_type);
     }
 
     return header;

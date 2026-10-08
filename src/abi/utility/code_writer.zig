@@ -18,22 +18,31 @@ pub const CodeWriter = struct {
     pub const Writer = std.Io.GenericWriter(*CodeWriter, Error, raw_write);
 
     inner_writer: *std.Io.Writer,
+    std_writer: std.Io.Writer,
 
     indent_level: u16 = 0,
     indent_with: []const u8 = "    ",
 
     start_of_line: bool = true,
 
-    pub fn init(dst: *std.Io.Writer) CodeWriter {
-        return .{ .inner_writer = dst };
+    pub fn init(dst: *std.Io.Writer, buffer: []u8) CodeWriter {
+        return .{
+            .inner_writer = dst,
+            .std_writer = .{
+                .buffer = buffer,
+                .vtable = &.{
+                    .drain = &CodeWriter.drain,
+                },
+            },
+        };
     }
 
     pub fn flush(cw: *CodeWriter) !void {
         try cw.inner_writer.flush();
     }
 
-    pub fn writer(cw: *CodeWriter) Writer {
-        return .{ .context = cw };
+    pub fn writer(cw: *CodeWriter) *std.Io.Writer {
+        return &cw.std_writer;
     }
 
     pub fn indent(cw: *CodeWriter) void {
@@ -45,7 +54,7 @@ pub const CodeWriter = struct {
         cw.indent_level -= 1;
     }
 
-    pub fn raw_write(cw: *CodeWriter, buffer: []const u8) !usize {
+    pub fn raw_write(cw: *CodeWriter, buffer: []const u8) std.Io.Writer.Error!usize {
         std.debug.assert(std.mem.indexOfAny(u8, buffer, forbidden_chars) == null);
 
         var written: usize = 0;
@@ -83,6 +92,21 @@ pub const CodeWriter = struct {
     pub fn writeln(cw: *CodeWriter, raw: []const u8) !void {
         try cw.writer().writeAll(raw);
         try cw.writer().writeAll(EOL);
+    }
+
+    fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        var cw: *CodeWriter = @alignCast(@fieldParentPtr("std_writer", w));
+        const b = w.buffered();
+        var count = try cw.raw_write(b);
+        for (data[0 .. data.len - 1]) |d| {
+            count += try cw.raw_write(d);
+        }
+        if (splat > 0) {
+            for (0..splat) |_| {
+                count += try cw.raw_write(data[0]);
+            }
+        }
+        return count;
     }
 };
 

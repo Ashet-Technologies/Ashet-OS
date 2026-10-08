@@ -42,7 +42,7 @@ pub fn parse(allocator: std.mem.Allocator, patch_code: []const u8) !PatchSet {
     var lines = std.mem.splitScalar(u8, patch_code, '\n');
 
     while (lines.next()) |raw_line| {
-        const line = std.mem.trimRight(u8, raw_line, " \r\t");
+        const line = std.mem.trimEnd(u8, raw_line, " \r\t");
 
         if (std.mem.eql(u8, line, "</patch>")) {
             if (current_target == null) {

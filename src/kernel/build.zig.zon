@@ -4,6 +4,10 @@
     .fingerprint = 0x5dd29aabcec30063,
     .paths = .{"."},
     .dependencies = .{
+        .translate_c = .{
+            .url = "git+https://codeberg.org/ziglang/translate-c?ref=zig-0.17.x#02ff0c523fb92a38939b04d0145c4a9602a74d56",
+            .hash = "translate_c-2.0.0-Q_BUWltOBwBYABF84EUL208pIFeUIwbBs29FmVBaafN5",
+        },
         // Internal dependencies:
         .@"ashet-abi" = .{
             .path = "../abi",
@@ -58,8 +62,8 @@
 
         // External dependencieS:
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
-            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+            .url = "git+https://github.com/ikskuh/zig-args#ad3c89ecdb2979b8b5d52b43b78e79bf51293235",
+            .hash = "args-0.0.0-CiLiqmHiAABlN6icC9sZHdp8HVplOXDxuUNz2VUY_K2X",
         },
 
         .network = .{
@@ -71,12 +75,12 @@
             .hash = "zvnc-0.0.0-imcThRuRAAAuAawQaXqZ_bPaTBIqGQNkrwy3m1JC-1b3",
         },
         .@"foundation-libc" = .{
-            .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
-            .hash = "foundationlibc-0.0.0-LAEuPBSUAAALxr9rsAHYDP21d2KTAd_3tCP_5vO4ap16",
+            .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.17.12/foundationlibc.tar.gz",
+            .hash = "foundationlibc-0.0.0-LAEuPAqkAAAB0mq-cnxjoiCj3-LqiNt8eYDwME7HVy5S",
         },
         .zfat = .{
-            .url = "git+https://github.com/ZigEmbeddedGroup/zfat.git#0571b0d8c8cc4fcb037a1d5e7ea5666cb2f83ddf",
-            .hash = "zfat-0.15.0-SNNK9RRqcgCLQ5mjXghbB6mokzcHORsGnY7GtbfOt2k3",
+            .url = "git+https://github.com/der-teufel-programming/zfat?ref=0.17.x#3d1ab96eb184862cd0800425fb25a4d1a37da7f8",
+            .hash = "zfat-0.0.1-SNNK9XdqcgD2xmhOxReIQobM1lff3FDkAtvEOPoCG0tt",
         },
         .turtlefont = .{
             .url = "git+https://github.com/ikskuh/turtlefont.git?#ff599916181027b20dab62d4ccb6579b8761bdaf",
@@ -103,19 +107,19 @@
 
         // X11 Support
         .zigx = .{
-            .url = "git+https://github.com/Ashet-Technologies/zigx.git#b2dbce082f174d662a825e93e66a2628e710c619",
-            .hash = "x11-0.0.0-yWuw5qHNDADC8Z5PnreIRLJQH0T128Xa9EJgfKZ-1m0N",
+            .url = "git+https://github.com/Ashet-Technologies/zigx.git?ref=0.17-dev#4f8ac111482e0ea752d7376cb6652a1d71522714",
+            .hash = "x11-0.0.0-yWuw5mbHDQDusXwbgKlRp5Fh7xyQ2HuiH61O5xxW1k-7",
         },
 
         // External tooling:
         .propan = .{
-            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#acb54672a593414349df4c4198af52b68e27756b",
-            .hash = "propeller2_wg-0.0.0-hlK46lZRDABATFri59nreUt671QjSJjqKrd9TlgnB3uG",
+            .url = "git+https://github.com/der-teufel-programming/propeller2-wg.git?ref=0.17.x#c0be10c3290be9f5eb7e5da3dc04a3a6b629bd00",
+            .hash = "propeller2_wg-0.0.0-hlK46inaDABGCyQFfRPYPwso1Mcb3Xgw-GCj8WyCzI2B",
         },
 
         .regz = .{
-            .url = "https://github.com/Ashet-Technologies/deps/raw/5ee40b64012181eb25e6e85c254e59d8929d1575/regz-0.15.2.tar.gz",
-            .hash = "mz_tools_regz-0.0.0-lIs8m2hkBgCKgV9mrHi_O8AeDy76rWTvT9rwMrcgWe_j",
+            .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.17.12/mz_tools_regz.tar.gz",
+            .hash = "mz_tools_regz-0.0.0-lIs8m2zbBgAKIi_NwBwgumGac224yhp_ObOm_9BoTyIb",
         },
     },
 }

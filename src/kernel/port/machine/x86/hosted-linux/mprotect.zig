@@ -13,7 +13,7 @@ pub const Range = ashet.memory.Range;
 const Protection = ashet.memory.protection.Protection;
 const AddressInfo = ashet.memory.protection.AddressInfo;
 
-var mappings = std.AutoArrayHashMap(usize, AddressInfo).init(std.heap.page_allocator);
+var mappings = std.array_hash_map.Auto(usize, AddressInfo){};
 var enabled = false;
 
 const PageSlice = struct {
@@ -58,16 +58,19 @@ pub fn update(range: Range, protection: Protection) void {
 fn update_page(page: usize, protection: Protection) void {
     const base = page_size * page;
 
-    _ = std.posix.mprotect(
-        @as([*]align(page_size) u8, @ptrFromInt(base))[0..page_size],
+    const result = std.os.linux.mprotect(
+        @ptrFromInt(base),
+        page_size,
         switch (protection) {
-            .forbidden => 0,
-            .read_only => std.posix.PROT.READ | std.posix.PROT.EXEC,
-            .read_write => std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC,
+            .forbidden => .{},
+            .read_only => .{ .READ = true, .EXEC = true },
+            .read_write => .{ .READ = true, .WRITE = true, .EXEC = true },
         },
-    ) catch |err| std.debug.panic("failed to run mprotect: {}", .{err});
+    );
+    const err = std.os.linux.errno(result);
+    if (err != .SUCCESS) std.debug.panic("failed to run mprotect: {}", .{err});
 
-    const gop = mappings.getOrPut(page) catch @panic("failed to alloc kernel memory");
+    const gop = mappings.getOrPut(std.heap.page_allocator, page) catch @panic("failed to alloc kernel memory");
     if (gop.found_existing) {
         gop.value_ptr.* = .{
             .protection = protection,

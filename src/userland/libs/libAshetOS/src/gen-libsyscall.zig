@@ -1,28 +1,29 @@
 const std = @import("std");
 const abi_parser = @import("abi-parser").model;
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
 
-    const argv = try std.process.argsAlloc(allocator);
+    const argv = try init.minimal.args.toSlice(allocator);
 
     if (argv.len != 4) {
         @panic("gen-libsyscall <in json file> <abi path> <out zig out>");
     }
 
-    const abs_abi_dir_path = argv[2];
+    const abs_abi_dir_path = try std.Io.Dir.cwd().realPathFileAlloc(io, argv[2], allocator);
     std.debug.assert(std.fs.path.isAbsolute(abs_abi_dir_path));
 
     const output_dir_path = argv[3];
 
-    var output_dir = try std.fs.cwd().openDir(output_dir_path, .{});
-    defer output_dir.close();
+    var output_dir = try std.Io.Dir.cwd().openDir(io, output_dir_path, .{});
+    defer output_dir.close(io);
 
-    var src_dir = try output_dir.makeOpenPath("src", .{});
-    defer src_dir.close();
+    var src_dir = try output_dir.createDirPathOpen(io, "src", .{});
+    defer src_dir.close(io);
 
-    const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[1], 1 << 30);
+    const json_txt = try std.Io.Dir.cwd().readFileAlloc(io, argv[1], allocator, .limited(1 << 30));
 
     const schema = try abi_parser.from_json_str(allocator, json_txt);
 
@@ -38,11 +39,11 @@ pub fn main() !u8 {
             .{fmt_fqn(syscall.full_qualified_name, "_")},
         );
 
-        var impl_file = try src_dir.createFile(filename, .{});
-        defer impl_file.close();
+        var impl_file = try src_dir.createFile(io, filename, .{});
+        defer impl_file.close(io);
 
         var impl_buff: [1024]u8 = undefined;
-        var impl_writer = impl_file.writer(&impl_buff);
+        var impl_writer = impl_file.writer(io, &impl_buff);
 
         try render_syscall_object(
             &impl_writer.interface,
@@ -54,10 +55,10 @@ pub fn main() !u8 {
     }
 
     {
-        var file = try output_dir.createFile("assembly-files.rsp", .{});
-        defer file.close();
+        var file = try output_dir.createFile(io, "assembly-files.rsp", .{});
+        defer file.close(io);
 
-        var file_writer = file.writer(&.{});
+        var file_writer = file.writer(io, &.{});
         const writer = &file_writer.interface;
         for (syscall_files.items) |filename| {
             try writer.print("{s}/src/{s}\n", .{ output_dir_path, filename });
