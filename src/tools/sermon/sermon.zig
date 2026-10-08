@@ -193,7 +193,11 @@ const IoOptions = switch (builtin.os.tag) {
         // https://learn.microsoft.com/en-us/windows/console/getconsolemode
 
         const DWORD = std.os.windows.DWORD;
-        const kernel32 = std.os.windows.kernel32;
+        const HANDLE = std.os.windows.HANDLE;
+        const BOOL = std.os.windows.BOOL;
+
+        extern "kernel32" fn GetConsoleMode( hConsoleHandle: HANDLE, lpMode: *DWORD, ) callconv(.winapi) BOOL;
+        extern "kernel32" fn SetConsoleMode( hConsoleHandle: HANDLE, dwMode: DWORD, ) callconv(.winapi) BOOL;
 
         const ENABLE_PROCESSED_OUTPUT = 0x0001;
         const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
@@ -202,10 +206,10 @@ const IoOptions = switch (builtin.os.tag) {
 
         fn configureOutputUncooked(file: std.Io.File) !IoOptions {
             var mode: DWORD = 0;
-            if (kernel32.GetConsoleMode(file.handle, &mode) != 0) {
+            if (!GetConsoleMode(file.handle, &mode).toBool()) {
                 const new_mode = mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
 
-                if (kernel32.SetConsoleMode(file.handle, new_mode) == 0)
+                if (SetConsoleMode(file.handle, new_mode).toBool())
                     return error.ConsoleConfigFailed;
 
                 return .{ .restore_mode = mode };
@@ -216,7 +220,7 @@ const IoOptions = switch (builtin.os.tag) {
 
         fn restore(options: IoOptions, file: std.Io.File) !void {
             if (options.restore_mode) |old_mode| {
-                if (kernel32.SetConsoleMode(file.handle, old_mode) == 0)
+                if (SetConsoleMode(file.handle, old_mode).toBool())
                     return error.ConsoleConfigFailed;
             }
         }
