@@ -1,6 +1,7 @@
 const std = @import("std");
 const args = @import("args");
 const demosuite = @import("agp-demosuite");
+const hypertext = @import("hypertext");
 
 const Options = struct {
     output: ?[]const u8 = null,
@@ -60,10 +61,15 @@ pub fn main() !u8 {
         try std.fs.File.stdin().readToEndAlloc(allocator, max_input_bytes)
     else
         try std.fs.cwd().readFileAlloc(allocator, input_path, max_input_bytes);
-    _ = input;
 
     var context = demosuite.create_context(allocator);
     defer context.deinit();
+
+    const default_font = try context.load_font(@embedFile("fonts/sans.font"), .{
+        .size = 8, // 16,
+        .bold = false,
+        .italic = false,
+    });
 
     var framebuffer = try context.create_framebuffer(
         cli.options.size.width,
@@ -71,8 +77,43 @@ pub fn main() !u8 {
     );
     defer framebuffer.deinit();
 
-    try framebuffer.encoder().clear(.white);
+    {
+        var encoder = framebuffer.encoder();
+
+        try encoder.clear(.red);
+        try encoder.set_clip_rect(1, 1, framebuffer.width - 2, framebuffer.height - 2);
+        try encoder.clear(.white);
+
+        const ctx = hypertext.Context{
+            .user_data = &context,
+            .default_font = default_font,
+            .measure_text_size_fn = hypertext_measure_text_size,
+        };
+
+        try encoder.fill_rect(
+            10,
+            10,
+            framebuffer.width - 20,
+            framebuffer.height - 20,
+            .{ .hue = 5, .value = 7, .saturation = 1 },
+        );
+
+        try hypertext.render_text(
+            &ctx,
+            &encoder,
+            input,
+            .new(10, 10),
+            framebuffer.width - 20,
+        );
+    }
+
     try framebuffer.write_to(std.fs.cwd(), output);
 
     return 0;
+}
+
+fn hypertext_measure_text_size(user_data: ?*anyopaque, font: hypertext.Font, text: []const u8) hypertext.Size {
+    const ctx: *demosuite.Context = @ptrCast(@alignCast(user_data.?));
+
+    return ctx.measure_text_size(font, text) catch @panic("implementation bug");
 }

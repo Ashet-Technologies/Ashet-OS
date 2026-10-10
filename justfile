@@ -37,9 +37,18 @@ build-kernel:
     {{zig}} build {{default_params}} -Dmachine=x86-hosted-linux
     {{zig}} build {{default_params}} -Dmachine=x86-hosted-windows
 
-[working-directory: 'src/userland/apps/wiki']
-build-wiki:
-    {{zig}} build -Dtarget=rv32
+# [working-directory: 'src/userland/apps/wiki']
+# build-wiki:
+#     {{zig}} build -Dtarget=rv32
+
+[working-directory: 'src/userland/libs/libhypertext']
+run-hypertext:
+    {{zig}} build install test
+
+    ./zig-out/bin/hdoc-render \
+        --output /tmp/hypertext.gif \
+        --size 640x400 \
+        data/example.hdoc
 
 [working-directory: 'src/abi']
 abi-test:
