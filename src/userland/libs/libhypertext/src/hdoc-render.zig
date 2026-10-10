@@ -66,7 +66,7 @@ pub fn main() !u8 {
     defer context.deinit();
 
     const default_font = try context.load_font(@embedFile("fonts/sans.font"), .{
-        .size = 8, // 16,
+        .size = 16,
         .bold = false,
         .italic = false,
     });
@@ -86,24 +86,30 @@ pub fn main() !u8 {
 
         const ctx = hypertext.Context{
             .user_data = &context,
-            .default_font = default_font,
             .measure_text_size_fn = hypertext_measure_text_size,
         };
 
+        const target: hypertext.Rectangle = .{
+            .x = 10,
+            .y = 10,
+            .width = framebuffer.width - 20,
+            .height = framebuffer.height - 20,
+        };
+
         try encoder.fill_rect(
-            10,
-            10,
-            framebuffer.width - 20,
-            framebuffer.height - 20,
+            target.x,
+            target.y,
+            target.width,
+            target.height,
             .{ .hue = 5, .value = 7, .saturation = 1 },
         );
 
         try hypertext.render_text(
             &ctx,
+            default_font,
             &encoder,
             input,
-            .new(10, 10),
-            framebuffer.width - 20,
+            target,
         );
     }
 
