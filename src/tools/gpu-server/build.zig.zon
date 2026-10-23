@@ -1,0 +1,18 @@
+.{
+    .name = .gpu_server,
+    .version = "0.1.0",
+    .fingerprint = 0xfa90c655f6289a63,
+    .paths = .{""},
+
+    .dependencies = .{
+        .abi = .{
+            .path = "../../abi",
+        },
+        .agp = .{
+            .path = "../../userland/libs/agp",
+        },
+        .agp_swrast = .{
+            .path = "../../userland/libs/agp-swrast",
+        },
+    },
+}

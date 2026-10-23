@@ -3,6 +3,7 @@
 //!
 
 const std = @import("std");
+const builtin = @import("builtin");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.hosted);
 
@@ -60,6 +61,7 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
         "dummy",
         "vnc",
         "sdl",
+        "avap-v1",
     };
 
     comptime for (shared_video_drivers) |dri| {
@@ -109,6 +111,29 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
             driver.* = try ashet.drivers.block.Host_Disk_Image.init(file, mode);
 
             ashet.drivers.install(&driver.driver);
+        } else if (std.mem.eql(u8, component, "input")) {
+            const device_type = iter.next() orelse badKernelOption("input", "missing input device type", .{});
+
+            if (std.mem.eql(u8, device_type, "evdev")) {
+                if (builtin.os.tag == .linux) {
+                    // "input;evdev;/dev/input/eventX"
+                    const path = iter.next() orelse badKernelOption("input", "missing evdev device path", .{});
+                    if (path.len == 0) badKernelOption("input", "empty evdev device path", .{});
+                    if (iter.next()) |option| badKernelOption("input", "unexpected option \"{f}\"", .{
+                        std.zig.fmtString(option),
+                    });
+
+                    const driver = try global_memory.create(ashet.drivers.input.Host_EvDev_Input);
+                    driver.* = ashet.drivers.input.Host_EvDev_Input.init(path) catch |err| {
+                        badKernelOption("input", "cannot initialize evdev device '{s}': {s}", .{ path, @errorName(err) });
+                    };
+                    ashet.drivers.install(&driver.driver);
+                } else {
+                    badKernelOption("input", "evdev is only supported on Linux", .{});
+                }
+            } else {
+                badKernelOption("input", "bad input device type '{s}'", .{device_type});
+            }
         } else if (std.mem.eql(u8, component, "video")) {
             // "video:<type>:<width>:<height>:<args>"
             const device_type = iter.next() orelse badKernelOption("video", "missing video device type", .{});
@@ -154,9 +179,23 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
                     badKernelOption("sdl", "sdl video output disabled!", .{});
                 }
             } else if (std.mem.eql(u8, device_type, "dummy")) {
-                if (res_x != 320 or res_y != 240) badKernelOption("video", "resolution must be 320x240!", .{});
                 const driver = try global_memory.create(ashet.drivers.video.Virtual_Video_Output);
-                driver.* = ashet.drivers.video.Virtual_Video_Output.init();
+                driver.* = ashet.drivers.video.Virtual_Video_Output.init(
+                    .new(res_x, res_y),
+                );
+                ashet.drivers.install(&driver.driver);
+            } else if (std.mem.eql(u8, device_type, "avap-v1")) {
+                if (res_x != 640 or res_y != 400) badKernelOption("video", "AVAPv1 resolution must be 640x400!", .{});
+
+                const serial_device = iter.next() orelse badKernelOption("video", "missing AVAPv1 serial port", .{});
+
+                const driver = try global_memory.create(ashet.drivers.video.AVAPv1_Framebuffer);
+                driver.* = ashet.drivers.video.AVAPv1_Framebuffer.init(serial_device) catch |err| switch (err) {
+                    error.BadFile => badKernelOption("video", "bad file: {s}", .{serial_device}),
+                    error.DeviceUnresponsive => badKernelOption("video", "AVAP device not responsive", .{}),
+                    error.FileNotFound => badKernelOption("video", "missing file: {s}", .{serial_device}),
+                    error.IoError => badKernelOption("video", "io error on {s}", .{serial_device}),
+                };
                 ashet.drivers.install(&driver.driver);
             } else if (video_drivers.get(device_type)) |video_driver_ctor| {
                 try video_driver_ctor(.{
@@ -167,6 +206,10 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
             } else {
                 badKernelOption("video", "bad video device type '{s}'", .{device_type});
             }
+
+            if (iter.next()) |option| badKernelOption("video", "unexpected option \"{f}\"", .{
+                std.zig.fmtString(option),
+            });
 
             video_out_index += 1;
         } else {

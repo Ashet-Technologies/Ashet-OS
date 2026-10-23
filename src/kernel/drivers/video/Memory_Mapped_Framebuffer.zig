@@ -16,20 +16,13 @@ const Memory_Mapped_Framebuffer = @This();
 
 driver: Driver,
 
-base: [*]u8,
-stride: usize,
-width: u16,
-height: u16,
-byte_per_pixel: u32,
+framebuffer: Framebuffer,
 
 backing_buffer: []align(ashet.memory.page_size) Color,
 border_color: Color = ashet.video.defaults.border_color,
 
-pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Config) !Memory_Mapped_Framebuffer {
+pub fn create(allocator: std.mem.Allocator, comptime driver_name: []const u8, config: Config) !Memory_Mapped_Framebuffer {
     const framebuffer = try config.instantiate();
-
-    const width = std.math.cast(u16, framebuffer.width) orelse return error.FramebufferSize;
-    const height = std.math.cast(u16, framebuffer.height) orelse return error.FramebufferSize;
 
     ashet.memory.protection.ensure_accessible_slice(framebuffer.base[0 .. framebuffer.height * framebuffer.stride]);
 
@@ -39,7 +32,7 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
         std.mem.doNotOptimizeAway(x);
     }
 
-    const vmem = try allocator.alignedAlloc(Color, .fromByteUnits(ashet.memory.page_size), framebuffer.width * framebuffer.height);
+    const vmem = try allocator.alignedAlloc(Color, .fromByteUnits(ashet.memory.page_size), @as(usize, framebuffer.width) * framebuffer.height);
     errdefer allocator.free(vmem);
 
     var driver = Memory_Mapped_Framebuffer{
@@ -47,18 +40,14 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
             .name = driver_name,
             .class = .{
                 .video = .{
-                    .flush_fn = framebuffer.flush_fn,
+                    .begin_write_pixels_fn = begin_write_pixels,
                     .get_properties_fn = get_properties,
+                    .vblank_fns = null, // The memory mapped framebuffer has no vertical blanking support
+                    .mapping_fns = null, // The memory mapped framebuffer is expected to use RGB values
                 },
             },
         },
-
-        .base = framebuffer.base,
-        .stride = framebuffer.stride,
-        .width = width,
-        .height = height,
-        .byte_per_pixel = framebuffer.byte_per_pixel,
-
+        .framebuffer = framebuffer,
         .backing_buffer = vmem,
     };
 
@@ -66,23 +55,83 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
     @memset(vmem, ashet.video.defaults.border_color);
     ashet.video.load_splash_screen(.{
         .base = vmem.ptr,
-        .width = width,
-        .height = height,
+        .width = framebuffer.width,
+        .height = framebuffer.height,
         .stride = framebuffer.width,
     });
 
-    // Immediate flush to show the boot splash:
-    framebuffer.flush_fn(&driver.driver);
+    driver.present();
 
     return driver;
+}
+
+fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
+    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
+    return .{
+        .resolution = .{
+            .width = vd.framebuffer.width,
+            .height = vd.framebuffer.height,
+        },
+
+        .buffer_support = .none,
+    };
+}
+
+fn begin_write_pixels(
+    driver: *Driver,
+    call: *ashet.overlapped.AsyncCall,
+    rectangle: ashet.abi.Rectangle,
+    pixels: []const Color,
+    stride: usize,
+    mode: ashet.abi.video.PresentMode,
+) void {
+    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
+
+    ashet.video.utils.copy_pixels(
+        Color,
+        .{
+            .dst_buffer = .{
+                .data = vd.backing_buffer.ptr,
+                .width = vd.framebuffer.width,
+                .height = vd.framebuffer.height,
+                .stride = vd.framebuffer.width,
+            },
+            .dst_pos = .{
+                .x = @intCast(rectangle.x),
+                .y = @intCast(rectangle.y),
+            },
+            .src_buffer = .{
+                .data = pixels.ptr,
+                .width = rectangle.width,
+                .height = rectangle.height,
+                .stride = stride,
+            },
+        },
+        null,
+    );
+
+    switch (mode) {
+        .dont_care => {}, // we just don't have to show anything here
+
+        // for swapping modes, we do have to copy over portions of the memory:
+        .immediate, .vblank => vd.present(),
+    }
+
+    return call.finalize(ashet.abi.video.WritePixels, .{});
+}
+
+fn present(vd: *Memory_Mapped_Framebuffer) void {
+
+    // Immediate flush to show the boot splash:
+    vd.framebuffer.flush_fn(&vd.driver);
 }
 
 pub const Framebuffer = struct {
     flush_fn: *const fn (*Driver) void,
     base: [*]u8,
     stride: usize,
-    width: u32,
-    height: u32,
+    width: u16,
+    height: u16,
     byte_per_pixel: u32,
 };
 
@@ -104,6 +153,9 @@ pub const Config = struct {
 
     pub fn instantiate(cfg: Config) error{Unsupported}!Framebuffer {
         errdefer logger.warn("unsupported framebuffer configuration: {}", .{cfg});
+
+        const width = std.math.cast(u16, cfg.width) orelse return error.Unsupported;
+        const height = std.math.cast(u16, cfg.height) orelse return error.Unsupported;
 
         // special case for
         if (cfg.red_mask_size == 0 and
@@ -127,8 +179,8 @@ pub const Config = struct {
                 .base = cfg.scanline0,
 
                 .stride = 4 * cfg.width,
-                .width = cfg.width,
-                .height = cfg.height,
+                .width = width,
+                .height = height,
 
                 .byte_per_pixel = @divExact(cfg.bits_per_pixel, 8),
             };
@@ -173,8 +225,8 @@ pub const Config = struct {
             .base = cfg.scanline0,
 
             .stride = cfg.bytes_per_scan_line,
-            .width = cfg.width,
-            .height = cfg.height,
+            .width = width,
+            .height = height,
 
             .byte_per_pixel = @divExact(cfg.bits_per_pixel, 8),
         };
@@ -188,10 +240,10 @@ pub const Config = struct {
                 @setRuntimeSafety(false);
                 // const flush_time_start = readHwCounter();
 
-                const pixel_count = @as(usize, vd.width) * @as(usize, vd.height);
+                const pixel_count = @as(usize, vd.framebuffer.width) * @as(usize, vd.framebuffer.height);
 
                 {
-                    var row = vd.base;
+                    var row = vd.framebuffer.base;
                     var ind: usize = 0;
 
                     var x: usize = 0;
@@ -199,12 +251,12 @@ pub const Config = struct {
                         write(row + ind, color);
 
                         x += 1;
-                        ind += vd.byte_per_pixel;
+                        ind += vd.framebuffer.byte_per_pixel;
 
-                        if (x == vd.width) {
+                        if (x == vd.framebuffer.width) {
                             x = 0;
                             ind = 0;
-                            row += vd.stride;
+                            row += vd.framebuffer.stride;
                         }
                     }
                 }
@@ -241,16 +293,3 @@ pub const Config = struct {
         }.flush;
     }
 };
-
-fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
-    const vd: *Memory_Mapped_Framebuffer = @fieldParentPtr("driver", driver);
-    return .{
-        .resolution = .{
-            .width = vd.width,
-            .height = vd.height,
-        },
-        .stride = vd.width,
-        .video_memory = vd.backing_buffer,
-        .video_memory_mapping = .buffered,
-    };
-}

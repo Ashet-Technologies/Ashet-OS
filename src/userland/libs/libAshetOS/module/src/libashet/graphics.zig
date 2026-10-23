@@ -184,7 +184,7 @@ pub fn create_widget_framebuffer(widget: ashet.abi.Widget) !Framebuffer {
     return try ashet.abi.draw.create_widget_framebuffer(widget);
 }
 
-pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.VideoMemory {
+pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.video.VideoMemory {
     return try ashet.abi.draw.get_framebuffer_memory(fb);
 }
 
@@ -267,7 +267,7 @@ pub const abm = struct {
         return header;
     }
 
-    pub fn read_pixels(file: ashet.fs.File, abm_offset: u64, header: Header, vmem: ashet.abi.VideoMemory) !void {
+    pub fn read_pixels(file: ashet.fs.File, abm_offset: u64, header: Header, vmem: ashet.abi.video.VideoMemory) !void {
         const pixel_count: u32 = @as(u32, header.width) * @as(u32, header.height);
         const pixel_offset: u64 = @sizeOf(abm.Header);
 
