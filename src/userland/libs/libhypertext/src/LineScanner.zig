@@ -16,6 +16,11 @@ pub fn init(text: []const u8) LineScanner {
 }
 
 pub fn next(ls: *LineScanner) ?[]const u8 {
+    const line, _ = ls.next_with_eol() orelse return null;
+    return line;
+}
+
+pub fn next_with_eol(ls: *LineScanner) ?struct { []const u8, bool } {
     const len = ls.text.len;
     if (ls.pos >= len) {
         return null;
@@ -43,7 +48,12 @@ pub fn next(ls: *LineScanner) ?[]const u8 {
         // so we have to break with
     } else len;
 
-    return ls.text[head..tail];
+    const eol = if (tail < ls.text.len)
+        ls.text[tail] == LF
+    else
+        false;
+
+    return .{ ls.text[head..tail], eol };
 }
 
 test LineScanner {

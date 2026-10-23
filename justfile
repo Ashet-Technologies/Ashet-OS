@@ -47,7 +47,7 @@ run-hypertext:
 
     ./zig-out/bin/hdoc-render \
         --output /tmp/hypertext.gif \
-        --size 640x400 \
+        --size 720x1280 \
         data/example.hdoc
 
 [working-directory: 'src/abi']

@@ -14,6 +14,11 @@ pub fn init(text: []const u8) WordScanner {
 }
 
 pub fn next(ws: *WordScanner) ?[]const u8 {
+    const word, _, _ = ws.next_with_space() orelse return null;
+    return word;
+}
+
+pub fn next_with_space(ws: *WordScanner) ?struct { []const u8, bool, bool } {
     ws.skip_whitespace();
 
     const len = ws.text.len;
@@ -41,7 +46,16 @@ pub fn next(ws: *WordScanner) ?[]const u8 {
 
     const tail = ws.pos;
 
-    return ws.text[head..tail];
+    const spc_before = if (head > 0)
+        is_whitespace(ws.text[head - 1])
+    else
+        false;
+    const spc_after = if (tail < ws.text.len)
+        is_whitespace(ws.text[tail])
+    else
+        false;
+
+    return .{ ws.text[head..tail], spc_before, spc_after };
 }
 
 fn skip_whitespace(ws: *WordScanner) void {

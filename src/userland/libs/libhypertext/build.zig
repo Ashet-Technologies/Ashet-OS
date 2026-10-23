@@ -46,6 +46,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "hypertext", .module = hypertext_mod },
                 .{ .name = "agp-demosuite", .module = demosuite_dep.module("agp-demosuite") },
                 .{ .name = "args", .module = args_dep.module("args") },
+                .{ .name = "hyperdoc", .module = hyperdoc_mod },
             },
         }),
     });

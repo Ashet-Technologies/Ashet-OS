@@ -2,10 +2,11 @@ const std = @import("std");
 const args = @import("args");
 const demosuite = @import("agp-demosuite");
 const hypertext = @import("hypertext");
+const hdoc = @import("hyperdoc");
 
 const Options = struct {
     output: ?[]const u8 = null,
-    size: Geometry = .{ .width = 320, .height = 200 },
+    size: Geometry = .{ .width = 640, .height = 400 },
 
     pub const shorthands = .{
         .o = "output",
@@ -62,11 +63,28 @@ pub fn main() !u8 {
     else
         try std.fs.cwd().readFileAlloc(allocator, input_path, max_input_bytes);
 
+    var err_pos: hdoc.ErrorLocation = undefined;
+    var document = hdoc.parse(
+        allocator,
+        input,
+        &err_pos,
+    ) catch |err| {
+        std.log.err("{?s}:{}:{}: {t}", .{ err_pos.source, err_pos.line, err_pos.column, err });
+        return 1;
+    };
+    defer document.deinit();
+
     var context = demosuite.create_context(allocator);
     defer context.deinit();
 
     const default_font = try context.load_font(@embedFile("fonts/sans.font"), .{
         .size = 16,
+        .bold = false,
+        .italic = false,
+    });
+
+    const monospace_font = try context.load_font(@embedFile("fonts/mono-8.font"), .{
+        .size = 8,
         .bold = false,
         .italic = false,
     });
@@ -104,12 +122,15 @@ pub fn main() !u8 {
             .{ .hue = 5, .value = 7, .saturation = 1 },
         );
 
-        try hypertext.render_text(
+        try hypertext.render_document(
             &ctx,
-            default_font,
             &encoder,
-            input,
+            &document,
             target,
+            .{
+                .default_font = default_font,
+                .monospace_font = monospace_font,
+            },
         );
     }
 
