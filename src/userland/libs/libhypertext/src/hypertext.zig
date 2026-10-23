@@ -167,11 +167,15 @@ pub const DocumentStyle = struct {
 };
 
 pub fn render_document(context: *const Context, encoder: *agp.Encoder, document: *const hdoc.Document, target: Rectangle, style: DocumentStyle) !void {
-    const paragraph_padding = 8; // move to style
-
     var cursor = target;
 
-    for (document.contents, 0..) |block, index| {
+    try render_blocks(context, &cursor, encoder, document.contents, style);
+}
+
+fn render_blocks(context: *const Context, cursor: *Rectangle, encoder: *agp.Encoder, contents: []const hdoc.Block, style: DocumentStyle) !void {
+    const paragraph_padding = 8; // move to style
+
+    for (contents, 0..) |block, index| {
         if (cursor.height == 0)
             break;
         if (index > 0) {
@@ -181,14 +185,12 @@ pub fn render_document(context: *const Context, encoder: *agp.Encoder, document:
             .heading,
             .image,
             .ordered_list,
-            .unordered_list,
-            .quote,
             .table_of_contents,
             => {
                 var renderer: TextRenderer = try .init(
                     context,
                     encoder,
-                    cursor,
+                    cursor.*,
                     style.monospace_font,
                     .{},
                 );
@@ -207,12 +209,44 @@ pub fn render_document(context: *const Context, encoder: *agp.Encoder, document:
                 renderer.new_line();
             },
 
+            .quote => |quote| {
+                const top = cursor.y;
+
+                cursor.x += 6;
+                cursor.y += 2;
+
+                try render_paragraph(context, cursor, encoder, quote.contents, style.default_font, .p);
+
+                cursor.x -= 6;
+                cursor.y += 2;
+
+                try encoder.draw_rect(cursor.x, top, 2, @intCast(cursor.y - top), .green);
+            },
+
             .preformatted => |codeblock| {
-                try render_paragraph(context, &cursor, encoder, codeblock.contents, style.monospace_font, .pre);
+                try render_paragraph(context, cursor, encoder, codeblock.contents, style.monospace_font, .pre);
             },
 
             .paragraph => |paragraph| {
-                try render_paragraph(context, &cursor, encoder, paragraph.contents, style.default_font, .p);
+                try render_paragraph(context, cursor, encoder, paragraph.contents, style.default_font, .p);
+            },
+
+            .unordered_list => |list| {
+                cursor.x += 8;
+
+                for (list) |item| {
+                    try encoder.draw_rect(
+                        cursor.x - 6,
+                        cursor.y + 10,
+                        4,
+                        4,
+                        .black,
+                    );
+
+                    try render_blocks(context, cursor, encoder, item.contents, style);
+                }
+
+                cursor.x -= 8;
             },
         }
     }
