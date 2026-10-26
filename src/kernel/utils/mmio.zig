@@ -104,12 +104,12 @@ pub fn MmioRegister(comptime _Reg: type, comptime config: MmioConfig) type {
         inline fn change_fields(value: _Reg, changes: anytype) _Reg {
             var new_value = value;
             const UpdateType = @TypeOf(changes);
-            inline for (std.meta.fields(UpdateType)) |fld| {
-                if (!@hasField(FieldUpdate, fld.name))
-                    @compileError(fld.name);
+            inline for (comptime std.meta.fieldNames(UpdateType)) |fld| {
+                if (!@hasField(FieldUpdate, fld))
+                    @compileError(fld);
 
-                if (@hasField(UpdateType, fld.name)) {
-                    @field(new_value, fld.name) = @field(changes, fld.name);
+                if (@hasField(UpdateType, fld)) {
+                    @field(new_value, fld) = @field(changes, fld);
                 }
             }
             return new_value;
@@ -122,32 +122,15 @@ pub fn MmioRegister(comptime _Reg: type, comptime config: MmioConfig) type {
         pub const FieldUpdate: type = blk: {
             const src_info = @typeInfo(_Reg).@"struct";
 
-            var new_info: std.builtin.Type = .{
-                .@"struct" = .{
-                    .backing_integer = null,
-                    .decls = &.{},
-                    .is_tuple = false,
-                    .layout = .auto,
-                    .fields = &.{},
-                },
-            };
-
-            for (src_info.fields) |old_field| {
-                const FieldType = ?old_field.type;
+            var types: [src_info.field_names.len]type = undefined;
+            var attrs: [src_info.field_names.len]std.builtin.Type.Struct.FieldAttributes = undefined;
+            for (src_info.field_types, 0..) |old_type, i| {
+                const FieldType = ?old_type;
                 const field_default: FieldType = null;
-
-                const new_field: std.builtin.Type.StructField = .{
-                    .type = FieldType,
-                    .name = old_field.name,
-                    .is_comptime = false,
-                    .alignment = @alignOf(FieldType),
-                    .default_value_ptr = &field_default,
-                };
-
-                new_info.@"struct".fields = new_info.@"struct".fields ++ &[_]std.builtin.Type.StructField{new_field};
+                types[i] = FieldType;
+                attrs[i] = .{ .default_value_ptr = &field_default };
             }
-
-            break :blk @Type(new_info);
+            break :blk @Struct(.auto, null, src_info.field_names, &types, &attrs);
         };
     };
 }

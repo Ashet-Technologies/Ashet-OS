@@ -51,13 +51,13 @@ pub const MetadataBlock = extern struct {
     pub fn compute_checksum(mdb: MetadataBlock) u32 {
         var chunk_buffer: [512]u8 = undefined;
 
-        var fbs = std.io.fixedBufferStream(&chunk_buffer);
-        fbs.writer().writeStructEndian(mdb, .little) catch unreachable;
-        std.debug.assert(fbs.pos == @sizeOf(MetadataBlock));
-        fbs.pos -= @sizeOf(u32);
-        std.debug.assert(fbs.pos == @offsetOf(MetadataBlock, "CRC32 Checksum"));
+        var fbw: std.Io.Writer = .fixed(&chunk_buffer);
+        fbw.writeStruct(mdb, .little) catch unreachable;
+        std.debug.assert(fbw.end == @sizeOf(MetadataBlock));
+        fbw.end -= @sizeOf(u32);
+        std.debug.assert(fbw.end == @offsetOf(MetadataBlock, "CRC32 Checksum"));
 
-        return std.hash.crc.Crc32IsoHdlc.hash(fbs.getWritten());
+        return std.hash.crc.@"CRC-32/ISO-HDLC".hash(fbw.buffered());
     }
 
     pub fn is_checksum_ok(mdb: MetadataBlock) bool {
@@ -195,12 +195,13 @@ pub fn dump_type(comptime T: type) void {
     const row_fmt = "| `{X:0>4}` | {s: <20} | {s: >10} | {d: >4} | {s: <30} |\n";
 
     comptime var last_end = 0;
-    inline for (@typeInfo(T).@"struct".fields) |fld| {
-        if (fld.name[0] == '_')
+    const info = @typeInfo(T).@"struct";
+    inline for (info.field_names, info.field_types) |fld_name, fld_type| {
+        if (fld_name[0] == '_')
             continue;
 
-        const offset = @offsetOf(T, fld.name);
-        defer last_end = offset + @sizeOf(fld.type);
+        const offset = @offsetOf(T, fld_name);
+        defer last_end = offset + @sizeOf(fld_type);
 
         if (last_end != offset) {
             std.debug.print(row_fmt, .{
@@ -214,9 +215,9 @@ pub fn dump_type(comptime T: type) void {
 
         std.debug.print(row_fmt, .{
             offset,
-            fld.name,
-            typeName(fld.type),
-            @sizeOf(fld.type),
+            fld_name,
+            typeName(fld_type),
+            @sizeOf(fld_type),
             "-",
         });
     }

@@ -18,13 +18,13 @@ pub fn build(b: *std.Build) void {
 
     // Re-export the "abi-schema" module:
     const abi_parser_mod = abi_mapper_dep.module("abi-parser");
-    b.modules.putNoClobber("abi-parser", abi_parser_mod) catch @panic("out of memory");
+    b.modules.putNoClobber(b.graph.arena, "abi-parser", abi_parser_mod) catch @panic("out of memory");
 
     const render_zig_exe = b.addExecutable(.{
         .name = "render-abi-file",
         .root_module = b.createModule(.{
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
             .root_source_file = b.path("utility/render_zig_code.zig"),
             .imports = &.{.{ .name = "abi-parser", .module = abi_parser_mod }},
         }),
@@ -76,7 +76,7 @@ pub fn build(b: *std.Build) void {
     const abi_tests_mod = b.createModule(.{
         .root_source_file = b.path("src/ports/tests.zig"),
         .target = b.graph.host,
-        .optimize = .Debug,
+        .optimize = .debug,
         .imports = &.{
             .{ .name = "abi", .module = abi_mod },
         },
@@ -98,7 +98,7 @@ pub fn build(b: *std.Build) void {
             .root_module = b.createModule(.{
                 .root_source_file = escaping_tests_zig,
                 .target = b.graph.host,
-                .optimize = .Debug,
+                .optimize = .debug,
             }),
         });
         const escaping_tests_run = b.addRunArtifact(escaping_tests_exe);

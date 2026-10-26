@@ -152,14 +152,20 @@ pub fn getRequiredPages(pm: RawPageStorageManager, bytes: usize) u32 {
 /// Use `pageToPtr` to obtain a physical pointer to it.
 /// Returned memory must be freed with `freePages` using the same return value as returned by `allocPages`.
 pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!PageSlice {
-    errdefer if (builtin.mode == .Debug) {
+    errdefer if (builtin.mode == .debug) {
         var stack_trace_addresses: [16]usize = undefined;
         var stack_trace: std.builtin.StackTrace = .{
             .index = 0,
             .instruction_addresses = &stack_trace_addresses,
         };
 
-        std.debug.captureStackTrace(@returnAddress(), &stack_trace);
+        var frames = @import("ashet-std").StackIterator.init(@returnAddress(), null);
+        defer frames.deinit();
+        while (frames.next()) |address| {
+            if (stack_trace.index == stack_trace_addresses.len) break;
+            stack_trace_addresses[stack_trace.index] = address;
+            stack_trace.index += 1;
+        }
 
         logger.warn("memory allocation for {} pages failed at:", .{count});
         ashet.Debug.printStackTrace("  ", &stack_trace, logger.warn);

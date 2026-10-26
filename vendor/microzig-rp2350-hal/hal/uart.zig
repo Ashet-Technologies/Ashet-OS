@@ -126,10 +126,10 @@ test "uart.validate_baudrate" {
 }
 
 pub const instance = struct {
-    pub const UART0: UART = @enumFromInt(0);
-    pub const UART1: UART = @enumFromInt(1);
+    pub const UART0: UART = @fromBackingInt(@intCast(0));
+    pub const UART1: UART = @fromBackingInt(@intCast(1));
     pub fn num(n: u1) UART {
-        return @enumFromInt(n);
+        return @fromBackingInt(@intCast(n));
     }
 };
 
@@ -149,19 +149,36 @@ pub const UART = enum(u1) {
         deadline: mdf.time.Deadline,
     };
 
-    pub const Writer = std.io.GenericWriter(UART_With_Timeout, TransmitError, generic_writer_fn);
-    pub const Reader = std.io.GenericReader(UART_With_Timeout, ReceiveError, generic_reader_fn);
+    pub const Writer = @import("ashet-std").CallbackWriter(UART_With_Timeout, TransmitError, generic_writer_fn);
+    pub const Reader = struct {
+        context: UART_With_Timeout,
+        interface: std.Io.Reader,
+        err: ?ReceiveBlockingError = null,
+
+        fn stream(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+            const self: *Reader = @alignCast(@fieldParentPtr("interface", r));
+            const dest = limit.slice(try w.writableSliceGreedy(1));
+            if (dest.len == 0) return 0;
+            // Read one byte at a time, as delimiter reads did in GenericReader.
+            dest[0] = self.context.instance.read_word_blocking(self.context.deadline) catch |err| {
+                self.err = err;
+                return error.ReadFailed;
+            };
+            w.advance(1);
+            return 1;
+        }
+    };
 
     pub fn writer(uart: UART, deadline: mdf.time.Deadline) Writer {
         return .{ .context = .{ .instance = uart, .deadline = deadline } };
     }
 
-    pub fn reader(uart: UART, deadline: mdf.time.Deadline) Reader {
-        return .{ .context = .{ .instance = uart, .deadline = deadline } };
+    pub fn reader(uart: UART, deadline: mdf.time.Deadline, buffer: []u8) Reader {
+        return .{ .context = .{ .instance = uart, .deadline = deadline }, .interface = .{ .seek = 0, .end = 0, .buffer = buffer, .vtable = &.{ .stream = Reader.stream } } };
     }
 
     pub inline fn get_regs(uart: UART) *volatile UartRegs {
-        return switch (@intFromEnum(uart)) {
+        return switch (@backingInt(uart)) {
             0 => UART0_reg,
             1 => UART1_reg,
         };
@@ -236,14 +253,14 @@ pub const UART = enum(u1) {
 
     pub fn tx(uart: UART) dma.DMA_WriteTarget {
         return .{
-            .dreq = if (@intFromEnum(uart) == 0) .uart0_tx else .uart1_tx,
+            .dreq = if (@backingInt(uart) == 0) .uart0_tx else .uart1_tx,
             .addr = @intFromPtr(&uart.get_regs().UARTDR),
         };
     }
 
     pub fn rx(uart: UART) dma.DMA_ReadTarget {
         return .{
-            .dreq = if (@intFromEnum(uart) == 0) .uart0_rx else .uart1_rx,
+            .dreq = if (@backingInt(uart) == 0) .uart0_rx else .uart1_rx,
             .addr = @intFromPtr(&uart.get_regs().UARTDR),
         };
     }
@@ -324,7 +341,7 @@ pub const UART = enum(u1) {
 
     // TODO: Will potentially be modified in a future DMA overhaul
     pub fn dreq_tx(uart: UART) dma.Dreq {
-        return switch (@intFromEnum(uart)) {
+        return switch (@backingInt(uart)) {
             0 => .uart0_tx,
             1 => .uart1_tx,
         };

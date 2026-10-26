@@ -9,7 +9,7 @@ const Resolution = ashet.abi.Size;
 
 const VNC_Server = @import("../../port/hosted/VNC_Server.zig");
 
-backbuffer_lock: std.Thread.Mutex = .{},
+backbuffer_lock: std.Io.Mutex = .init,
 
 backbuffer: []Color,
 frontbuffer: []align(ashet.memory.page_size) Color,

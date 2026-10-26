@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("kernel");
 const builtin = @import("builtin");
+pub const hosted = @import("../hosted/initialize.zig");
 
 comptime {
     if (builtin.single_threaded) {
@@ -22,7 +23,7 @@ pub inline fn getStackPointer() usize {
     );
 }
 
-var global_lock: std.Thread.Mutex = .{};
+var global_lock: std.Io.Mutex = .init;
 var interrupt_flag: bool = true;
 
 pub fn areInterruptsEnabled() bool {
@@ -34,7 +35,7 @@ pub inline fn isInInterruptContext() bool {
 }
 
 pub fn disableInterrupts() void {
-    global_lock.lock();
+    global_lock.lockUncancelable(hosted.io());
     std.debug.assert(areInterruptsEnabled());
     @atomicStore(bool, &interrupt_flag, false, .seq_cst);
 }
@@ -42,7 +43,7 @@ pub fn disableInterrupts() void {
 pub fn enableInterrupts() void {
     std.debug.assert(!areInterruptsEnabled());
     @atomicStore(bool, &interrupt_flag, true, .seq_cst);
-    global_lock.unlock();
+    global_lock.unlock(hosted.io());
 }
 
 pub fn get_cpu_cycle_counter() u64 {
@@ -50,12 +51,12 @@ pub fn get_cpu_cycle_counter() u64 {
 
     var buf: [8]u8 = undefined;
     // almost everything should support this
-    std.posix.getrandom(&buf) catch @panic("unsupported call");
+    hosted.io().randomSecure(&buf) catch @panic("unsupported call");
     return @bitCast(buf);
 }
 
 pub fn get_cpu_random_seed() ?u64 {
     var seed: u64 = 0;
-    std.posix.getrandom(std.mem.asBytes(&seed)) catch @panic("getrandom failed");
+    hosted.io().randomSecure(std.mem.asBytes(&seed)) catch @panic("getrandom failed");
     return seed;
 }

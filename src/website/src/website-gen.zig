@@ -127,7 +127,7 @@ pub fn render_page_file(output_dir: std.fs.Dir, path: []const u8, source: *std.I
 pub fn render_page(target: *std.Io.Writer, source: *std.Io.Reader, options: RenderOptions) !void {
     const template = templates.body;
 
-    var seen_tags: std.enums.EnumSet(Placeholder) = .initEmpty();
+    var seen_tags: std.enums.EnumSet(Placeholder) = .empty;
 
     var pos: usize = 0;
     while (pos < template.len) {

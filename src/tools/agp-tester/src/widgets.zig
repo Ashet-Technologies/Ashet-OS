@@ -24,6 +24,7 @@ const default_theme: widgets_draw.Theme = .create_default(.{
     .menu_font = mono_6_font,
     .title_font = mono_6_font,
     .widget_font = mono_8_font,
+    .item_font = mono_8_font,
 });
 
 const mono_6_font: agp.Font = embed_font(@embedFile("mono-6.font"), .{});
@@ -82,6 +83,7 @@ const icon_8x8: agp.Bitmap = .{
 };
 
 pub fn render_demo(
+    io: std.Io,
     allocator: std.mem.Allocator,
     path: []const u8,
 ) !void {
@@ -90,15 +92,15 @@ pub fn render_demo(
     const desktop_color: Color = .from_hsv(.green, 1, 2);
 
     // Collect draw commands:
-    var fbs = std.io.fixedBufferStream(&cmd_buffer);
+    var fbs: std.Io.Writer = .fixed(&cmd_buffer);
     var draw: widgets_draw.Draw = .init(
         default_theme,
-        agp.encoder(fbs.writer()),
+        agp.encoder(&fbs),
     );
 
     try render_example(&draw);
 
-    try write_agp(allocator, path, fbs.getWritten(), desktop_color);
+    try write_agp(io, allocator, path, fbs.buffered(), desktop_color);
 }
 
 fn render_example(draw: *widgets_draw.Draw) !void {
@@ -278,6 +280,7 @@ fn render_example(draw: *widgets_draw.Draw) !void {
 }
 
 pub fn write_agp(
+    io: std.Io,
     allocator: std.mem.Allocator,
     path: []const u8,
     cmd_stream: []const u8,
@@ -290,32 +293,21 @@ pub fn write_agp(
 
     // Render image:
     {
-        const Rasterizer = agp_swrast.Rasterizer(.{
-            .backend_type = *Backend,
-            .framebuffer_type = null,
-            .pixel_layout = .row_major,
+        var rasterizer = agp_swrast.Rasterizer.init(.{
+            .pixels = &pixel_buffer, .width = width, .height = height, .stride = width,
         });
-
-        var backend: Backend = .{
-            .framebuffer = &pixel_buffer,
-            .width = width,
-            .height = height,
-            .stride = width,
-        };
-        var rasterizer = Rasterizer.init(&backend);
-
-        var fbs = std.io.fixedBufferStream(cmd_stream);
-
-        var decoder = agp.decoder(allocator, fbs.reader());
+        var stream: std.Io.Reader = .fixed(cmd_stream);
+        var decoder = agp.streamDecoder(allocator, &stream);
         defer decoder.deinit();
-
-        while (try decoder.next()) |cmd| {
-            try rasterizer.execute(cmd);
-        }
+        var cookie: u8 = 0;
+        const resolver: agp_swrast.Rasterizer.Resolver = .{
+            .ctx = &cookie, .resolve_font_fn = resolve_font, .resolve_framebuffer_fn = resolve_framebuffer,
+        };
+        while (try decoder.next()) |cmd| rasterizer.execute(cmd, resolver);
     }
 
     // Writeout image:
-    try gif.write_to_file_path(std.fs.cwd(), path, width, height, &pixel_buffer);
+    try gif.write_to_file_path(io, std.Io.Dir.cwd(), path, width, height, &pixel_buffer);
 }
 
 const Backend = struct {
@@ -362,4 +354,11 @@ const Backend = struct {
 fn embed_font(data: []const u8, hint: agp_swrast.fonts.FontHint) agp.Font {
     @setEvalBranchQuota(10_000);
     return @constCast(@ptrCast(&(agp_swrast.fonts.FontInstance.load(data, hint) catch unreachable)));
+}
+
+fn resolve_font(_: *anyopaque, font: agp.Font) ?*const agp_swrast.fonts.FontInstance {
+    return @ptrCast(@alignCast(font));
+}
+fn resolve_framebuffer(_: *anyopaque, _: agp.Framebuffer) ?agp_swrast.Image {
+    return null;
 }

@@ -224,7 +224,7 @@ pub const Builder = struct {
 
 pub fn render(
     allocator: std.mem.Allocator,
-    file_writer: *std.fs.File.Writer,
+    file_writer: *std.Io.File.Writer,
     font: Builder,
     info: FontInfo,
 ) !void {
@@ -262,8 +262,8 @@ pub fn render(
         try writer.writeInt(u32, meta_value, .little);
     }
 
-    var glyph_sizes: std.AutoArrayHashMap(u21, struct { u32, usize }) = .init(allocator);
-    defer glyph_sizes.deinit();
+    var glyph_sizes: std.array_hash_map.Auto(u21, struct { u32, usize }) = .empty;
+    defer glyph_sizes.deinit(allocator);
 
     // Write `glyph_offsets` array:
     {
@@ -276,7 +276,7 @@ pub fn render(
 
             try writer.writeInt(u32, base_offset, .little);
 
-            try glyph_sizes.put(codepoint, .{ base_offset, encoded_glyph_size });
+            try glyph_sizes.put(allocator, codepoint, .{ base_offset, encoded_glyph_size });
 
             base_offset += encoded_glyph_size;
         }

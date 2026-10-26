@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .safe });
 
     const run_step = b.step("run", "Runs the editor with a blank design");
 
@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
 
     const nfd = b.dependency("nfd", .{
         .target = target,
-        .optimize = .ReleaseSafe,
+        .optimize = .safe,
     });
     const nfd_mod = nfd.module("nfd");
     const ashet_mod = ashet_dep.module("ashet");

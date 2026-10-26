@@ -20,7 +20,7 @@ const Font = agp.Font;
 const Framebuffer = agp.Framebuffer;
 const Bitmap = agp.Bitmap;
 
-const rastram_section = if (builtin.mode != .Debug)
+const rastram_section = if (builtin.mode != .debug)
     ".sram.bank0.fastram"
 else
     ".text";
@@ -361,7 +361,7 @@ pub const Rasterizer = struct {
         text: []const u8,
     ) linksection(rastram_section) void {
         var sw = rast.screen_writer(start.x, start.y, font, color, null);
-        sw.writer().writeAll(text) catch {};
+        sw.writeAll(text) catch {};
     }
 
     pub fn blit_bitmap(rast: Rasterizer, point: Point, bitmap: *const Bitmap) linksection(rastram_section) void {
@@ -400,7 +400,14 @@ pub const Rasterizer = struct {
         rast.blit_image_region(target.position(), src_pos, target.size(), image);
     }
 
-    pub fn screen_writer(rast: Rasterizer, x: i16, y: i16, font: *const fonts.FontInstance, color: Color, max_width: ?u15) linksection(rastram_section) ScreenWriter {
+    pub fn screen_writer(
+        rast: Rasterizer,
+        x: i16,
+        y: i16,
+        font: *const fonts.FontInstance,
+        color: Color,
+        max_width: ?u15,
+    ) linksection(rastram_section) ScreenWriter {
         const limit: u15 = @intCast(if (max_width) |mw|
             @max(0, x + mw)
         else
@@ -567,7 +574,7 @@ pub const Rasterizer = struct {
 
     pub const ScreenWriter = struct {
         pub const Error = error{InvalidUtf8};
-        pub const Writer = std.Io.GenericWriter(*ScreenWriter, Error, write);
+        // pub const Writer = std.Io.GenericWriter(*ScreenWriter, Error, write);
 
         const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, Color, writeVectorPixel);
 
@@ -578,8 +585,15 @@ pub const Rasterizer = struct {
         limit: u15, // only render till this column (exclusive)
         font: *const fonts.FontInstance,
 
-        pub fn writer(sw: *ScreenWriter) linksection(rastram_section) Writer {
-            return Writer{ .context = sw };
+        // pub fn writer(sw: *ScreenWriter) linksection(rastram_section) Writer {
+        //     return Writer{ .context = sw };
+        // }
+
+        pub fn writeAll(sw: *ScreenWriter, text: []const u8) Error!void {
+            var written: usize = 0;
+            while (written < text.len) {
+                written += try sw.write(text[written..]);
+            }
         }
 
         fn write(sw: *ScreenWriter, text: []const u8) linksection(rastram_section) Error!usize {
@@ -706,7 +720,7 @@ test "ClipRect.intersect handles non-zero clip origins" {
 }
 
 test "fill_rect clips width at negative x" {
-    var pixels = [_]Color{.black} ** 12;
+    var pixels: [12]Color = @splat(.black);
     var rast = Rasterizer.init(.{
         .pixels = pixels[0..].ptr,
         .width = 6,
@@ -736,7 +750,7 @@ test "blit_partial_image clips width at negative x" {
         .magenta,
     };
 
-    var dst_pixels = [_]Color{.black} ** 12;
+    var dst_pixels: [12]Color = @splat(.black);
     var rast = Rasterizer.init(.{
         .pixels = dst_pixels[0..].ptr,
         .width = 6,
@@ -766,7 +780,7 @@ test "blit_partial_image clips width at negative x" {
 }
 
 test "draw_rect does not invent a clipped left edge at x zero" {
-    var pixels = [_]Color{.black} ** 36;
+    var pixels: [36]Color = @splat(.black);
     var rast = Rasterizer.init(.{
         .pixels = pixels[0..].ptr,
         .width = 6,

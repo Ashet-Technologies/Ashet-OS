@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
 
     // Dependencies:
     const abi_dep = b.dependency("abi", .{});
-    const std_dep = b.dependency("std", .{});
+    const std_dep = b.dependency("ashet-std", .{});
     const agp_dep = b.dependency("agp", .{});
     const libgui_dep = b.dependency("libgui", .{});
 
@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .name = "gen-widget-types",
         .root_module = b.createModule(.{
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
             .root_source_file = b.path("tools/gen-widget-types.zig"),
             .imports = &.{
                 .{ .name = "widget-def-model", .module = widget_def_model_mod },

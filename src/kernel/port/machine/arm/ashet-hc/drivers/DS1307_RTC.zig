@@ -83,14 +83,14 @@ pub fn init() !DS1307_RTC {
 
     return DS1307_RTC{
         .time_base = std.time.ns_per_s * unix_timestamp,
-        .ticks_base = @intFromEnum(hal.time.get_time_since_boot()),
+        .ticks_base = @backingInt(hal.time.get_time_since_boot()),
     };
 }
 
 fn nanoTimestamp(driver: *Driver) i128 {
     const rtc: *DS1307_RTC = @alignCast(@fieldParentPtr("driver", driver));
 
-    const us_since_init: i128 = @intFromEnum(hal.time.get_time_since_boot()) - rtc.ticks_base;
+    const us_since_init: i128 = @backingInt(hal.time.get_time_since_boot()) - rtc.ticks_base;
 
     return rtc.time_base + std.time.ns_per_us * us_since_init;
 }
@@ -102,7 +102,7 @@ const RTC_Registers = extern struct {
         clock: enum(u1) { running = 0, halted = 1 },
     },
     minutes: u8,
-    hours: packed union {
+    hours: packed union(u8) {
         control: packed struct(u8) { @"opaque": u6, mode: HourMode, _reserved: u1 },
         @"am/pm": packed struct(u8) { hour: u5, half: enum(u1) { AM = 0, PM = 1 }, mode: HourMode = .@"am/pm", _reserved: u1 = 0 },
         @"24h": packed struct(u8) { hour: u6, mode: HourMode = .@"24h", _reserved: u1 = 0 },

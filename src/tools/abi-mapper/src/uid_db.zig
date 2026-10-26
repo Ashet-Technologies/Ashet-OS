@@ -5,7 +5,7 @@ const std = @import("std");
 /// file and reuses existing IDs, allocating new ones for new FQNs.
 pub const UidDatabase = struct {
     allocator: std.mem.Allocator,
-    entries: std.StringArrayHashMap(u32),
+    entries: std.array_hash_map.String(u32),
     next_id: u32,
 
     /// JSON schema used for persistence.
@@ -21,7 +21,7 @@ pub const UidDatabase = struct {
     pub fn init(allocator: std.mem.Allocator) UidDatabase {
         return .{
             .allocator = allocator,
-            .entries = .init(allocator),
+            .entries = .empty,
             .next_id = 1,
         };
     }
@@ -31,7 +31,7 @@ pub const UidDatabase = struct {
         for (db.entries.keys()) |key| {
             db.allocator.free(key);
         }
-        db.entries.deinit();
+        db.entries.deinit(db.allocator);
         db.* = undefined;
     }
 
@@ -43,17 +43,22 @@ pub const UidDatabase = struct {
         const key = try db.allocator.dupe(u8, fqn);
         const uid = db.next_id;
         db.next_id += 1;
-        try db.entries.put(key, uid);
+        try db.entries.put(db.allocator, key, uid);
         return uid;
     }
 
     /// Load a database from `path`.  If the file does not exist an empty
     /// database is returned instead.
-    pub fn load(allocator: std.mem.Allocator, path: []const u8) !UidDatabase {
+    pub fn load(io: std.Io, allocator: std.mem.Allocator, path: []const u8) !UidDatabase {
         var db = init(allocator);
         errdefer db.deinit();
 
-        const content = std.fs.cwd().readFileAlloc(allocator, path, 1 << 20) catch |err| switch (err) {
+        const content = std.Io.Dir.cwd().readFileAlloc(
+            io,
+            path,
+            allocator,
+            .limited(1 << 20),
+        ) catch |err| switch (err) {
             error.FileNotFound => return db,
             else => return err,
         };
@@ -67,7 +72,7 @@ pub const UidDatabase = struct {
 
         for (parsed.value.entries) |entry| {
             const key = try allocator.dupe(u8, entry.fqn);
-            try db.entries.put(key, entry.uid);
+            try db.entries.put(db.allocator, key, entry.uid);
             if (entry.uid >= db.next_id) {
                 db.next_id = entry.uid + 1;
             }
@@ -77,7 +82,7 @@ pub const UidDatabase = struct {
     }
 
     /// Save the database to `path` atomically.
-    pub fn save(db: *const UidDatabase, path: []const u8) !void {
+    pub fn save(db: *const UidDatabase, io: std.Io, path: []const u8) !void {
         const entries = try db.allocator.alloc(FileFormat.Entry, db.entries.count());
         defer db.allocator.free(entries);
 
@@ -88,16 +93,22 @@ pub const UidDatabase = struct {
         const format: FileFormat = .{ .entries = entries };
 
         var atomic_buffer: [4096]u8 = undefined;
-        var atomic_file = try std.fs.cwd().atomicFile(path, .{ .write_buffer = &atomic_buffer });
-        defer atomic_file.deinit();
+        var atomic_file = try std.Io.Dir.cwd().createFileAtomic(
+            io,
+            path,
+            .{ .make_path = true, .replace = true },
+        );
+        defer atomic_file.deinit(io);
 
-        const writer = &atomic_file.file_writer.interface;
+        var file_writer = atomic_file.file.writer(io, &atomic_buffer);
+
+        const writer = &file_writer.interface;
         const options: std.json.Stringify.Options = .{
             .whitespace = .indent_2,
         };
         try writer.print("{f}", .{std.json.fmt(format, options)});
-        try writer.flush();
+        try file_writer.flush();
 
-        try atomic_file.finish();
+        try atomic_file.replace(io);
     }
 };

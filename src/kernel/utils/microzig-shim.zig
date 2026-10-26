@@ -78,11 +78,11 @@ pub const drivers = struct {
                 _,
 
                 pub fn new(in: u7) Address {
-                    return @enumFromInt(in);
+                    return @fromBackingInt(@intCast(in));
                 }
 
                 pub fn check_reserved(addr: Address) Address.Error!void {
-                    const value: u7 = @intFromEnum(addr);
+                    const value: u7 = @backingInt(addr);
                     switch (value) {
                         0b0000000 => return error.GeneralCall,
                         0b0000001 => return error.CBUSAddress,
@@ -106,7 +106,7 @@ pub const drivers = struct {
             _,
 
             pub fn from_us(us: u64) Duration {
-                return @enumFromInt(us);
+                return @fromBackingInt(@intCast(us));
             }
 
             pub fn from_ms(ms: u64) Duration {
@@ -120,7 +120,7 @@ pub const drivers = struct {
             deadline: ?Absolute,
             pub fn init_relative(instant: kernel.time.Instant, timeout: ?Duration) Deadline {
                 return .{
-                    .deadline = if (timeout) |t| instant.add_ms(@intFromEnum(t)) else null,
+                    .deadline = if (timeout) |t| instant.add_ms(@backingInt(t)) else null,
                 };
             }
 
@@ -155,24 +155,17 @@ pub const utilities = struct {
         if (type_info.pointer.size != .slice)
             @compileError("Slice must have a slice type!");
 
-        const item_ptr_info: std.builtin.Type = .{
-            .pointer = .{
-                .alignment = @min(type_info.pointer.alignment, @alignOf(type_info.pointer.child)),
-                .size = .one,
-                .child = type_info.pointer.child,
-                .address_space = type_info.pointer.address_space,
-                .is_const = type_info.pointer.is_const,
-                .is_volatile = type_info.pointer.is_volatile,
-                .is_allowzero = type_info.pointer.is_allowzero,
-                .sentinel_ptr = null,
-            },
+        const item_ptr_attrs = blk: {
+            var attrs = type_info.pointer.attrs;
+            attrs.@"align" = @min(attrs.@"align" orelse @alignOf(type_info.pointer.child), @alignOf(type_info.pointer.child));
+            break :blk attrs;
         };
 
         return struct {
             const Vector = @This();
 
             pub const Item = type_info.pointer.child;
-            pub const ItemPtr = @Type(item_ptr_info);
+            pub const ItemPtr = @Pointer(.one, item_ptr_attrs, type_info.pointer.child, null);
 
             /// The slice of slices. The first and the last slice of this slice must
             /// be non-empty or the slice-of-slices must be empty.
@@ -383,7 +376,7 @@ pub const concurrency = struct {
             const Bit = std.math.Log2Int(BlockType);
             const Self = @This();
 
-            blocks: [BlockNum]std.atomic.Value(BlockType) = .{std.atomic.Value(BlockType){ .raw = 0 }} ** BlockNum,
+            blocks: [BlockNum]std.atomic.Value(BlockType) = @splat(std.atomic.Value(BlockType){ .raw = 0 }),
 
             /// Sets the bit at `bit_index` to 1.
             ///

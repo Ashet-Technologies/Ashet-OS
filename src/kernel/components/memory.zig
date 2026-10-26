@@ -53,12 +53,7 @@ pub const KernelMemoryRange = struct {
     }
 };
 
-pub const USizeIndex = @Type(.{
-    .int = .{
-        .bits = std.math.log2_int_ceil(u32, @bitSizeOf(usize)),
-        .signedness = .unsigned,
-    },
-});
+pub const USizeIndex = @Int(.unsigned, std.math.log2_int_ceil(u32, @bitSizeOf(usize)));
 
 const RawPageStorageManager = @import("memory/RawPageStorageManager.zig");
 
@@ -537,11 +532,11 @@ pub fn sized_aligned_element_pool(comptime element_size: usize, comptime alignme
             raw: Buffer align(alignment),
         };
 
-        var items = std.heap.MemoryPool(Item).init(ashet.memory.allocator);
+        var items = std.heap.MemoryPool(Item).empty;
 
         /// Creates a new chunk of `element_size` bytes.
         pub fn alloc() error{OutOfMemory}!BufferPointer {
-            const item = try items.create();
+            const item = try items.create(ashet.memory.allocator);
             allocated_items += 1;
             return @ptrCast(item);
         }

@@ -3,26 +3,27 @@ const model = @import("widget-def-model");
 
 const Allocator = std.mem.Allocator;
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    const args = try std.process.argsAlloc(allocator);
+    const args = try init.minimal.args.toSlice(allocator);
 
     if (args.len != 3) return usage();
 
     const input_path = args[1];
     const output_path = args[2];
 
-    const source = try std.fs.cwd().readFileAlloc(allocator, input_path, 1 * 1024 * 1024);
+    const source = try std.Io.Dir.cwd().readFileAlloc(io, input_path, allocator, .limited(1 * 1024 * 1024));
     const parsed = try model.from_json_str(allocator, source);
 
-    var output_file = try std.fs.cwd().createFile(output_path, .{});
-    defer output_file.close();
+    var output_file = try std.Io.Dir.cwd().createFile(io, output_path, .{});
+    defer output_file.close(io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
 
     try renderDocument(allocator, &output_writer.interface, parsed.value);
     try output_writer.interface.flush();

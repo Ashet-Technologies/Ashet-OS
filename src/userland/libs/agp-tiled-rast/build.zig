@@ -47,9 +47,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(rast_exerciser);
 
     const exerciser_run = b.addRunArtifact(rast_exerciser);
-    if (b.args) |args| {
-        exerciser_run.addArgs(args);
-    }
+    exerciser_run.addPassthruArgs();
     test_step.dependOn(&exerciser_run.step);
 
     const exerciser_tests = b.addTest(.{

@@ -680,7 +680,7 @@ pub const Value = union(enum) {
 };
 
 pub const CompoundType = struct {
-    fields: std.StringArrayHashMap(Value),
+    fields: std.array_hash_map.String(Value),
 
     pub fn jsonStringify(value: CompoundType, jws: anytype) !void {
         try jws.beginObject();
@@ -694,8 +694,8 @@ pub const CompoundType = struct {
     pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!CompoundType {
         if (.object_begin != try source.next()) return error.UnexpectedToken;
 
-        var compound: CompoundType = .{ .fields = .init(allocator) };
-        errdefer compound.fields.deinit();
+        var compound: CompoundType = .{ .fields = .empty };
+        errdefer compound.fields.deinit(allocator);
 
         while (true) {
             const name_token: std.json.Token = try source.nextAllocMax(allocator, .alloc_always, options.max_value_len.?);
@@ -707,7 +707,7 @@ pub const CompoundType = struct {
 
                 else => return error.UnexpectedToken,
             };
-            const gop = try compound.fields.getOrPut(field_name);
+            const gop = try compound.fields.getOrPut(allocator, field_name);
 
             if (gop.found_existing) {
                 switch (options.duplicate_field_behavior) {

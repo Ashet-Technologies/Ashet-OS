@@ -4,8 +4,8 @@
     .version = "0.0.0",
     .dependencies = .{
         .hyperdoc = .{
-            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#4b673429ae9668213992db43bc9b9158d1924b42",
-            .hash = "hyperdoc-0.1.0-nnPEq-LDAADToTXxWF55g42avVDqk1Sdmihm-2qSwK7g",
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git?ref=hdoc-2.0-zig-0.17#cd09e54a738c5d3e744cceb8da734bdda4d6cc8a",
+            .hash = "hyperdoc-0.1.0-nnPEq42ACAAOZDAuwmUY9rns4hgFfe6mM02dhiKLnqY-",
         },
         .AshetOS = .{
             .path = "../libAshetOS",

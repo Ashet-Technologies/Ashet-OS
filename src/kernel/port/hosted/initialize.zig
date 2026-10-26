@@ -28,12 +28,18 @@ const KernelOptions = struct {
 
 pub var kernel_options: KernelOptions = .{};
 
-var startup_time: ?std.time.Instant = null;
+pub var process_init: std.process.Init = undefined;
+
+pub fn io() std.Io {
+    return process_init.io;
+}
+
+var startup_time: ?std.Io.Timestamp = null;
 
 pub fn get_tick_count_ms() u64 {
     if (startup_time) |sutime| {
-        var now = std.time.Instant.now() catch unreachable;
-        return @intCast(now.since(sutime) / std.time.ns_per_ms);
+        const now = std.Io.Clock.awake.now(io());
+        return @intCast(sutime.durationTo(now).toMilliseconds());
     } else {
         return 0;
     }
@@ -67,7 +73,7 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
             @compileError("duplicate video driver key: " ++ dri);
     };
 
-    try network.init();
+    try network.init(io());
 
     if (sdl_enabled) {
         if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) < 0) {
@@ -75,7 +81,7 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
         }
     }
 
-    startup_time = try std.time.Instant.now();
+    startup_time = std.Io.Clock.awake.now(io());
     logger.debug("startup time = {?}", .{startup_time});
 
     ashet.drivers.install(&hw.systemClock.driver);
@@ -83,7 +89,7 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
     var video_out_index: usize = 0;
     var any_sdl_output: bool = false;
 
-    const cli = args_parser.parseForCurrentProcess(KernelOptions, global_memory, .print) catch std.process.exit(1);
+    const cli = args_parser.parseForCurrentProcess(KernelOptions, process_init, .print) catch std.process.exit(1);
     kernel_options = cli.options;
 
     for (cli.positionals) |arg| {
@@ -95,14 +101,14 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
             const disk_file = iter.next() orelse badKernelOption("drive", "missing file name", .{});
 
             const mode_str = iter.next() orelse "ro";
-            const mode: std.fs.File.OpenMode = if (std.mem.eql(u8, mode_str, "ro"))
-                std.fs.File.OpenMode.read_only
+            const mode: std.Io.Dir.OpenFileOptions.Mode = if (std.mem.eql(u8, mode_str, "ro"))
+                std.Io.Dir.OpenFileOptions.Mode.read_only
             else if (std.mem.eql(u8, mode_str, "rw"))
-                std.fs.File.OpenMode.read_write
+                std.Io.Dir.OpenFileOptions.Mode.read_write
             else
                 badKernelOption("drive", "bad mode '{s}'", .{mode_str});
 
-            const file = try std.fs.cwd().openFile(disk_file, .{ .mode = mode });
+            const file = try std.Io.Dir.cwd().openFile(io(), disk_file, .{ .mode = mode });
 
             const driver = try global_memory.create(ashet.drivers.block.Host_Disk_Image);
 
@@ -203,10 +209,6 @@ fn display_from_sdl_window_id(id: u32) ?*SDL_Display {
 }
 
 fn handle_SDL_events(ptr: ?*anyopaque) callconv(.c) u32 {
-    errdefer |err| {
-        logger.err("SDL event loop crashed: {s}", .{@errorName(err)});
-        std.os.exit(1);
-    }
     _ = ptr;
 
     while (true) {
