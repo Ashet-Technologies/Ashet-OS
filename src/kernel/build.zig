@@ -344,6 +344,7 @@ pub fn build(b: *std.Build) void {
         gen_libc_txt.addArg("msvc_lib_dir=");
         gen_libc_txt.addArg("kernel32_lib_dir=");
         gen_libc_txt.addArg("gcc_dir=");
+        gen_libc_txt.addArg("darwin_sdk_dir=");
 
         const libc_txt_path = gen_libc_txt.captureStdOut(.{});
 
