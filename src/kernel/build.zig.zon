@@ -93,8 +93,8 @@
 
         // Wayland Support
         .shimizu = .{
-            .url = "git+https://git.klaji.dev/klaji/shimizu?ref=0.1.0#97250cf1abc49fd25030e4a39119adfc2fe828b5",
-            .hash = "shimizu-0.1.0-irfMUTYuBADeM2VjpyCokqXDwYrG2aUI-wQ8FTxgUc_6",
+            .url = "git+https://codeberg.org/Der_Teufel/shimizu.git?ref=0.17.x#dbc98d118b8f55bea733e031e7f4f79a5da6d741",
+            .hash = "shimizu-0.2.0-dev-irfMUegvBACgiEYtbwUw4w1f7rZfUjJPAyFHvBelC_uF",
         },
         .wayland = .{
             .url = "https://gitlab.freedesktop.org/wayland/wayland/-/archive/1.23.1/wayland-1.23.1.tar.gz",
