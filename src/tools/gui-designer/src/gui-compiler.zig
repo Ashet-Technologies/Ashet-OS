@@ -19,21 +19,22 @@ pub const CliOptions = struct {
     };
 };
 
-fn usage_fault(comptime fmt: []const u8, params: anytype) !noreturn {
+fn usage_fault(io: std.Io, comptime fmt: []const u8, params: anytype) !noreturn {
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    var stderr_writer = std.Io.File.stderr().writer(io, &stderr_buffer);
     try stderr_writer.interface.print("gui-compiler: " ++ fmt, params);
     try stderr_writer.interface.flush();
     std.process.exit(1);
 }
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
 
-    var cli = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
+    var cli = args_parser.parseForCurrentProcess(CliOptions, init, .print) catch return 1;
     defer cli.deinit();
 
     const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
@@ -46,16 +47,17 @@ pub fn main() !u8 {
     defer document.deinit();
 
     if (cli.positionals.len != 1) try usage_fault(
+        io,
         "expects a single positional file, but {} were provided",
         .{cli.positionals.len},
     );
 
     {
-        const file = try std.fs.cwd().openFile(cli.positionals[0], .{});
-        defer file.close();
+        const file = try std.Io.Dir.cwd().openFile(io, cli.positionals[0], .{});
+        defer file.close(io);
 
         var file_buffer: [2048]u8 = undefined;
-        var file_reader = file.reader(&file_buffer);
+        var file_reader = file.reader(io, &file_buffer);
 
         document = try model.load_design(
             &file_reader.interface,
@@ -64,14 +66,14 @@ pub fn main() !u8 {
         );
     }
 
-    try render_to_file(document, .stdout());
+    try render_to_file(io, document, .stdout());
 
     return 0;
 }
 
-pub fn render_to_file(document: Document, file: std.fs.File) !void {
+pub fn render_to_file(io: std.Io, document: Document, file: std.Io.File) !void {
     var file_buffer: [4096]u8 = undefined;
-    var file_writer = file.writer(&file_buffer);
+    var file_writer = file.writer(io, &file_buffer);
     const writer = &file_writer.interface;
 
     try writer.writeAll(

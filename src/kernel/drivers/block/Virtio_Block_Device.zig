@@ -36,7 +36,7 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
         logger.info("block device is legacy device!", .{});
     }
 
-    logger.debug("available block device features: 0x{X:0>8}", .{@intFromEnum(available_features)});
+    logger.debug("available block device features: 0x{X:0>8}", .{@backingInt(available_features)});
 
     logger.info("device size: {}", .{block_dev.capacity});
 
@@ -115,7 +115,7 @@ fn read_block(dri: *Driver, block: u64, buffer: []u8) ReadError!void {
         .sector = .zero,
     };
 
-    header.type.write(@intFromEnum(virtio.block.RequestType.in), device.is_legacy);
+    header.type.write(@backingInt(virtio.block.RequestType.in), device.is_legacy);
     header.sector.write(block, device.is_legacy);
 
     var footer = virtio.block.RequestResponse{
@@ -146,7 +146,7 @@ fn read_block(dri: *Driver, block: u64, buffer: []u8) ReadError!void {
         .unsupported => logger.err("block device error: unsupported", .{}),
         _ => {
             logger.err("unsupported return status: {}", .{
-                @intFromEnum(footer.status),
+                @backingInt(footer.status),
             });
             return error.Fault;
         },

@@ -27,7 +27,7 @@ const build = struct {
     fn constructTargetQuery(spec: std.Target.Query) std.Target.Query {
         var base: std.Target.Query = spec;
 
-        std.debug.assert(base.dynamic_linker.len == 0);
+        std.debug.assert(base.dynamic_linker == null);
         std.debug.assert(base.os_tag == null);
         std.debug.assert(base.ofmt == null);
 

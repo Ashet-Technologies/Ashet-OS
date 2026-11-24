@@ -730,43 +730,43 @@
         const max_length = comptime "ok,cancel,yes,no,abort,retry,continue,ignore".len;
 
         var buffer: [max_length]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&buffer);
+        var stream: std.Io.Writer = .fixed(&buffer);
 
         if (buttons.has_ok) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("ok") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("ok") catch unreachable;
         }
         if (buttons.has_cancel) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("cancel") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("cancel") catch unreachable;
         }
         if (buttons.has_yes) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("yes") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("yes") catch unreachable;
         }
         if (buttons.has_no) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("no") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("no") catch unreachable;
         }
         if (buttons.has_abort) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("abort") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("abort") catch unreachable;
         }
         if (buttons.has_retry) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("retry") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("retry") catch unreachable;
         }
         if (buttons.has_continue) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("continue") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("continue") catch unreachable;
         }
         if (buttons.has_ignore) {
-            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
-            stream.writer().writeAll("ignore") catch unreachable;
+            if (stream.end > 0) stream.writeAll(",") catch unreachable;
+            stream.writeAll("ignore") catch unreachable;
         }
 
-        if (stream.pos > 0) {
-            try writer.writeAll(stream.getWritten());
+        if (stream.end > 0) {
+            try writer.writeAll(stream.buffered());
         } else {
             try writer.writeAll("none");
         }

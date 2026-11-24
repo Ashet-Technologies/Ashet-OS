@@ -1,11 +1,11 @@
 const std = @import("std");
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var in_buffer: [4096]u8 = undefined;
     var out_buffer: [4096]u8 = undefined;
 
-    var stdin_reader = std.fs.File.stdin().reader(&in_buffer);
-    var stdout_writer = std.fs.File.stdout().writer(&out_buffer);
+    var stdin_reader = std.Io.File.stdin().reader(init.io, &in_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &out_buffer);
 
     const reader = &stdin_reader.interface;
     const writer = &stdout_writer.interface;

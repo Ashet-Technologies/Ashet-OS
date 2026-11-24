@@ -37,12 +37,12 @@ pub fn main() !void {
 
     // Send NTP request:
     {
-        var stream = std.io.fixedBufferStream(&buffer);
-        try stream.writer().writeStructEndian(request, .big);
+        var stream: std.Io.Writer = .fixed(&buffer);
+        try stream.writeStruct(request, .big);
 
         _ = try socket.sendTo(
             ashet.net.EndPoint.new(ntp_server, ntp_port),
-            stream.getWritten(),
+            stream.buffered(),
         );
     }
 
@@ -50,8 +50,8 @@ pub fn main() !void {
         var ep: ashet.net.EndPoint = undefined;
         const len = try socket.receiveFrom(&ep, &buffer);
         if (len > 0) {
-            var stream = std.io.fixedBufferStream(buffer[0..len]);
-            const response: NtpHeader = try stream.reader().readStructEndian(NtpHeader, .big);
+            var stream: std.Io.Reader = .fixed(buffer[0..len]);
+            const response: NtpHeader = try stream.takeStruct(NtpHeader, .big);
 
             std.log.info("NTP Response:", .{});
             std.log.info("  flags > version        = {}", .{response.flags.version});

@@ -77,10 +77,11 @@ fn createInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, bloc
             .driver = dri,
             .vtable = &Instance.vtable,
         },
-        .enumerator_pool = std.heap.MemoryPool(Enumerator).init(allocator),
+        .enumerator_pool = .empty,
+        .allocator = allocator,
         .fs = undefined,
     };
-    errdefer instance.enumerator_pool.deinit();
+    errdefer instance.enumerator_pool.deinit(instance.allocator);
 
     instance.init() catch |err| switch (err) {
         error.OperationTimeout => return error.DeviceError,
@@ -103,10 +104,11 @@ fn destroyInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, gen
 }
 
 fn enumCast(comptime T: type, v: anytype) T {
-    return @as(T, @enumFromInt(@intFromEnum(v)));
+    return @as(T, @fromBackingInt(@intCast(@backingInt(v))));
 }
 
 const Instance = struct {
+    allocator: std.mem.Allocator = undefined,
     generic: GenericInstance,
     block_device: BlockDevice,
     fs: afs.FileSystem,
@@ -118,7 +120,7 @@ const Instance = struct {
     }
 
     fn deinit(instance: *Instance) void {
-        instance.enumerator_pool.deinit();
+        instance.enumerator_pool.deinit(instance.allocator);
         instance.* = undefined;
     }
 
@@ -184,7 +186,7 @@ const Instance = struct {
     fn createEnumerator(generic_instance: *GenericInstance, directory_handle: DirectoryHandle) FileSystemDriver.CreateEnumeratorError!*GenericEnumerator {
         const instance = getPtr(generic_instance);
 
-        const enumerator = instance.enumerator_pool.create() catch return error.SystemResources;
+        const enumerator = instance.enumerator_pool.create(instance.allocator) catch return error.SystemResources;
         errdefer instance.enumerator_pool.destroy(enumerator);
 
         enumerator.* = Enumerator{
@@ -364,5 +366,5 @@ fn mapFileSystemError(err: anytype) !noreturn {
 }
 
 fn dateTimeFromTimestamp(ts: i128) ashet.abi.DateTime {
-    return @enumFromInt(@as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms))));
+    return @fromBackingInt(@intCast(@as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms)))));
 }

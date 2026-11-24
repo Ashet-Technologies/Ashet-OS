@@ -406,12 +406,18 @@ pub const Font = struct {
     }
 };
 
-var system_fonts: std.StringArrayHashMap(Font) = undefined;
+var system_fonts: std.array_hash_map.String(Font) = undefined;
 
 fn initialize_system_fonts() !void {
-    errdefer |e| logger.err("failed to load system fonts: {s}", .{@errorName(e)});
+    return initialize_system_fonts_impl() catch |e| {
+        logger.err("failed to load system fonts: {s}", .{@errorName(e)});
+        return e;
+    };
+}
 
-    system_fonts = .init(ashet.memory.static_memory_allocator);
+fn initialize_system_fonts_impl() !void {
+
+    system_fonts = .{};
 
     var fonts_dir = try libashet.fs.Directory.openDrive(.system, "system/fonts");
     defer fonts_dir.close();
@@ -432,7 +438,13 @@ fn load_system_font(dir: libashet.fs.Directory, info: ashet.abi.FileInfo) !void 
     errdefer ashet.memory.static_memory_allocator.free(font_name);
 
     logger.info("Loading system font '{s}'...", .{font_name});
-    errdefer |err| logger.err("failed to load font '{s}': {s}", .{ font_name, @errorName(err) });
+    return load_system_font_data(dir, info, file_name, font_name) catch |err| {
+        logger.err("failed to load font '{s}': {s}", .{ font_name, @errorName(err) });
+        return err;
+    };
+}
+
+fn load_system_font_data(dir: libashet.fs.Directory, info: ashet.abi.FileInfo, file_name: []const u8, font_name: []const u8) !void {
 
     const font_size = std.math.cast(usize, info.size) orelse return error.FileTooBig;
 
@@ -447,7 +459,7 @@ fn load_system_font(dir: libashet.fs.Directory, info: ashet.abi.FileInfo) !void 
 
     const instance = try fonts.FontInstance.load(font_data, .{});
 
-    try system_fonts.put(font_name, Font{
+    try system_fonts.put(ashet.memory.static_memory_allocator, font_name, Font{
         .system_font = true,
         .raw_data = font_data,
         .font_data = instance,

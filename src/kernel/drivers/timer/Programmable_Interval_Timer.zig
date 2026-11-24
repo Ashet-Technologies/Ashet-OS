@@ -20,11 +20,11 @@ pub const Register = enum(u16) {
 };
 
 fn write_reg(reg: Register, value: u8) void {
-    x86.out(u8, @intFromEnum(reg), value);
+    x86.out(u8, @backingInt(reg), value);
 }
 
 fn read_reg(reg: Register) u8 {
-    return x86.in(u8, @intFromEnum(reg));
+    return x86.in(u8, @backingInt(reg));
 }
 
 pub fn init() PIT {

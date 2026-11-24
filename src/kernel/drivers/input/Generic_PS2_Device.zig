@@ -189,7 +189,7 @@ fn detect_device_type(dri: Generic_PS2_Device, timeout: Deadline) !?ps2.DeviceTy
 
     const device_id = std.mem.readInt(u16, &.{ lo, hi }, .little);
 
-    return @enumFromInt(device_id);
+    return @fromBackingInt(@intCast(device_id));
 }
 
 fn read_byte(dri: Generic_PS2_Device, timeout: Deadline) error{Timeout}!u8 {
@@ -205,9 +205,9 @@ fn write_byte(dri: Generic_PS2_Device, data: u8, timeout: Deadline) error{Timeou
 fn write_command(dri: Generic_PS2_Device, cmd: Command, timeout: Deadline) IO_Error!void {
     for (0..3) |_| {
         logger.debug("write {}", .{cmd});
-        try dri.write_byte(@intFromEnum(cmd), timeout);
+        try dri.write_byte(@backingInt(cmd), timeout);
 
-        const response: Response = @enumFromInt(try dri.read_byte(timeout));
+        const response: Response = @fromBackingInt(@intCast(try dri.read_byte(timeout)));
         logger.debug("  got {}", .{response});
 
         switch (response) {
@@ -242,18 +242,18 @@ pub const Response = enum(u8) {
 };
 
 const Keyboard = struct {
-    pub const set_leds: Command = @enumFromInt(0xED);
-    pub const selftest: Command = @enumFromInt(0xEE); // returns 0xEE
-    pub const select_scancode_set: Command = @enumFromInt(0xF0);
-    pub const set_repeat_rate: Command = @enumFromInt(0xF3);
+    pub const set_leds: Command = @fromBackingInt(@intCast(0xED));
+    pub const selftest: Command = @fromBackingInt(@intCast(0xEE)); // returns 0xEE
+    pub const select_scancode_set: Command = @fromBackingInt(@intCast(0xF0));
+    pub const set_repeat_rate: Command = @fromBackingInt(@intCast(0xF3));
 };
 
 const Mouse = struct {
-    pub const set_resolution: Command = @enumFromInt(0xE8);
-    pub const status_request: Command = @enumFromInt(0xE9);
-    pub const request_single_packet: Command = @enumFromInt(0xEB);
-    pub const get_mouse_id: Command = @enumFromInt(0xF2);
-    pub const set_sample_rate: Command = @enumFromInt(0xF3);
+    pub const set_resolution: Command = @fromBackingInt(@intCast(0xE8));
+    pub const status_request: Command = @fromBackingInt(@intCast(0xE9));
+    pub const request_single_packet: Command = @fromBackingInt(@intCast(0xEB));
+    pub const get_mouse_id: Command = @fromBackingInt(@intCast(0xF2));
+    pub const set_sample_rate: Command = @fromBackingInt(@intCast(0xF3));
 };
 
 // TODO: Refactor sink/source and move them elsewhere:

@@ -14,7 +14,7 @@ pub const clear_screen = "\x1B[H\x1B[2J\x1B[3J" ++ sgi(.reset);
 ///
 /// Read more here: https://en.wikipedia.org/wiki/ANSI_escape_code#Select_Graphic_Rendition_parameters
 pub fn sgi(comptime rendition: GraphicsRendition) []const u8 {
-    return std.fmt.comptimePrint("\x1B[{}m", .{@intFromEnum(rendition)});
+    return std.fmt.comptimePrint("\x1B[{}m", .{@backingInt(rendition)});
 }
 
 pub const GraphicsRendition = enum(u32) {

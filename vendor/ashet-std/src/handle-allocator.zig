@@ -15,7 +15,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
         const handle_index_mask = active_handle_limit - 1;
 
         generations: [active_handle_limit]HandleType = std.mem.zeroes([active_handle_limit]HandleType),
-        active_handles: HandleSet = HandleSet.initFull(),
+        active_handles: HandleSet = HandleSet.full,
         backings: [active_handle_limit]Backing = undefined,
 
         pub fn alloc(ha: *HAlloc) error{SystemResources}!Handle {
@@ -24,7 +24,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
                     const generation = ha.generations[index];
                     const numeric = generation *% active_handle_limit + index;
 
-                    const handle = @as(Handle, @enumFromInt(numeric));
+                    const handle: Handle = @fromBackingInt(@intCast(numeric));
                     if (handle == .invalid) {
                         ha.generations[index] += 1;
                         continue;
@@ -42,7 +42,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
         }
 
         pub fn resolveIndex(ha: *HAlloc, handle: Handle) error{InvalidHandle}!usize {
-            const numeric = @intFromEnum(handle);
+            const numeric = @backingInt(handle);
 
             const index = numeric & handle_index_mask;
             const generation = numeric / active_handle_limit;
@@ -58,12 +58,12 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
         }
 
         pub fn handleToIndexUnsafe(handle: Handle) usize {
-            const numeric = @intFromEnum(handle);
+            const numeric = @backingInt(handle);
             return @as(usize, numeric & handle_index_mask);
         }
 
         pub fn free(ha: *HAlloc, handle: Handle) void {
-            const numeric = @intFromEnum(handle);
+            const numeric = @backingInt(handle);
 
             const index = numeric & handle_index_mask;
             const generation = numeric / active_handle_limit;

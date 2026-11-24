@@ -1,9 +1,7 @@
 const std = @import("std");
 const schema = @import("schema.zig");
 
-const c = @cImport({
-    @cInclude("stb_truetype.h");
-});
+const c = @import("c");
 
 pub fn validate(font: schema.TtfFontFile) !bool {
     var ok = true;
@@ -22,11 +20,17 @@ pub fn validate(font: schema.TtfFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file_writer: *std.fs.File.Writer,
-    root_dir: std.fs.Dir,
+    io: std.Io,
+    file_writer: *std.Io.File.Writer,
+    root_dir: std.Io.Dir,
     font: *schema.TtfFontFile,
 ) !void {
-    const ttf_data = try root_dir.readFileAlloc(allocator, font.file, 1 * 1024 * 1024);
+    const ttf_data = try root_dir.readFileAlloc(
+        io,
+        font.file,
+        allocator,
+        .limited(1 * 1024 * 1024),
+    );
     defer allocator.free(ttf_data);
 
     var ttf: c.stbtt_fontinfo = undefined;

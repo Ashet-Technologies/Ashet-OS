@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Runs the test suite.");
 
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .safe });
 
     const args_dep = b.dependency("args", .{});
     const ptk_dep = b.dependency("ptk", .{});

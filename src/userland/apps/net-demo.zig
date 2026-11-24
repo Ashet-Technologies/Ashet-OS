@@ -21,14 +21,14 @@ fn tcp_demo() !void {
         0,
     ));
 
-    try ashet.debug.writer().print("bound socket to: {}\r\n", .{actual});
+    try ashet.Debug.writer().print("bound socket to: {}\r\n", .{actual});
 
     try socket.connect(ashet.net.EndPoint.new(
         ashet.net.IP.ipv4(.{ 10, 0, 2, 2 }),
         4567,
     ));
 
-    ashet.debug.write("Connected.\r\n");
+    ashet.Debug.write("Connected.\r\n");
 
     const writer = socket.writer();
     const reader = socket.reader();
@@ -49,7 +49,7 @@ fn tcp_demo() !void {
         ashet.process.yield();
     }
 
-    ashet.debug.write("the server has closed the connection\n");
+    ashet.Debug.write("the server has closed the connection\n");
 }
 
 const lolwtfbiggy = [1]u8{'?'} ** 128_000;

@@ -121,7 +121,7 @@ pub const Draw = struct {
     }
 
     fn rstrip(text: []const u8) []const u8 {
-        return std.mem.trimRight(u8, text, " \r\n\t");
+        return std.mem.trimEnd(u8, text, " \r\n\t");
     }
 
     pub fn radiobutton(draw: *const Draw, opt: struct {
@@ -1115,7 +1115,7 @@ pub const Draw = struct {
             var width = 0;
             var height = 1;
             var len = 0;
-            var used_colors: std.StaticBitSet(256) = .initFull();
+            var used_colors: std.StaticBitSet(256) = .full;
 
             for (pattern) |c| {
                 if (c == '\n') {
@@ -1175,9 +1175,10 @@ const AutoBitmap = struct {
 fn BitmapStack(comptime icon_set: anytype) type {
     var bmp_offset: usize = 0;
 
-    var fields: []const std.builtin.Type.StructField = &.{};
-    for (@typeInfo(@TypeOf(icon_set)).@"struct".fields) |fld| {
-        const pattern = @field(icon_set, fld.name);
+    const names = @typeInfo(@TypeOf(icon_set)).@"struct".field_names;
+    var attrs: [names.len]std.builtin.Type.Struct.FieldAttributes = undefined;
+    for (names, 0..) |fld, field_index| {
+        const pattern = @field(icon_set, fld);
 
         var width = 0;
         var height = 1;
@@ -1195,44 +1196,33 @@ fn BitmapStack(comptime icon_set: anytype) type {
 
         bmp_offset = std.mem.alignForward(usize, bmp_offset, 4);
 
-        const newfield: std.builtin.Type.StructField = .{
-            .name = fld.name,
-            .type = AutoBitmap,
-
-            .alignment = @alignOf(AutoBitmap),
+        const newfield: std.builtin.Type.Struct.FieldAttributes = .{
+            .@"align" = @alignOf(AutoBitmap),
             .default_value_ptr = &AutoBitmap{
                 .width = width,
                 .height = height,
                 .offset = bmp_offset,
             },
-            .is_comptime = false,
+
         };
-        fields = fields ++ [1]std.builtin.Type.StructField{newfield};
+        attrs[field_index] = newfield;
         bmp_offset += width * height;
     }
 
-    const ImageSet = @Type(.{
-        .@"struct" = .{
-            .backing_integer = null,
-            .decls = &.{},
-            .fields = fields,
-            .is_tuple = false,
-            .layout = .auto,
-        },
-    });
+    const ImageSet = @Struct(.auto, null, names, &@splat(AutoBitmap), &attrs);
 
     const pixelcount = bmp_offset;
     const image_set: ImageSet = .{};
-    const cfields = fields;
+    const cfields = names;
 
     return struct {
         buffer: [pixelcount]Color align(4),
         tkey: Color,
 
         pub fn init(color_map: anytype) @This() {
-            var used_colors: std.StaticBitSet(256) = .initFull();
-            inline for (@typeInfo(@TypeOf(color_map)).@"struct".fields) |fld| {
-                used_colors.unset(@field(color_map, fld.name).to_u8());
+            var used_colors: std.StaticBitSet(256) = .full;
+            inline for (@typeInfo(@TypeOf(color_map)).@"struct".field_names) |fld| {
+                used_colors.unset(@field(color_map, fld).to_u8());
             }
 
             const tkey: Color = .from_u8(@intCast(used_colors.toggleFirstSet().?));
@@ -1241,8 +1231,8 @@ fn BitmapStack(comptime icon_set: anytype) type {
             _ = &buffer;
 
             inline for (cfields) |fld| {
-                const pattern = @field(icon_set, fld.name);
-                const image: AutoBitmap = @field(image_set, fld.name);
+                const pattern = @field(icon_set, fld);
+                const image: AutoBitmap = @field(image_set, fld);
 
                 comptime var x = 0;
                 comptime var y = 0;

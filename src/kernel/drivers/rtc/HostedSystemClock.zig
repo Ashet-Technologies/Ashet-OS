@@ -20,5 +20,5 @@ pub fn init() HostedSystemClock {
 fn nanoTimestamp(driver: *Driver) i128 {
     const rtc: *HostedSystemClock = @fieldParentPtr("driver", driver);
     _ = rtc;
-    return std.time.nanoTimestamp();
+    return std.Io.Clock.real.now(ashet.platform.hosted.io()).nanoseconds;
 }

@@ -171,7 +171,7 @@ pub const KeyboardDecoderSCS1 = struct {
                         return error.Overrun;
                     decoder.queue.push(.{
                         .keyboard = .{
-                            .usage = @enumFromInt(scancode), // TODO: Implement PS/2 SCS1 this proper
+                            .usage = @fromBackingInt(@intCast(scancode)), // TODO: Implement PS/2 SCS1 this proper
                             .down = (scancode == input), // if different, the upper bit is set
                         },
                     });
@@ -191,7 +191,7 @@ pub const KeyboardDecoderSCS1 = struct {
                     return error.Overrun;
                 decoder.queue.push(.{
                     .keyboard = .{
-                        .usage = @enumFromInt(@as(u8, 0x80) | scancode), // TODO: Implement PS/2 SCS1 this proper
+                        .usage = @fromBackingInt(@intCast(@as(u8, 0x80) | scancode)), // TODO: Implement PS/2 SCS1 this proper
                         .down = (scancode == input), // if different, the upper bit is set
                     },
                 });
@@ -212,7 +212,7 @@ pub const KeyboardDecoderSCS1 = struct {
                     return error.Overrun;
                 decoder.queue.push(.{
                     .keyboard = .{
-                        .usage = @enumFromInt(scancode), // TODO: Implement PS/2 SCS1 this proper
+                        .usage = @fromBackingInt(@intCast(scancode)), // TODO: Implement PS/2 SCS1 this proper
                         .down = (input7 == input), // if different, the upper bit is set
                     },
                 });
@@ -361,7 +361,7 @@ pub const ScanCodeMap = struct {
     }
 
     pub fn compile(comptime source: []const u8) ScanCodeMap {
-        @setEvalBranchQuota(50_000);
+        @setEvalBranchQuota(1_000_000);
         var line_iter: ConfigFileIterator = .init(source);
 
         var bare: [256]?KeyUsageCode = @splat(null);

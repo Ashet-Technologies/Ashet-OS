@@ -49,7 +49,7 @@ pub var framebuffer: [framebuffer_item_cnt]Color align(4096) linksection(img_fra
 const PaletteColor = RGB555;
 // const PaletteColor = RGB888x;
 
-const letterbox_color = [1]PaletteColor{.from_hex(0x7E2553)} ** @divExact(@sizeOf(u32), @sizeOf(PaletteColor));
+const letterbox_color = @as([@divExact(@sizeOf(u32), @sizeOf(PaletteColor))]PaletteColor, @splat(.from_hex(0x7E2553)));
 
 driver: Driver,
 
@@ -340,9 +340,9 @@ inline fn set_dma_channel(regs: *volatile rp2350.dma.Channel.Regs, comptime T: t
 
 fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
     @setRuntimeSafety(false);
-    // @optimizeFor(.ReleaseFast);
+    // @optimizeFor(.fast);
 
-    if (builtin.mode == .Debug) {
+    if (builtin.mode == .debug) {
         @panic("The HSTX/HDMI driver has to be compiled with a release mode, otherwise it will be too slow.");
     }
 
@@ -660,11 +660,11 @@ const fifo_chunks = struct {
     };
 
     const non_image_data linksection(dma_datax_section) = ([0]HstxFifoItem{} ++
-        snippets.letterbox_line ** letterbox_margin.height ++
-        snippets.vsync_off ** timings.vertical.front_porch ++
-        snippets.vsync_on ** timings.vertical.sync_width ++
-        snippets.vsync_off ** timings.vertical.back_porch ++
-        snippets.letterbox_line ** letterbox_margin.height ++
+        repeat_items(snippets.letterbox_line, letterbox_margin.height) ++
+        repeat_items(snippets.vsync_off, timings.vertical.front_porch) ++
+        repeat_items(snippets.vsync_on, timings.vertical.sync_width) ++
+        repeat_items(snippets.vsync_off, timings.vertical.back_porch) ++
+        repeat_items(snippets.letterbox_line, letterbox_margin.height) ++
         [0]HstxFifoItem{});
 
     var even_image_line: ImageLine align(16) linksection(dma_data1_section) = .{};
@@ -742,4 +742,10 @@ inline fn compute_tmds_rot(comptime fld: std.meta.FieldEnum(PaletteColor)) u5 {
 
 inline fn compute_tmds_nbits(comptime fld: std.meta.FieldEnum(PaletteColor)) u3 {
     return @bitSizeOf(@FieldType(PaletteColor, @tagName(fld))) - 1;
+}
+
+fn repeat_items(comptime items: anytype, comptime count: usize) [items.len * count]@TypeOf(items[0]) {
+    var result: [items.len * count]@TypeOf(items[0]) = undefined;
+    for (0..count) |i| @memcpy(result[i * items.len ..][0..items.len], &items);
+    return result;
 }

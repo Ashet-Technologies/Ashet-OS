@@ -9,20 +9,15 @@ fn _reify_function(comptime func: anytype) type {
     const F = @TypeOf(func);
     const fnInfo = @typeInfo(F).@"fn";
 
-    std.debug.assert(fnInfo.params.len == 1);
+    std.debug.assert(fnInfo.param_types.len == 1);
 
-    const ArgTuple = fnInfo.params[0].type.?;
-    const CC = fnInfo.calling_convention;
+    const ArgTuple = fnInfo.param_types[0].?;
+    const CC = fnInfo.attrs.@"callconv";
 
     const arg_info = @typeInfo(ArgTuple).@"struct";
     std.debug.assert(arg_info.is_tuple);
 
-    var a_backing: [arg_info.fields.len]type = undefined;
-    for (&a_backing, arg_info.fields) |*out, in| {
-        out.* = in.type;
-    }
-
-    const A = a_backing;
+    const A = arg_info.field_types;
     const R = fnInfo.return_type.?;
 
     return struct {

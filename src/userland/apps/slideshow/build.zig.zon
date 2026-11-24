@@ -1,6 +1,7 @@
 .{
     .name = .slideshow,
     .version = "0.1.0",
+    .fingerprint = 0x67b0e4101f0e29d3,
     .paths = .{ "build.zig", "build.zig.zon", "hello-world.zig" },
     .dependencies = .{
         .AshetOS = .{

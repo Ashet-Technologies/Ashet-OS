@@ -76,8 +76,8 @@ pub fn init(section: Range) RawPageStorageManager {
     // Initialize the memory to "all pages free"
     @memset(bmp, all_bits_free);
 
-    std.debug.assert(pm.isFree(@enumFromInt(0)));
-    std.debug.assert(pm.isFree(@enumFromInt(pm.pageCount() - 1)));
+    std.debug.assert(pm.isFree(@fromBackingInt(@intCast(0))));
+    std.debug.assert(pm.isFree(@fromBackingInt(@intCast(pm.pageCount() - 1))));
 
     logger.debug("bitmap: {any}", .{bmp[0..10]});
     defer logger.debug("bitmap: {any}", .{bmp[0..10]});
@@ -91,11 +91,11 @@ pub fn init(section: Range) RawPageStorageManager {
     { // mark each page used by the bitmap as "used"
         var i: usize = 0;
         while (i < bitmap_page_count) : (i += 1) {
-            pm.markUsed(@as(Page, @enumFromInt(i)));
+            pm.markUsed(@as(Page, @fromBackingInt(@intCast(i))));
         }
     }
 
-    std.debug.assert(!pm.isFree(@enumFromInt(0))); // this must always be in the bitmap
+    std.debug.assert(!pm.isFree(@fromBackingInt(@intCast(0)))); // this must always be in the bitmap
 
     return pm;
 }
@@ -152,14 +152,20 @@ pub fn getRequiredPages(pm: RawPageStorageManager, bytes: usize) u32 {
 /// Use `pageToPtr` to obtain a physical pointer to it.
 /// Returned memory must be freed with `freePages` using the same return value as returned by `allocPages`.
 pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!PageSlice {
-    errdefer if (builtin.mode == .Debug) {
+    errdefer if (builtin.mode == .debug) {
         var stack_trace_addresses: [16]usize = undefined;
         var stack_trace: std.builtin.StackTrace = .{
             .index = 0,
             .instruction_addresses = &stack_trace_addresses,
         };
 
-        std.debug.captureStackTrace(@returnAddress(), &stack_trace);
+        var frames = @import("ashet-std").StackIterator.init(@returnAddress(), null);
+        defer frames.deinit();
+        while (frames.next()) |address| {
+            if (stack_trace.index == stack_trace_addresses.len) break;
+            stack_trace_addresses[stack_trace.index] = address;
+            stack_trace.index += 1;
+        }
 
         logger.warn("memory allocation for {} pages failed at:", .{count});
         ashet.Debug.printStackTrace("  ", &stack_trace, logger.warn);
@@ -194,26 +200,26 @@ pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!Pag
     // logger.debug("selected first page {}", .{first_page});
 
     if (count == 1) {
-        const page = @as(Page, @enumFromInt(first_page));
+        const page: Page = @fromBackingInt(@intCast(first_page));
         pm.markUsed(page);
-        return PageSlice{ .page = page, .len = 1 };
+        return .{ .page = page, .len = 1 };
     }
 
     while (first_page < pm.pageCount() - count) {
         var i: usize = 0;
         const ok = while (i < count) : (i += 1) {
-            if (!pm.isFree(@as(Page, @enumFromInt(first_page + i))))
+            if (!pm.isFree(@fromBackingInt(@intCast(first_page + i))))
                 break false;
         } else true;
 
         if (ok) {
             i = 0;
             while (i < count) : (i += 1) {
-                const page = @as(Page, @enumFromInt(first_page + i));
+                const page: Page = @fromBackingInt(@intCast(first_page + i));
                 std.debug.assert(pm.isFree(page));
                 pm.markUsed(page);
             }
-            return PageSlice{ .page = @as(Page, @enumFromInt(first_page)), .len = count };
+            return .{ .page = @fromBackingInt(@intCast(first_page)), .len = count };
         } else {
             // skip over all checked pages as well as the unset page
             first_page += @max(i, 1);
@@ -225,11 +231,11 @@ pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!Pag
 
 /// Frees physical pages previously allocated with `allocPages`.
 pub fn freePages(pm: *RawPageStorageManager, slice: PageSlice) void {
-    const first = @intFromEnum(slice.page);
+    const first = @backingInt(slice.page);
     std.debug.assert(first + slice.len <= pm.pageCount());
     var i: u32 = first;
     while (i < first +| slice.len) : (i += 1) {
-        pm.markFree(@as(Page, @enumFromInt(i)));
+        pm.markFree(@as(Page, @fromBackingInt(@intCast(i))));
     }
 }
 
@@ -270,12 +276,12 @@ pub fn ptrToPage(pm: *RawPageStorageManager, ptr: anytype) ?Page {
         return null;
     if (offset >= pm.region.base + pm.region.length)
         return null;
-    return @as(Page, @enumFromInt(@as(u32, @truncate((offset - pm.region.base) / page_size))));
+    return @fromBackingInt(@as(u32, @truncate((offset - pm.region.base) / page_size)));
 }
 
 /// Converts a given `page` index for `pm` into a physical memory address.
 pub fn pageToPtr(pm: *RawPageStorageManager, page: Page) ?*align(page_size) anyopaque {
-    const num = @intFromEnum(page);
+    const num = @backingInt(page);
     if (num >= pm.pageCount())
         return null;
     return @as(*align(page_size) anyopaque, @ptrFromInt(pm.region.base + page_size * num));
@@ -284,7 +290,7 @@ pub fn pageToPtr(pm: *RawPageStorageManager, page: Page) ?*align(page_size) anyo
 /// Converst a given `page` index for `pm` into the physical memory range.
 /// `page` must be valid.
 pub fn pageToRange(pm: RawPageStorageManager, page: Page) Range {
-    const num = @intFromEnum(page);
+    const num = @backingInt(page);
     std.debug.assert(num <= pm.pageCount());
     return .{
         .base = pm.region.base + page_size * num,
@@ -296,7 +302,7 @@ pub fn enable_page_manager_protection(pm: *RawPageStorageManager) void {
     pm.use_memory_protection = true;
 
     for (0..pm.pageCount()) |page_index| {
-        const page: Page = @enumFromInt(page_index);
+        const page: Page = @fromBackingInt(@intCast(page_index));
         const range = pm.pageToRange(page);
         memory.protection.change(range, if (pm.isFree(page))
             .forbidden
@@ -316,12 +322,12 @@ pub const Page = enum(u32) {
 
     /// Returns the index into the bitmap.
     fn wordIndex(page: Page) u32 {
-        return @intFromEnum(page) / @bitSizeOf(usize);
+        return @backingInt(page) / @bitSizeOf(usize);
     }
 
     /// Returns the number of the bit inside the bitmap.
     fn bitIndex(page: Page) USizeIndex {
-        return @as(USizeIndex, @intCast(@intFromEnum(page) % @bitSizeOf(usize)));
+        return @intCast(@backingInt(page) % @bitSizeOf(usize));
     }
 };
 

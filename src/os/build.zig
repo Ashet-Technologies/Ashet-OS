@@ -35,7 +35,7 @@ pub fn build(b: *std.Build) void {
         return;
     };
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
-    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
+    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .debug;
 
     const platform = machine.get_platform();
 
@@ -47,9 +47,9 @@ pub fn build(b: *std.Build) void {
     });
     const assets_dep = b.dependency("assets", .{});
 
-    const disk_image_dep = b.dependency("dimmer", .{ .release = true });
+    const disk_image_dep = b.dependency("dimmer", .{});
 
-    const limine_dep = b.dependency("zig_limine_install", .{ .target = b.graph.host, .optimize = .ReleaseSafe });
+    const limine_dep = b.dependency("zig_limine_install", .{ .target = b.graph.host, .optimize = .safe });
 
     // Build:
 
@@ -95,13 +95,15 @@ pub fn build(b: *std.Build) void {
         });
 
         const install_files = app_dep.namedWriteFiles("ashet.app.files");
-        for (install_files.files.items) |file| {
-            _ = rootfs.copyFile(
-                install_files.getDirectory().path(b, file.sub_path),
-                b.fmt("/{s}", .{file.sub_path}),
-            );
+        inline for (.{ install_files.embeds.items, install_files.copies.items }) |files| {
+            for (files) |file| {
+                const file_path = b.graph.wip_configuration.stringSlice(file.sub_path);
+                _ = rootfs.copyFile(
+                    install_files.getDirectory().path(b, file_path),
+                    b.fmt("/{s}", .{file_path}),
+                );
+            }
         }
-
         const app_list = AshetOS.getApplications(app_dep);
 
         for (app_list) |app| {
@@ -139,13 +141,13 @@ pub fn build(b: *std.Build) void {
             .root_module = b.createModule(.{
                 .root_source_file = b.path("utils/padbin.zig"),
                 .target = b.graph.host,
-                .optimize = .Debug,
+                .optimize = .debug,
             }),
         });
 
         const objcopy_kernel = b.addObjCopy(kernel_exe, .{
             .basename = "kernel.bin",
-            .format = .bin,
+            .format = .binary,
         });
 
         const short_kernel_bin = objcopy_kernel.getOutput();

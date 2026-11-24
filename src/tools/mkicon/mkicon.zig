@@ -31,10 +31,8 @@ const CliOptions = struct {
     };
 };
 
-pub fn main() !u8 {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-
-    var cli = args_parser.parseForCurrentProcess(CliOptions, arena.allocator(), .print) catch return 1;
+pub fn main(init: std.process.Init) !u8 {
+    var cli = args_parser.parseForCurrentProcess(CliOptions, init, .print) catch return 1;
     defer cli.deinit();
 
     if (cli.positionals.len != 1) {
@@ -58,7 +56,7 @@ pub fn main() !u8 {
     // std.log.info("processing {s}", .{input_file_name});
 
     var raw_image_buffer: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
-    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name, &raw_image_buffer);
+    var raw_image = try zigimg.Image.fromFilePath(init.arena.allocator(), init.io, input_file_name, &raw_image_buffer);
     if (raw_image.width != size[0] or raw_image.height != size[1]) {
         std.debug.panic("image must be {}x{}", .{ size[0], size[1] });
     }
@@ -125,9 +123,9 @@ pub fn main() !u8 {
     // }
 
     // map colors
-    const bitmap: []u8 = try arena.allocator().alloc(u8, raw_image.width * raw_image.height);
-    const transparent_pixels: []bool = try arena.allocator().alloc(bool, raw_image.width * raw_image.height);
-    var transparency_keys = std.bit_set.StaticBitSet(256).initFull();
+    const bitmap: []u8 = try init.arena.allocator().alloc(u8, raw_image.width * raw_image.height);
+    const transparent_pixels: []bool = try init.arena.allocator().alloc(bool, raw_image.width * raw_image.height);
+    var transparency_keys: std.bit_set.Static(256) = .full;
     var has_transparency = false;
 
     {
@@ -163,11 +161,11 @@ pub fn main() !u8 {
     }
 
     // compute bitmap
-    var out_file = try std.fs.cwd().createFile(output_file_name, .{});
-    defer out_file.close();
+    var out_file = try std.Io.Dir.cwd().createFile(init.io, output_file_name, .{});
+    defer out_file.close(init.io);
 
     var out_file_buffer: [2048]u8 = undefined;
-    var out_file_writer = out_file.writer(&out_file_buffer);
+    var out_file_writer = out_file.writer(init.io, &out_file_buffer);
     const writer = &out_file_writer.interface;
 
     switch (cli.options.format) {

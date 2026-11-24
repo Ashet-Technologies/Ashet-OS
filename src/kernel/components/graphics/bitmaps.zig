@@ -67,7 +67,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
         var height = 0;
         var width = 0;
 
-        var used = std.bit_set.IntegerBitSet(16).initFull();
+        var used = std.bit_set.IntegerBitSet(16).full;
 
         {
             var it = std.mem.splitScalar(u8, spec, '\n');
@@ -91,7 +91,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
         else
             null;
 
-        var buffer = [1][width]ColorIndex{[1]ColorIndex{ColorIndex.get(0)} ** width} ** height;
+        var buffer = @as([height][width]ColorIndex, @splat(@splat(ColorIndex.get(0))));
         {
             var it = std.mem.splitScalar(u8, spec, '\n');
             var y = 0;

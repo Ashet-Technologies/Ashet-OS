@@ -44,13 +44,13 @@ const CliVerb = union(enum) {
     @"render-md": struct {},
 };
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
 
-    var cli = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, allocator, .print) catch return 1;
+    var cli = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, init, .print) catch return 1;
     defer cli.deinit();
 
     const verb = cli.verb orelse {
@@ -90,7 +90,12 @@ pub fn main() !u8 {
             if (cli.positionals.len != 1)
                 return 1;
 
-            const json_data = try std.fs.cwd().readFileAlloc(allocator, cli.positionals[0], 1 << 20);
+            const json_data = try std.Io.Dir.cwd().readFileAlloc(
+                init.io,
+                cli.positionals[0],
+                allocator,
+                .limited(1 << 20),
+            );
 
             var image: expcard.EEPROM_Image = .{
                 .metadata = try expcard.json.load_metadata(json_data),
@@ -99,13 +104,14 @@ pub fn main() !u8 {
             };
 
             if (options.firmware) |firmware_path| {
-                var fd = try std.fs.cwd().openFile(firmware_path, .{});
-                defer fd.close();
-                const stat = try fd.stat();
+                var fd = try std.Io.Dir.cwd().openFile(init.io, firmware_path, .{});
+                defer fd.close(init.io);
+                const stat = try fd.stat(init.io);
                 if (stat.size > image.firmware.data.len)
                     return error.FirmwareTooBig;
 
-                try fd.reader().readNoEof(image.firmware.data[0..stat.size]);
+                var file_reader = fd.reader(init.io, &.{});
+                try file_reader.interface.readSliceAll(image.firmware.data[0..stat.size]);
 
                 image.metadata.Properties.@"Has Firmware" = true;
             } else {
@@ -117,15 +123,17 @@ pub fn main() !u8 {
             var max_eeprom_image: [16384]u8 = @splat(0xFF);
 
             const raw_image: []u8 = max_eeprom_image[0..@intFromEnum(cli.options.size)];
-            var fbs: std.io.FixedBufferStream([]u8) = .{ .buffer = raw_image, .pos = 0 };
+            var fbs: std.Io.Writer = .fixed(raw_image);
 
-            try fbs.writer().writeStructEndian(image, .little);
-            std.debug.assert(fbs.pos == raw_image.len);
+            try fbs.writeStruct(image, .little);
+            std.debug.assert(fbs.end == raw_image.len);
 
             if (std.mem.eql(u8, options.output, "-")) {
-                try std.io.getStdOut().writeAll(raw_image);
+                var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
+                try stdout_writer.interface.writeAll(raw_image);
+                try stdout_writer.flush();
             } else {
-                try std.fs.cwd().writeFile(.{
+                try std.Io.Dir.cwd().writeFile(init.io, .{
                     .sub_path = options.output,
                     .data = raw_image,
                 });

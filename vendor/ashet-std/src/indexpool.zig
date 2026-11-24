@@ -5,7 +5,7 @@ pub fn IndexPool(comptime Index: type, comptime limit: Index) type {
         const Self = @This();
         const BitSet = std.bit_set.StaticBitSet(limit);
 
-        data: BitSet = BitSet.initFull(),
+        data: BitSet = BitSet.full,
 
         pub fn alloc(self: *Self) ?Index {
             const index = self.data.findFirstSet() orelse return null;

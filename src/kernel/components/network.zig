@@ -4,17 +4,7 @@ const ashet = @import("../main.zig");
 const astd = @import("ashet-std");
 const logger = std.log.scoped(.network);
 
-const c = @cImport({
-    @cInclude("lwip/init.h");
-    @cInclude("lwip/tcpip.h");
-    @cInclude("lwip/netif.h");
-    @cInclude("lwip/dhcp.h");
-    @cInclude("lwip/tcp.h");
-    @cInclude("lwip/udp.h");
-    @cInclude("lwip/etharp.h");
-    @cInclude("lwip/ethip6.h");
-    @cInclude("lwip/timeouts.h");
-});
+const c = @import("lwip-c");
 
 const abi_tcp = ashet.abi.network.tcp;
 const abi_udp = ashet.abi.network.udp;
@@ -376,7 +366,7 @@ const LWIP_Error_Code = enum(c.err_t) {
     arg = c.ERR_ARG,
 
     fn to_zig_error(code: LWIP_Error_Code) LwipError {
-        std.debug.assert(@intFromEnum(code) != c.ERR_OK);
+        std.debug.assert(@backingInt(code) != c.ERR_OK);
         return switch (code) {
             .mem => LwipError.OutOfMemory,
             .buf => LwipError.BufferError,
@@ -404,30 +394,10 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
 
     std.debug.assert(fnInfo.return_type == c.err_t);
 
-    var arg_fields: [fnInfo.params.len]std.builtin.Type.StructField = undefined;
-    for (&arg_fields, fnInfo.params, 0..) |*out, in, i| {
-        out.* = .{
-            .name = std.fmt.comptimePrint("{d}", .{i}),
-            .type = in.type.?,
-            .alignment = @alignOf(in.type.?),
-            .default_value_ptr = null,
-            .is_comptime = false,
-        };
-    }
-
-    var errors: [error_set.len]std.builtin.Type.Error = undefined;
-    for (&errors, error_set) |*out, in| {
-        out.* = .{ .name = @errorName(in.to_zig_error()) };
-    }
-
-    const E = @Type(.{ .error_set = &errors });
-
-    const Tuple = @Type(.{ .@"struct" = .{
-        .layout = .auto,
-        .is_tuple = true,
-        .decls = &.{},
-        .fields = &arg_fields,
-    } });
+    var errors: type = error{};
+    for (error_set) |err| errors = errors || @TypeOf(@field(anyerror, @errorName(err.to_zig_error())));
+    const E = errors;
+    const Tuple = std.meta.ArgsTuple(F);
 
     return struct {
         fn invoke_tuple(args: Tuple) E!void {
@@ -435,7 +405,7 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
             if (return_code == c.ERR_OK)
                 return;
             inline for (error_set) |err| {
-                if (return_code == @intFromEnum(err))
+                if (return_code == @backingInt(err))
                     return @field(anyerror, @errorName(err.to_zig_error()));
             }
             std.log.err("{f} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });

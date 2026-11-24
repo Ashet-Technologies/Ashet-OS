@@ -184,7 +184,7 @@ pub const PartType = enum(u8) {
     _,
 
     pub fn is_extended_boot_record(pt: PartType) bool {
-        return switch (@intFromEnum(pt)) {
+        return switch (@backingInt(pt)) {
             0x05, // Extended partition with CHS addressing.
             0x0F, // Extended partition with LBA
             0x15, // Hidden extended partition with CHS addressing

@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void { // $ls root_id 1
 
     const os_dep = b.dependency("os", .{
         .@"optimize-kernel" = true,
-        .@"optimize-apps" = .ReleaseFast,
+        .@"optimize-apps" = .fast,
         .machine = Machine.@"x86-pc-generic",
     });
 
@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void { // $ls root_id 1
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/website-gen.zig"),
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
             .imports = &.{
                 .{ .name = "hyperdoc", .module = hyperdoc_mod },
                 .{ .name = "abi-mapper", .module = abi_parser_mod },
@@ -92,7 +92,7 @@ fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) 
 
     std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
         sub_path,
-        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        std.mem.trimEnd(u8, write_files.step.owner.dep_prefix, "."),
         write_files.step.name,
     });
     for (write_files.files.items) |file| {

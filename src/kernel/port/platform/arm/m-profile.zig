@@ -251,11 +251,11 @@ pub fn LeftAlignedRegister(comptime T: type) type {
         _,
 
         pub fn from_ptr(ptr: *align(alignment) anyopaque) @This() {
-            return @enumFromInt(@as(T, @truncate(@intFromPtr(ptr) >> align_bits)));
+            return @fromBackingInt(@truncate(@intFromPtr(ptr) >> align_bits));
         }
 
         pub fn from_int(ptr: usize) @This() {
-            return @enumFromInt(@as(T, @truncate(ptr >> align_bits)));
+            return @fromBackingInt(@truncate(ptr >> align_bits));
         }
     };
 }

@@ -9,8 +9,8 @@
         .abi_mapper = .{ .path = "../tools/abi-mapper" },
 
         .hyperdoc = .{
-            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#c21b0cddbe067f936b72de86d66b0ac3307b3032",
-            .hash = "hyperdoc-0.1.0-nnPEq4B_CADQazYUZvHk_NzK9QioNn9kHCC-cBBNcSGv",
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git?ref=hdoc-2.0-zig-0.17#cd09e54a738c5d3e744cceb8da734bdda4d6cc8a",
+            .hash = "hyperdoc-0.1.0-nnPEq42ACAAOZDAuwmUY9rns4hgFfe6mM02dhiKLnqY-",
         },
     },
     .paths = .{

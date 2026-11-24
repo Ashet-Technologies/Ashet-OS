@@ -88,7 +88,7 @@ pub fn init(
     @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
-    server.connection = shimizu.posix.Connection.open(allocator, .{}) catch |err| switch (err) {
+    server.connection = shimizu.posix.Connection.open(ashet.platform.hosted.io(), ashet.platform.hosted.process_init.environ_map, allocator, .{}) catch |err| switch (err) {
         error.FileNotFound => return error.NoWaylandSupport,
         error.XDGRuntimeDirEnvironmentVariableNotFound => return error.NoWaylandSupport,
         else => |e| return e,
@@ -144,7 +144,7 @@ pub fn init(
     }
 
     // allocate a some framebuffers for rendering to
-    server.swap_chain = .{ .wl_shm = server.wl_shm };
+    server.swap_chain = .{ .io = ashet.platform.hosted.io(), .wl_shm = server.wl_shm };
     errdefer server.swap_chain.deinit(
         &server.connection.connection,
         allocator,
@@ -214,11 +214,11 @@ pub fn process_events(server: *Wayland_Display) !void {
             const bytes_read = std.os.linux.recvmsg(
                 server.connection.socket,
                 server.connection.getRecvMsgHdr(),
-                std.posix.MSG.DONTWAIT,
+                std.os.linux.MSG.DONTWAIT,
             );
             const errno_id: isize = @bitCast(bytes_read);
             if (errno_id < 0) {
-                const errno: std.posix.E = @enumFromInt(@as(u16, @intCast(-errno_id)));
+                const errno: std.posix.E = @fromBackingInt(@intCast(@as(u16, @intCast(-errno_id))));
                 switch (errno) {
                     .AGAIN => {
                         ashet.scheduler.yield();
@@ -265,7 +265,7 @@ fn get_content_scale(server: *Wayland_Display) u32 {
 
 fn copyFromDriver(server: *Wayland_Display, pixels: []Pixel) void {
     // Clear the buffer to black for letterboxing
-    @memset(pixels, @enumFromInt(0xFF000000));
+    @memset(pixels, @fromBackingInt(@intCast(0xFF000000)));
 
     const content_w: u32 = server.screen.width;
     const content_h: u32 = server.screen.height;
@@ -334,12 +334,12 @@ pub const Framebuffers = struct {
 
         const frame_size = size[0] * size[1] * @sizeOf(Pixel);
         const total_size = frame_size * count;
-        try std.posix.ftruncate(fd, total_size);
+        try (std.Io.File{ .handle = fd, .flags = .{ .nonblocking = false } }).setLength(ashet.platform.hosted.io(), total_size);
 
-        const memory = try std.posix.mmap(null, total_size, std.posix.PROT.WRITE, .{ .TYPE = .SHARED }, fd, 0);
+        const memory = try std.posix.mmap(null, total_size, .{ .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
 
         const wl_shm_pool = try wl_shm.sendRequest(.create_pool, .{
-            .fd = @enumFromInt(fd),
+            .fd = @fromBackingInt(@intCast(fd)),
             .size = @intCast(total_size),
         });
 
@@ -379,7 +379,7 @@ pub const Framebuffers = struct {
     pub fn deinit(this: *@This()) void {
         this.wl_shm_pool.sendRequest(.destroy, .{}) catch {};
         std.posix.munmap(this.memory);
-        std.posix.close(this.fd);
+        (std.Io.File{ .handle = this.fd, .flags = .{ .nonblocking = false } }).close(ashet.platform.hosted.io());
         this.* = undefined;
     }
 
@@ -478,7 +478,7 @@ fn create_wayland_object(connection: *shimizu.Connection, registry: wayland.wl_r
         T.NAME,
         T.VERSION,
     );
-    return @enumFromInt(@intFromEnum(obj_id));
+    return @fromBackingInt(@intCast(@backingInt(obj_id)));
 }
 
 const Seat = struct {
@@ -661,7 +661,7 @@ fn onKeyboardCallback(seat: *Seat, connection: *shimizu.Connection, wl_keyboard:
     _ = wl_keyboard;
     switch (event) {
         .keymap => |keymap_info| {
-            defer std.posix.close(@intCast(@intFromEnum(keymap_info.fd)));
+            defer (std.Io.File{ .handle = @intCast(@backingInt(keymap_info.fd)), .flags = .{ .nonblocking = false } }).close(ashet.platform.hosted.io());
             logger.debug("keyboard.keymap({})", .{keymap_info});
         },
 

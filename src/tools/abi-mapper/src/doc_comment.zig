@@ -88,7 +88,7 @@ const ParseContext = struct {
 
         for (raw_lines) |raw| {
             const stripped = if (raw.len > 0 and raw[0] == ' ') raw[1..] else raw;
-            try norm_lines.append(ctx.allocator, std.mem.trimRight(u8, stripped, " \t"));
+            try norm_lines.append(ctx.allocator, std.mem.trimEnd(u8, stripped, " \t"));
         }
         const lines = norm_lines.items;
 
@@ -191,7 +191,7 @@ const ParseContext = struct {
                 list_items.items.len > 0 and
                 std.mem.startsWith(u8, line, "  "))
             {
-                const cont = std.mem.trimLeft(u8, line, " ");
+                const cont = std.mem.trimStart(u8, line, " ");
                 try list_items.items[list_items.items.len - 1].append(ctx.allocator, cont);
                 continue;
             }
@@ -202,7 +202,7 @@ const ParseContext = struct {
                 try ctx.flush_acc(&blocks, &acc_kind, &para_lines, &list_items);
                 acc_kind = .paragraph;
             }
-            try para_lines.append(ctx.allocator, std.mem.trimLeft(u8, line, " \t"));
+            try para_lines.append(ctx.allocator, std.mem.trimStart(u8, line, " \t"));
         }
 
         if (in_fence) {

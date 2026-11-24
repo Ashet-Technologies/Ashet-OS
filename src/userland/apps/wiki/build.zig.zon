@@ -1,6 +1,7 @@
 .{
-    .name = "init",
+    .name = .wiki,
     .version = "0.1.0",
+    .fingerprint = 0x22cddc0697cd0f24,
     .paths = .{ "build.zig", "build.zig.zon", "init.zig" },
     .dependencies = .{
         .AshetOS = .{
@@ -13,8 +14,8 @@
         //     .path = "../../libs/libgui",
         // },
         .hyperdoc = .{
-            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#4b673429ae9668213992db43bc9b9158d1924b42",
-            .hash = "hyperdoc-0.1.0-nnPEq-LDAADToTXxWF55g42avVDqk1Sdmihm-2qSwK7g",
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git?ref=hdoc-2.0-zig-0.17#cd09e54a738c5d3e744cceb8da734bdda4d6cc8a",
+            .hash = "hyperdoc-0.1.0-nnPEq42ACAAOZDAuwmUY9rns4hgFfe6mM02dhiKLnqY-",
         },
     },
 }

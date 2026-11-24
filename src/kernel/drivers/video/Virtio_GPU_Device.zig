@@ -63,7 +63,7 @@ const palette_lut: [256]u32 = blk: {
     for (&palette, 0..) |*rgb, index| {
         const index8: u8 = @intCast(index);
         const color: Color = @bitCast(index8);
-        rgb.* = @intFromEnum(color.to_abgr8888());
+        rgb.* = @backingInt(color.to_abgr8888());
     }
 
     break :blk palette;
@@ -302,7 +302,7 @@ const GPU = struct {
         gpu.vq.waitSettled();
 
         gpu.gpu_command.res_create_2d = .{
-            .resource_id = @intFromEnum(id),
+            .resource_id = @backingInt(id),
             .format = format,
             .width = width,
             .height = height,
@@ -315,7 +315,7 @@ const GPU = struct {
         gpu.vq.waitSettled();
 
         gpu.gpu_command.res_attach_backing = .{
-            .resource_id = @intFromEnum(id),
+            .resource_id = @backingInt(id),
             .nr_entries = 1,
         };
 
@@ -336,8 +336,8 @@ const GPU = struct {
                 .width = width,
                 .height = height,
             },
-            .scanout_id = @intFromEnum(scanout),
-            .resource_id = @intFromEnum(res_id),
+            .scanout_id = @backingInt(scanout),
+            .resource_id = @backingInt(res_id),
         };
         try gpu.execCommand();
     }
@@ -375,7 +375,7 @@ const GPU = struct {
                 .height = height,
             },
             .offset = y * calcStrideBytes(gpu.fb_width, 32) + x * 4,
-            .resource_id = @intFromEnum(ResourceId.framebuffer),
+            .resource_id = @backingInt(ResourceId.framebuffer),
         };
 
         gpu.gpu_command2.res_flush = .{
@@ -385,7 +385,7 @@ const GPU = struct {
                 .width = width,
                 .height = height,
             },
-            .resource_id = @intFromEnum(ResourceId.framebuffer),
+            .resource_id = @backingInt(ResourceId.framebuffer),
         };
 
         gpu.vq.pushDescriptor(virtio.gpu.GPUCommand, &gpu.gpu_command, .read, true, false);

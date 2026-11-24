@@ -98,7 +98,7 @@ pub const InputEventDevice = extern struct {
         }
 
         pub fn asButton(self: MouseEvent) MouseButton {
-            return @enumFromInt(@as(u16, @truncate(self.payload)));
+            return @fromBackingInt(@truncate(self.payload));
         }
     };
 };

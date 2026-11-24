@@ -102,7 +102,7 @@ pub const System = struct {
 /// `System` bus interface, keeping the core itself platform-independent.
 pub const Cpu = struct {
     /// x0 is not stored — it is always zero. Index 0 here is x1.
-    regs: [31]u32 = [_]u32{0} ** 31,
+    regs: [31]u32 = @splat(0),
     pc: u32 = 0,
     total_instructions: u64 = 0,
 
@@ -881,7 +881,7 @@ inline fn sign_extend_bits(value: u32, comptime width: u6) u32 {
 /// to the corresponding signed type, then widening (which replicates the
 /// sign bit into the upper positions).
 inline fn sign_extend(comptime T: type, value: T) u32 {
-    const S = std.meta.Int(.signed, @bitSizeOf(T));
+    const S = @Int(.signed, @bitSizeOf(T));
     return @bitCast(@as(i32, @as(S, @bitCast(value))));
 }
 
@@ -1059,7 +1059,7 @@ pub const MmioPageTable = struct {
         base_page: u8,
     };
 
-    pages: [256]?Entry = [_]?Entry{null} ** 256,
+    pages: [256]?Entry = @splat(null),
 
     pub fn map(self: *MmioPageTable, page: u8, peri: *Peripheral) void {
         self.pages[page] = .{ .peri = peri, .base_page = page };
@@ -1214,7 +1214,7 @@ pub const Framebuffer = struct {
     pub const PAGE_COUNT = @divFloor((BUFFER_SIZE + MmioPageTable.page_size - 1), MmioPageTable.page_size);
 
     peri: Peripheral = .{ .vtable = &vtable },
-    buffer: [BUFFER_SIZE]u8 = [_]u8{0} ** BUFFER_SIZE,
+    buffer: [BUFFER_SIZE]u8 = @splat(0),
 
     const vtable = Peripheral.makeVTable(Framebuffer);
 
@@ -1251,7 +1251,7 @@ pub fn EventFifo(comptime capacity: u16) type {
         const Self = @This();
         pub const FIFO_SIZE = capacity;
 
-        fifo: [capacity]u32 = [_]u32{0} ** capacity,
+        fifo: [capacity]u32 = @splat(0),
         head: u16 = 0,
         tail: u16 = 0,
         count: u16 = 0,
@@ -1437,7 +1437,7 @@ pub const BlockDevice = struct {
             .err_flag = false,
             .block_count = if (present) block_count else 0,
             .lba = 0,
-            .buffer = [_]u8{0} ** BLOCK_SIZE,
+            .buffer = @splat(0),
             .pending_request = null,
             .request_consumed = false,
         };

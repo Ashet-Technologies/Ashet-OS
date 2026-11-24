@@ -5,7 +5,7 @@ pub fn FixedPool(comptime T: type, comptime size: usize) type {
         const Self = @This();
 
         items: [size]T = undefined,
-        maps: std.bit_set.StaticBitSet(size) = std.bit_set.StaticBitSet(size).initFull(),
+        maps: std.bit_set.StaticBitSet(size) = std.bit_set.StaticBitSet(size).full,
 
         pub fn alloc(pool: *Self) ?*T {
             const index = pool.maps.findFirstSet() orelse return null;

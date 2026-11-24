@@ -8,11 +8,11 @@ const BlockDevice = ashet.drivers.BlockDevice;
 const Host_Disk_Image = @This();
 
 driver: Driver,
-file: std.fs.File,
-mode: std.fs.File.OpenMode,
+file: std.Io.File,
+mode: std.Io.Dir.OpenFileOptions.Mode,
 
-pub fn init(file: std.fs.File, mode: std.fs.File.OpenMode) !Host_Disk_Image {
-    const stat = try file.stat();
+pub fn init(file: std.Io.File, mode: std.Io.Dir.OpenFileOptions.Mode) !Host_Disk_Image {
+    const stat = try file.stat(ashet.platform.hosted.io());
     const block_size = 512;
 
     const block_count = stat.size / block_size;
@@ -46,8 +46,7 @@ pub fn read(dri: *Driver, block_num: u64, buffer: []u8) BlockDevice.ReadError!vo
     const disk: *Host_Disk_Image = @fieldParentPtr("driver", dri);
 
     const offset = 512 * block_num;
-    disk.file.seekTo(offset) catch return error.Fault;
-    const len = disk.file.readAll(buffer) catch return error.Fault;
+    const len = disk.file.readPositionalAll(ashet.platform.hosted.io(), buffer, offset) catch return error.Fault;
     if (len != buffer.len)
         return error.Fault;
 }
@@ -59,6 +58,5 @@ pub fn write(dri: *Driver, block_num: u64, buffer: []const u8) BlockDevice.Write
         return error.NotSupported;
 
     const offset = 512 * block_num;
-    disk.file.seekTo(offset) catch return error.Fault;
-    disk.file.writeAll(buffer) catch return error.Fault;
+    disk.file.writePositionalAll(ashet.platform.hosted.io(), buffer, offset) catch return error.Fault;
 }

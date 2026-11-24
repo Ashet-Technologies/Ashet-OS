@@ -117,7 +117,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
         }
 
         pub fn enterMode(base: [*]volatile InterfaceWidth, mode: Mode) void {
-            base[0x55] = @intFromEnum(mode);
+            base[0x55] = @backingInt(mode);
         }
 
         pub fn readRegister(base: [*]volatile InterfaceWidth, comptime T: type, reg: u16) T {

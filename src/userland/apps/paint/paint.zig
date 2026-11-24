@@ -249,8 +249,8 @@ fn dec_row(in: u8) u8 {
 }
 
 const ColorRowCol = packed struct(u8) {
-    const Row = std.meta.Int(.unsigned, std.math.log2_int(u8, color_per_row));
-    const Column = std.meta.Int(.unsigned, std.math.log2_int(u8, color_per_column));
+    const Row = @Int(.unsigned, std.math.log2_int(u8, color_per_row));
+    const Column = @Int(.unsigned, std.math.log2_int(u8, color_per_column));
 
     row: Row,
     column: Column,

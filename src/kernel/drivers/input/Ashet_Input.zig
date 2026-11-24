@@ -38,7 +38,7 @@ fn poll(driver: *Driver) void {
         const event: InputEventDevice.KeyboardEvent = @bitCast(raw);
 
         ashet.input.push_raw_event(.{ .keyboard = .{
-            .usage = @enumFromInt(event.usage_code),
+            .usage = @fromBackingInt(@intCast(event.usage_code)),
             .down = event.key_down,
         } });
     }

@@ -112,7 +112,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     // Step 8: Perform Interface Tests
     {
         try kbc.writeCommand(.test_primary_port);
-        const primary_status = @as(PortTestResult, @enumFromInt(try kbc.readData()));
+        const primary_status = @as(PortTestResult, @fromBackingInt(@intCast(try kbc.readData())));
         if (primary_status == .test_passed) {
             kbc.channels.insert(.primary);
         } else {
@@ -121,7 +121,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
 
         if (has_secondary_channel) {
             try kbc.writeCommand(.test_secondary_port);
-            const secondary_status = @as(PortTestResult, @enumFromInt(try kbc.readData()));
+            const secondary_status = @as(PortTestResult, @fromBackingInt(@intCast(try kbc.readData())));
             if (secondary_status == .test_passed) {
                 kbc.channels.insert(.secondary);
             } else {
@@ -322,11 +322,16 @@ const Channel = enum {
     }
 
     pub fn writeCommand(chan: Channel, cmd: DeviceMessage) error{ NoAcknowledge, CommandNotAccepted, Timeout, BufferOverrun }!void {
-        errdefer |e| logger.warn("writing command 0x{X:0>2} failed: {s}", .{
-            cmd.data,
-            @errorName(e),
-        });
+        return writeCommand_impl(chan, cmd) catch |e| {
+            logger.warn("writing command 0x{X:0>2} failed: {s}", .{
+                cmd.data,
+                @errorName(e),
+            });
+            return e;
+        };
+    }
 
+    fn writeCommand_impl(chan: Channel, cmd: DeviceMessage) error{ NoAcknowledge, CommandNotAccepted, Timeout, BufferOverrun }!void {
         const retry_limit = 3;
         var retry_count: u32 = 0;
         const timeout = Deadline.init_rel(10 * default_deadline);
@@ -376,7 +381,7 @@ const Channel = enum {
 
         const device_id = @as(u16, @bitCast([2]u8{ lo, hi }));
 
-        return @enumFromInt(device_id);
+        return @fromBackingInt(@intCast(device_id));
     }
 };
 
@@ -466,7 +471,7 @@ fn writeRawCommand(cmd: Command) error{Timeout}!void {
         delayPortRead();
     }
     // logger.debug("0x{X:0>2} => [CMD]", .{@enumToInt(cmd)});
-    x86.out(u8, ports.command, @intFromEnum(cmd));
+    x86.out(u8, ports.command, @backingInt(cmd));
 }
 
 fn readStatus() Status {
