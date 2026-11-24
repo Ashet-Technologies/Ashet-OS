@@ -67,8 +67,8 @@
         },
 
         .network = .{
-            .url = "git+https://github.com/ikskuh/zig-network.git#7947237eec317d9458897f82089f343a05450c2b",
-            .hash = "network-0.1.0-Pm-Agl8xAQBmkwohveGOfTk4zQnuqDs0Ptfbms4KP5Ce",
+            .url = "git+https://github.com/der-teufel-programming/zig-network.git?ref=0.17.x#c250207e8628b6359ec8323e2c0798783dad5b2c",
+            .hash = "network-0.1.0-Pm-AgqkxAQAevf1WODMddh9JehXYNK4a4qAV2NPToHnl",
         },
         .vnc = .{
             .url = "git+https://github.com/der-teufel-programming/zvnc.git?ref=zig-0.17-dev#09eda149acff74954e814ff114b7761ba2e7e764",
