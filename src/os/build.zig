@@ -47,7 +47,7 @@ pub fn build(b: *std.Build) void {
     });
     const assets_dep = b.dependency("assets", .{});
 
-    const disk_image_dep = b.dependency("dimmer", .{ .release = true });
+    const disk_image_dep = b.dependency("dimmer", .{});
 
     const limine_dep = b.dependency("zig_limine_install", .{ .target = b.graph.host, .optimize = .safe });
 
@@ -96,14 +96,13 @@ pub fn build(b: *std.Build) void {
 
         const install_files = app_dep.namedWriteFiles("ashet.app.files");
         inline for (.{ install_files.embeds.items, install_files.copies.items }) |files| {
-        for (files) |file| {
-            const file_path = b.graph.wip_configuration.stringSlice(file.sub_path);
-            _ = rootfs.copyFile(
-                install_files.getDirectory().path(b, file_path),
-                b.fmt("/{s}", .{file_path}),
-            );
-        }
-
+            for (files) |file| {
+                const file_path = b.graph.wip_configuration.stringSlice(file.sub_path);
+                _ = rootfs.copyFile(
+                    install_files.getDirectory().path(b, file_path),
+                    b.fmt("/{s}", .{file_path}),
+                );
+            }
         }
         const app_list = AshetOS.getApplications(app_dep);
 

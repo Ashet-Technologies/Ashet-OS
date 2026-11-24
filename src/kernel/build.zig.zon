@@ -5,8 +5,8 @@
     .paths = .{"."},
     .dependencies = .{
         .translate_c = .{
-            .url = "git+https://codeberg.org/ziglang/translate-c?ref=zig-0.17.x#02ff0c523fb92a38939b04d0145c4a9602a74d56",
-            .hash = "translate_c-2.0.0-Q_BUWltOBwBYABF84EUL208pIFeUIwbBs29FmVBaafN5",
+            .url = "git+https://codeberg.org/ziglang/translate-c?ref=zig-0.17.x#cfac21f3199b2b02ce3fd7db652aa456421fe4ab",
+            .hash = "translate_c-2.0.2-Q_BUWvBNBwDnyehSiuAJmdFcMYHYGA-Jc3KiYdrV2Dqx",
         },
         // Internal dependencies:
         .@"ashet-abi" = .{
@@ -71,8 +71,8 @@
             .hash = "network-0.1.0-Pm-Agl8xAQBmkwohveGOfTk4zQnuqDs0Ptfbms4KP5Ce",
         },
         .vnc = .{
-            .url = "git+https://github.com/ikskuh/zvnc.git#2b95855f0f348563e599db42acfeec5a8db230fb",
-            .hash = "zvnc-0.0.0-imcThRuRAAAuAawQaXqZ_bPaTBIqGQNkrwy3m1JC-1b3",
+            .url = "git+https://github.com/der-teufel-programming/zvnc.git?ref=zig-0.17-dev#09eda149acff74954e814ff114b7761ba2e7e764",
+            .hash = "zvnc-0.0.0-imcThWqPAAAVOSbuaKGdVIlKGtL4HQlnM4OjAmeP1EYl",
         },
         .@"foundation-libc" = .{
             .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.17.12/foundationlibc.tar.gz",

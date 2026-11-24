@@ -36,8 +36,8 @@
 
         // Externel deps:
         .dimmer = .{
-            .url = "git+https://github.com/zig-osdev/disk-image-step.git#d880d0295f0794c8f32bff9ae31a787251f3d735",
-            .hash = "dimmer-2.0.0-suxOkt5YAgByHMauaN7sztqur48X_-gw0y4JDuY1HG8k",
+            .url = "git+https://github.com/zig-osdev/disk-image-step?ref=0.17.x#7e20f4df0eddeeea3b006dd6c841189c429a9e83",
+            .hash = "dimmer-2.0.0-suxOknNlAgB6dT0aak04xZlZdndHUlfxORyh6bfO2AXG",
         },
 
         .limine = .{
@@ -45,8 +45,8 @@
             .hash = "N-V-__8AAMtwRwCKBq7qOA8fC-65FS6rsg0WL6pmA7OQBAb1",
         },
         .zig_limine_install = .{
-            .url = "git+https://github.com/zig-osdev/zig-limine-install?ref=main#bb910c524525f0be568905fe028630ef65a905b3",
-            .hash = "zig_limine_install-0.0.0-vFWELZAUAABFVnKxToTab-B8VWxgy9S3B2Mnpq2aBFwp",
+            .url = "git+https://github.com/der-teufel-programming/zig-limine-install?ref=0.17.x#257a4393b4156a049ad5ea6de084b47066672132",
+            .hash = "zig_limine_install-0.0.0-vFWELZ4UAAAh9v1XoZ-dkzjKhQoHoPfFCzTACNYqA6fR",
         },
     },
 }
