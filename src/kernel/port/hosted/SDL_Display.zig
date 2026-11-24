@@ -32,10 +32,7 @@ pub fn init(
     errdefer allocator.destroy(server);
 
     var window_title_buf: [32]u8 = undefined;
-    const window_title = try std.fmt.bufPrintSentinel(
-        &window_title_buf,
-        "Ashet OS Screen {}",
-        .{index}, 0);
+    const window_title = try std.fmt.bufPrintSentinel(&window_title_buf, "Ashet OS Screen {}", .{index}, 0);
 
     const window = sdl.SDL_CreateWindow(
         window_title.ptr,

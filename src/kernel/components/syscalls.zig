@@ -269,7 +269,7 @@ pub const syscalls = struct {
             }
 
             pub fn exit(exit_code: abi.process.ExitCode) noreturn {
-                ashet.scheduler.exit(@intFromEnum(exit_code));
+                ashet.scheduler.exit(@backingInt(exit_code));
             }
 
             pub fn join(thr: abi.Thread) abi.process.ExitCode {
@@ -312,7 +312,7 @@ pub const syscalls = struct {
                 const proc = get_current_process();
                 return proc.dynamic_allocator().rawAlloc(
                     size,
-                    @enumFromInt(ptr_align),
+                    @fromBackingInt(@intCast(ptr_align)),
                     @returnAddress(),
                 ) orelse return error.SystemResource;
             }
@@ -320,7 +320,7 @@ pub const syscalls = struct {
                 const proc = get_current_process();
                 proc.dynamic_allocator().rawFree(
                     mem,
-                    @enumFromInt(ptr_align),
+                    @fromBackingInt(@intCast(ptr_align)),
                     @returnAddress(),
                 );
             }
@@ -362,13 +362,13 @@ pub const syscalls = struct {
 
     pub const clock = struct {
         pub fn monotonic() abi.Absolute {
-            return @enumFromInt(std.time.ns_per_ms * @intFromEnum(ashet.time.Instant.now()));
+            return @fromBackingInt(@intCast(std.time.ns_per_ms * @backingInt(ashet.time.Instant.now())));
         }
     };
 
     pub const datetime = struct {
         pub fn now() abi.DateTime {
-            return @enumFromInt(ashet.time.milliTimestamp());
+            return @fromBackingInt(@intCast(ashet.time.milliTimestamp()));
         }
     };
 

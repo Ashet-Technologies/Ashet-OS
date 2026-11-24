@@ -19,14 +19,14 @@ pub fn Integer(comptime I: type, comptime endian: std.builtin.Endian) type {
         _,
 
         pub inline fn write(self: *@This(), value: I, legacy: bool) void {
-            self.* = @enumFromInt(if (legacy)
+            self.* = @fromBackingInt(if (legacy)
                 value
             else
                 std.mem.nativeTo(I, value, endianess));
         }
 
         pub inline fn read(self: @This(), legacy: bool) I {
-            const native_value = @intFromEnum(self);
+            const native_value = @backingInt(self);
             return if (legacy)
                 native_value
             else

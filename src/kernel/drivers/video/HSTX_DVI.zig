@@ -190,7 +190,7 @@ pub fn init_backend(comptime clock_config: hal.clocks.config.Global) void {
         .RING_SIZE = .RING_NONE,
         .RING_SEL = 0,
 
-        .CHAIN_TO = @intFromEnum(ashet.machine.hw_alloc.dma.hdmi_pong),
+        .CHAIN_TO = @backingInt(ashet.machine.hw_alloc.dma.hdmi_pong),
         .TREQ_SEL = .hstx,
 
         .IRQ_QUIET = 0,
@@ -218,7 +218,7 @@ pub fn init_backend(comptime clock_config: hal.clocks.config.Global) void {
         .RING_SIZE = .RING_NONE,
         .RING_SEL = 0,
 
-        .CHAIN_TO = @intFromEnum(ashet.machine.hw_alloc.dma.hdmi_ping),
+        .CHAIN_TO = @backingInt(ashet.machine.hw_alloc.dma.hdmi_ping),
         .TREQ_SEL = .hstx,
 
         .IRQ_QUIET = 0,

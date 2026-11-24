@@ -157,56 +157,56 @@ pub const FeatureSet = enum(u64) {
     _,
 
     pub fn add(set: FeatureSet, flag: FeatureFlag) FeatureSet {
-        return @enumFromInt(
-            @intFromEnum(set) | flag.mask(),
-        );
+        return @fromBackingInt(@intCast(
+            @backingInt(set) | flag.mask(),
+        ));
     }
 
     pub fn remove(set: FeatureSet, flag: FeatureFlag) FeatureSet {
-        return @enumFromInt(
-            @intFromEnum(set) & ~flag.mask(),
-        );
+        return @fromBackingInt(@intCast(
+            @backingInt(set) & ~flag.mask(),
+        ));
     }
 
     pub fn intersect_with(lhs: FeatureSet, rhs: FeatureSet) FeatureSet {
-        return @enumFromInt(
-            @intFromEnum(lhs) & @intFromEnum(rhs),
-        );
+        return @fromBackingInt(@intCast(
+            @backingInt(lhs) & @backingInt(rhs),
+        ));
     }
 
     pub fn union_with(lhs: FeatureSet, rhs: FeatureSet) FeatureSet {
-        return @enumFromInt(
-            @intFromEnum(lhs) | @intFromEnum(rhs),
-        );
+        return @fromBackingInt(@intCast(
+            @backingInt(lhs) | @backingInt(rhs),
+        ));
     }
 
     /// Returns `true` if `set` contains `flag`.
     pub fn contains(set: FeatureSet, flag: FeatureFlag) bool {
-        return (@intFromEnum(set) & flag.mask()) != 0;
+        return (@backingInt(set) & flag.mask()) != 0;
     }
 
     /// Replaces the lower 32 bit of the feature set with `low`.
     pub fn set_low_bits(set: *FeatureSet, low: u32) void {
-        var value = @intFromEnum(set.*);
+        var value = @backingInt(set.*);
         value &= 0xFFFFFFFF_00000000;
         value |= low;
-        set.* = @enumFromInt(value);
+        set.* = @fromBackingInt(value);
     }
 
     /// Replaces the upper 32 bit of the feature set with `high`.
     pub fn set_high_bits(set: *FeatureSet, high: u32) void {
-        var value = @intFromEnum(set.*);
+        var value = @backingInt(set.*);
         value &= 0x00000000_FFFFFFFF;
         value |= @as(u64, high) << 32;
-        set.* = @enumFromInt(value);
+        set.* = @fromBackingInt(value);
     }
 
     pub fn get_low_bits(set: FeatureSet) u32 {
-        return @truncate(@intFromEnum(set) >> 0);
+        return @truncate(@backingInt(set) >> 0);
     }
 
     pub fn get_high_bits(set: FeatureSet) u32 {
-        return @truncate(@intFromEnum(set) >> 32);
+        return @truncate(@backingInt(set) >> 32);
     }
 };
 
@@ -220,10 +220,10 @@ pub const FeatureFlag = enum(u6) {
     _,
 
     pub fn new(value: u6) FeatureFlag {
-        return @enumFromInt(value);
+        return @fromBackingInt(value);
     }
 
     pub inline fn mask(flag: FeatureFlag) u64 {
-        return @as(u64, 1) << @intFromEnum(flag);
+        return @as(u64, 1) << @backingInt(flag);
     }
 };

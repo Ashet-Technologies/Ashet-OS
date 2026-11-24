@@ -104,7 +104,7 @@ fn destroyInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, gen
 }
 
 fn enumCast(comptime T: type, v: anytype) T {
-    return @as(T, @enumFromInt(@intFromEnum(v)));
+    return @as(T, @fromBackingInt(@intCast(@backingInt(v))));
 }
 
 const Instance = struct {
@@ -366,5 +366,5 @@ fn mapFileSystemError(err: anytype) !noreturn {
 }
 
 fn dateTimeFromTimestamp(ts: i128) ashet.abi.DateTime {
-    return @enumFromInt(@as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms))));
+    return @fromBackingInt(@intCast(@as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms)))));
 }

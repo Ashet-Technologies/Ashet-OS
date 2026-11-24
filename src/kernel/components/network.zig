@@ -366,7 +366,7 @@ const LWIP_Error_Code = enum(c.err_t) {
     arg = c.ERR_ARG,
 
     fn to_zig_error(code: LWIP_Error_Code) LwipError {
-        std.debug.assert(@intFromEnum(code) != c.ERR_OK);
+        std.debug.assert(@backingInt(code) != c.ERR_OK);
         return switch (code) {
             .mem => LwipError.OutOfMemory,
             .buf => LwipError.BufferError,
@@ -405,7 +405,7 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
             if (return_code == c.ERR_OK)
                 return;
             inline for (error_set) |err| {
-                if (return_code == @intFromEnum(err))
+                if (return_code == @backingInt(err))
                     return @field(anyerror, @errorName(err.to_zig_error()));
             }
             std.log.err("{f} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });

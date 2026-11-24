@@ -33,11 +33,11 @@ const SerialPortIO = struct {
     base_port: u16,
 
     pub fn write(io: SerialPortIO, reg: ashet.drivers.serial.ns16c550.Register, value: u8) void {
-        return x86.out(u8, io.base_port + @intFromEnum(reg), value);
+        return x86.out(u8, io.base_port + @backingInt(reg), value);
     }
 
     pub fn read(io: SerialPortIO, reg: ashet.drivers.serial.ns16c550.Register) u8 {
-        return x86.in(u8, io.base_port + @intFromEnum(reg));
+        return x86.in(u8, io.base_port + @backingInt(reg));
     }
 };
 

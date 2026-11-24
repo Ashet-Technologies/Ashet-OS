@@ -84,14 +84,14 @@ pub fn write_ram(offset: u24, data: []const u8) !void {
 pub fn start_core(core: ModuleID) !void {
     lowlevel.writev_frame_blocking(&.{
         &header(.start_module, 1),
-        &.{@intFromEnum(core) - 1},
+        &.{@backingInt(core) - 1},
     });
 }
 
 pub fn stop_core(core: ModuleID) !void {
     lowlevel.writev_frame_blocking(&.{
         &header(.stop_module, 1),
-        &.{@intFromEnum(core) - 1},
+        &.{@backingInt(core) - 1},
     });
 }
 
@@ -103,8 +103,8 @@ pub fn write_fifo(slot: ModuleID, fifo: FifoId, data: []const u8) void {
         _reserved7: u1 = 0,
     };
     const opcode: u8 = @bitCast(SlotFifo{
-        .slot = @intFromEnum(slot) - 1,
-        .fifo = @intFromEnum(fifo),
+        .slot = @backingInt(slot) - 1,
+        .fifo = @backingInt(fifo),
     });
 
     lowlevel.writev_frame_blocking(&.{
@@ -117,7 +117,7 @@ pub fn write_fifo(slot: ModuleID, fifo: FifoId, data: []const u8) void {
 fn header(ft: types.FrameType, total_len: usize) [1]u8 {
     _ = total_len;
     var buf: [1]u8 = @splat(0);
-    buf[0] = @intFromEnum(ft);
+    buf[0] = @backingInt(ft);
     // std.mem.writeInt(u32, buf[1..5], @intCast(total_len + 1), .little);
     return buf;
 }

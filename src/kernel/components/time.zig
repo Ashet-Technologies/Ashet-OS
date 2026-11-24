@@ -30,23 +30,23 @@ pub const Instant = enum(u64) {
     _,
 
     pub fn now() Instant {
-        return @enumFromInt(ashet.machine_config.get_tick_count_ms());
+        return @fromBackingInt(@intCast(ashet.machine_config.get_tick_count_ms()));
     }
 
     pub fn ms_since_start(future: Instant) u64 {
-        return @intFromEnum(future);
+        return @backingInt(future);
     }
 
     pub fn ms_since(future: Instant, past: Instant) u64 {
-        return @intFromEnum(future) - @intFromEnum(past);
+        return @backingInt(future) - @backingInt(past);
     }
 
     pub fn add_ms(point: Instant, ms: u64) Instant {
-        return @enumFromInt(@intFromEnum(point) + ms);
+        return @fromBackingInt(@intCast(@backingInt(point) + ms));
     }
 
     pub fn less_than(lhs: Instant, rhs: Instant) bool {
-        return @intFromEnum(lhs) < @intFromEnum(rhs);
+        return @backingInt(lhs) < @backingInt(rhs);
     }
 
     pub fn less_or_equal(lhs: Instant, rhs: Instant) bool {
@@ -56,7 +56,7 @@ pub const Instant = enum(u64) {
 
 /// Deadlines based on the monotonic clock.
 pub const Deadline = struct {
-    pub const infinite: Deadline = .init_abs(@enumFromInt(std.math.maxInt(std.meta.Tag(Instant))));
+    pub const infinite: Deadline = .init_abs(@fromBackingInt(@intCast(std.math.maxInt(std.meta.Tag(Instant)))));
 
     when: Instant,
 
@@ -118,7 +118,7 @@ fn process_alarm_events() void {
     while (global_alarm_queue.get_head()) |next_alarm| {
         const alarm = next_alarm.arc.cast(Alarm).inputs;
         // the queue is sorted, so we've reached the end of what we can schedule right now
-        if (now < @intFromEnum(alarm.when)) {
+        if (now < @backingInt(alarm.when)) {
             break;
         }
 
@@ -164,7 +164,7 @@ pub fn schedule_timer(call: *ashet.overlapped.AsyncCall, inputs: Timer.Inputs) v
 
 pub fn schedule_alarm(call: *ashet.overlapped.AsyncCall, inputs: Alarm.Inputs) void {
     const now = milliTimestamp();
-    if (now >= @intFromEnum(inputs.when)) {
+    if (now >= @backingInt(inputs.when)) {
         call.finalize(Alarm, .{});
     } else {
         call.cancel_fn = cancel_alarm;

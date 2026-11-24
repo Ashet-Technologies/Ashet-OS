@@ -18,7 +18,7 @@ pub const ModuleID = enum(u3) {
     slot7 = 7,
 
     pub fn get_code_address(mid: ModuleID) u24 {
-        return @as(u24, @intFromEnum(mid)) << 12;
+        return @as(u24, @backingInt(mid)) << 12;
     }
 
     pub fn get_conf_address(mid: ModuleID) u24 {
@@ -26,7 +26,7 @@ pub const ModuleID = enum(u3) {
     }
 
     pub fn get_ram_address(mid: ModuleID) u24 {
-        return @as(u24, @intFromEnum(mid)) << 16;
+        return @as(u24, @backingInt(mid)) << 16;
     }
 };
 
@@ -42,7 +42,7 @@ pub const FifoId = enum(u3) {
     rx_fifo3 = 7,
 
     pub fn get_config_offset(fifo: FifoId) u24 {
-        return @as(u24, 8) * @intFromEnum(fifo);
+        return @as(u24, 8) * @backingInt(fifo);
     }
 };
 

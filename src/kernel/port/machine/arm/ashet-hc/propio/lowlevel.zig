@@ -40,7 +40,7 @@ const Handshake = enum(u1) {
 };
 
 fn set_rx_handshake(handshake: Handshake) void {
-    rxh_pin.put(@intFromEnum(handshake));
+    rxh_pin.put(@backingInt(handshake));
 }
 
 pub fn init() !void {
@@ -278,7 +278,7 @@ fn pio_rx_frame_end() callconv(.c) void {
             @panic("propio buffer queue overrun");
     }
 
-    microzig.chip.peripherals.DMA.CHAN_ABORT.write(.{ .CHAN_ABORT = (1 << @intFromEnum(rx_dma_chan)) });
+    microzig.chip.peripherals.DMA.CHAN_ABORT.write(.{ .CHAN_ABORT = (1 << @backingInt(rx_dma_chan)) });
     while (microzig.chip.peripherals.DMA.CHAN_ABORT.read().CHAN_ABORT != 0) {
         asm volatile ("" ::: .{ .memory = true });
     }

@@ -199,7 +199,7 @@ fn poll(driver: *Driver) void {
 
     device_fetch: while (true) {
         const evt = getDeviceEvent(device) orelse break :device_fetch;
-        const event_type = @as(virtio.input.ConfigEvSubSel, @enumFromInt(evt.type));
+        const event_type = @as(virtio.input.ConfigEvSubSel, @fromBackingInt(@intCast(evt.type)));
 
         switch (device.kind) {
             .keyboard => {

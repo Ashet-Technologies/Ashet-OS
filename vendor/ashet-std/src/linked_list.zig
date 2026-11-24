@@ -487,7 +487,8 @@ pub fn DoublyLinkedList(comptime T: type, comptime options: LinkedListOptions) t
 
         fn log_node_structure(node: *const Node) void {
             std.log.err("Node {}: prev={}, next={}, sentinel={}", .{
-                fmt_addr(node), fmt_addr(node.prev), fmt_addr(node.next), if (options.address_pinning)
+                fmt_addr(node), fmt_addr(node.prev), fmt_addr(node.next),
+                if (options.address_pinning)
                     fmt_addr(node.sentinel)
                 else
                     node.sentinel,

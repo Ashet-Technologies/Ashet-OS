@@ -58,7 +58,8 @@ pub fn main(init: std.process.Init) !u8 {
         break :blk .{ .writer = &stdout_writer.interface };
     } else blk: {
         output_disk_file = try std.Io.Dir.cwd().createFileAtomic(
-            io, cli_options.output,
+            io,
+            cli_options.output,
             .{ .replace = true },
         );
         disk_writer = output_disk_file.file.writer(io, &output_buffer);

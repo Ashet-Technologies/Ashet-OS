@@ -51,9 +51,9 @@ pub fn NS16C550(comptime IO: type) type {
 
             // set DLAB, disable everything else
             port.out(.lcr, @bitCast(LCR{
-                .data_bits = @enumFromInt(0),
-                .stop_bits = @enumFromInt(0),
-                .parity = @enumFromInt(0),
+                .data_bits = @fromBackingInt(@intCast(0)),
+                .stop_bits = @fromBackingInt(@intCast(0)),
+                .parity = @fromBackingInt(@intCast(0)),
                 .break_control = false,
                 .divisor_latch_access = true,
             }));

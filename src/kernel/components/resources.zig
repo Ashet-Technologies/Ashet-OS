@@ -129,14 +129,14 @@ pub const HandlePool = struct {
             encoded.generation,
         );
 
-        return @enumFromInt(@as(usize, @bitCast(encoded)));
+        return @fromBackingInt(@intCast(@as(usize, @bitCast(encoded))));
     }
 
     fn index_from_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!usize {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
-        const handle_bits: EncodedHandle = @bitCast(@intFromEnum(handle));
+        const handle_bits: EncodedHandle = @bitCast(@backingInt(handle));
 
         handle_bits.validate_checksum() catch return error.InvalidHandle;
         if (handle_bits.index >= pool.bit_map.capacity())
@@ -193,7 +193,7 @@ pub const HandlePool = struct {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
-        const handle_bits: EncodedHandle = @bitCast(@intFromEnum(handle));
+        const handle_bits: EncodedHandle = @bitCast(@backingInt(handle));
 
         handle_bits.validate_checksum() catch return error.InvalidHandle;
         if (handle_bits.index >= pool.bit_map.capacity())
@@ -409,7 +409,7 @@ test "HandlePool Stress Test" {
             }
 
             if (rng.float(f32) < fake_free_chance) {
-                const handle: Handle = @enumFromInt(rng.int(usize));
+                const handle: Handle = @fromBackingInt(@intCast(rng.int(usize)));
 
                 if (pool.free_by_handle(handle)) |_| {
                     const alive_index = std.mem.indexOfScalar(Handle, alive_handles.items, handle);
@@ -424,7 +424,7 @@ test "HandlePool Stress Test" {
             }
 
             if (rng.float(f32) < fake_resolve_chance) {
-                const handle: Handle = @enumFromInt(rng.int(usize));
+                const handle: Handle = @fromBackingInt(@intCast(rng.int(usize)));
 
                 if (pool.resolve(handle)) |_| {
                     try std.testing.expect(std.mem.indexOfScalar(Handle, alive_handles.items, handle) != null);

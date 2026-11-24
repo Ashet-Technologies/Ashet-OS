@@ -192,7 +192,7 @@ pub fn enumerate(maybe_ids: ?[]OutputID) usize {
     if (maybe_ids) |ids| {
         const count = @min(ids.len, video_outputs.len);
         for (ids, 0..count) |*id, index| {
-            id.* = @enumFromInt(@as(u8, @intCast(index)));
+            id.* = @fromBackingInt(@intCast(@as(u8, @intCast(index))));
         }
         return count;
     } else {
@@ -201,7 +201,7 @@ pub fn enumerate(maybe_ids: ?[]OutputID) usize {
 }
 
 pub fn acquire_output(output_id: OutputID) error{ NotFound, NotAvailable }!*Output {
-    const index = @intFromEnum(output_id);
+    const index = @backingInt(output_id);
     if (index >= video_outputs.len)
         return error.NotFound;
     const output = &video_outputs[index];

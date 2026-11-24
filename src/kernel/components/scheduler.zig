@@ -512,7 +512,7 @@ pub const Thread = struct {
             // exiting the thread. By this, we can be sure that we have no
             // control flow after this function.
             thread.detach();
-            exit(@intFromEnum(ExitCode.killed));
+            exit(@backingInt(ExitCode.killed));
             unreachable;
         }
 

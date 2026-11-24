@@ -374,8 +374,8 @@ pub fn cancel_with_context(call: *AsyncCall, context: *Context, queue_name: Cont
             } else {
                 // TODO: Implement actual cancelling of events
                 logger.err("non-implemented cancel of type {!} ({})", .{
-                    (std.enums.fromInt(ARC.Type, @intFromEnum(call.arc.type)) orelse error.InvalidEnumTag),
-                    @intFromEnum(call.arc.type),
+                    (std.enums.fromInt(ARC.Type, @backingInt(call.arc.type)) orelse error.InvalidEnumTag),
+                    @backingInt(call.arc.type),
                 });
                 @panic("AshetOS has no idea how to cancel this!");
             }

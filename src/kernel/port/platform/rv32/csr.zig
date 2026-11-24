@@ -269,7 +269,7 @@ pub const ControlStatusRegister = enum(u12) {
         assert_csr_extension();
         return asm ("csrr %[out], %[csr]"
             : [out] "=r" (-> usize),
-            : [csr] "in" (@as(u32, @intFromEnum(csr))),
+            : [csr] "in" (@as(u32, @backingInt(csr))),
         );
     }
 
@@ -277,7 +277,7 @@ pub const ControlStatusRegister = enum(u12) {
         assert_csr_extension();
         asm volatile ("csrw %[csr], %[value]"
             :
-            : [csr] "in" (@as(u32, @intFromEnum(csr))),
+            : [csr] "in" (@as(u32, @backingInt(csr))),
               [value] "irn" (value),
         );
     }

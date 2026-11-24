@@ -139,7 +139,7 @@ fn flush(driver: *Driver) void {
             const dst_scanline: [*]Color = @ptrCast(@alignCast(dst_pixel_ptr));
 
             for (src_scanline[0..vd.width], dst_scanline[0..vd.width]) |index, *color| {
-                color.* = vd.palette[@intFromEnum(index)];
+                color.* = vd.palette[@backingInt(index)];
             }
 
             src_pixel_ptr += src_pixel_pitch;

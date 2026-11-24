@@ -564,7 +564,7 @@ fn kernel_log_fn(
     const scope_name = @tagName(scope);
 
     if (@hasDecl(log_levels, scope_name)) {
-        if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
+        if (@backingInt(message_level) > @backingInt(@field(log_levels, scope_name)))
             return;
     } else {
         kernel_log_once(scope);
@@ -614,7 +614,7 @@ fn kernel_log_fn(
 
         Debug.writer().writeAll(color_code) catch return;
 
-        const now_ms: u64 = @intFromEnum(now);
+        const now_ms: u64 = @backingInt(now);
         Debug.writer().print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
             isr_prefix,
             now_ms / 1000,

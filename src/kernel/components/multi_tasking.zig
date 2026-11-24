@@ -372,7 +372,7 @@ pub const Process = struct {
 
     /// Kills the process, stops all threads, and releases of its resources.
     pub fn kill(proc: *Process, exit_code: ExitCode) void {
-        logger.debug("kill({f}, {})", .{ proc, @intFromEnum(exit_code) });
+        logger.debug("kill({f}, {})", .{ proc, @backingInt(exit_code) });
         std.debug.assert(!proc.is_zombie());
 
         proc.exit_code = exit_code;
